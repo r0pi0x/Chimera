@@ -16,7 +16,7 @@ mod hud_nodes {
 
     use bevy::prelude::*;
     use chimera_client::client::hud_text::HudGlyphMaterial;
-    use cs16_ui::hud::{Ammo, Cs16HudState, Fades, FillSlot, Frame, HudPictures, Menu, MenuWeapon, Pain, SpriteSlot, ammo_key, menu_key, menu_lit_key, spawn_root, sync};
+    use cs16_ui::hud::{Ammo, Crosshair, CrosshairLook, Cs16HudState, Fades, FillSlot, Frame, HudPictures, Menu, MenuWeapon, Pain, SpriteSlot, ammo_key, menu_key, menu_lit_key, spawn_root, sync};
 
     fn app(pictures: HudPictures, frame: Frame, screen: (i32, i32, f32)) -> App {
         app_with(pictures, frame, screen, Fades::default())
@@ -130,27 +130,34 @@ mod hud_nodes {
     #[test]
     fn the_crosshair_is_four_added_lines_around_the_centre() {
         let mut fades = Fades::default();
-        let f = Frame { crosshair: Some(10.0), ..ak() };
+        let crosshair = Crosshair { base: 4, step: 4.0, look: CrosshairLook::default() };
+        let f = Frame { crosshair: Some(crosshair), ..ak() };
         fades.step(&f, 0.0);
         let mut big = app_with(pictures(), f, (1920, 1080, 1.0), fades);
         let nodes = shown(&mut big);
-        // Gap 4 + 10; length 9 at this width.
-        let lines: Vec<[f32; 4]> = nodes.iter().map(|n| n.0).filter(|r| r[2] <= 9.0 && (r[2] == 1.0 || r[3] == 1.0)).collect();
-        assert_eq!(lines, vec![[937.0, 540.0, 9.0, 1.0], [974.0, 540.0, 9.0, 1.0], [960.0, 517.0, 1.0, 9.0], [960.0, 554.0, 1.0, 9.0]]);
-        let green = Color::srgba_u8(50, 250, 50, 255).to_linear();
+        // AK-47 at rest on 1920 x 1080: scale 3, gap 12, lines 15 long.
+        let lines: Vec<[f32; 4]> = nodes.iter().map(|n| n.0).filter(|r| r[2] <= 15.0 && (r[2] == 1.0 || r[3] == 1.0)).collect();
+        assert_eq!(lines, vec![[934.0, 540.0, 15.0, 1.0], [972.0, 540.0, 15.0, 1.0], [960.0, 514.0, 1.0, 15.0], [960.0, 552.0, 1.0, 15.0]]);
+        // The default colour at the starting alpha (200, 2 more the first frame).
+        let green = Color::srgba_u8(50, 250, 50, 202).to_linear();
         assert!(nodes.iter().any(|n| n.1 == green));
         // Without the install's pictures the lines still show.
         let mut bare = HudPictures::default();
         bare.1 = Some(Handle::<Image>::default());
-        let mut app = app(bare, Frame { crosshair: Some(0.0), health: Some(100), ..Default::default() }, (640, 480, 1.0));
+        let mut app = app(bare, Frame { crosshair: Some(crosshair), health: Some(100), ..Default::default() }, (640, 480, 1.0));
         assert_eq!(shown(&mut app).len(), 4);
+        // Blended (cl_crosshair_translucent 0): filled boxes, not sprites.
+        let look = CrosshairLook { translucent: 0, ..CrosshairLook::default() };
+        let mut app = app_with(HudPictures::default(), Frame { crosshair: Some(Crosshair { look, ..crosshair }), health: Some(100), ..Default::default() }, (640, 480, 1.0), Fades::default());
+        let w = app.world_mut();
+        assert_eq!(w.query::<(&FillSlot, &Visibility)>().iter(w).filter(|(_, v)| **v != Visibility::Hidden).count(), 5, "four lines and health's bar");
     }
 
     /// The selection's slot numbers, the open slot's pictures with the
     /// chosen one lit under the highlight, boxes under the closed slots.
     #[test]
     fn the_weapon_menu_is_slot_numbers_boxes_and_pictures() {
-        let weapon = |id: &str, empty| MenuWeapon { id: id.into(), empty };
+        let weapon = |id: &str, empty| MenuWeapon { id: id.into(), empty, ..Default::default() };
         let menu = Menu {
             slots: vec![
                 vec![weapon("cs16:weapon_ak47", false), weapon("cs16:weapon_usp", true)],
@@ -158,38 +165,83 @@ mod hud_nodes {
                 vec![weapon("cs16:weapon_knife", false)],
             ],
             chosen: Some((0, 1)),
-            fade: 1.0,
         };
         let f = Frame { health: Some(100), menu: Some(menu), ..Default::default() };
         let mut app = app(pictures(), f, (640, 480, 1.0));
         let nodes: Vec<[f32; 4]> = shown(&mut app).iter().map(|n| n.0).filter(|r| r[1] < 140.0).collect();
-        // Buckets 1..5 at 10 + the open slot's 170 wide cell, then 20 + 5
-        // each; the AK at the top of the open list (40), the lit USP under
-        // it with the selection over it; the knife's box under slot 3.
-        assert!(nodes.contains(&[10.0, 10.0, 20.0, 20.0]), "bucket 1");
-        assert!(nodes.contains(&[185.0, 10.0, 20.0, 20.0]), "bucket 2 after the open slot");
-        assert!(nodes.contains(&[10.0, 40.0, 170.0, 45.0]), "the first weapon");
-        assert_eq!(nodes.iter().filter(|r| **r == [10.0, 90.0, 170.0, 45.0]).count(), 2, "the lit one and the selection");
+        // Right of the radar (128 + 10): bucket 1 at 138, then the open
+        // slot's 170 + 5; the AK at the top of the open list (30), the lit
+        // USP under it with the selection over it; the knife's box under
+        // slot 3.
+        assert!(nodes.contains(&[138.0, 10.0, 20.0, 20.0]), "bucket 1");
+        assert!(nodes.contains(&[313.0, 10.0, 20.0, 20.0]), "bucket 2 after the open slot");
+        assert!(nodes.contains(&[138.0, 30.0, 170.0, 45.0]), "the first weapon");
+        assert_eq!(nodes.iter().filter(|r| **r == [138.0, 80.0, 170.0, 45.0]).count(), 2, "the lit one and the selection");
         let w = app.world_mut();
         let boxes: Vec<(f32, f32)> = w
-            .query::<(&FillSlot, &Node, &Visibility)>()
+            .query::<(&SpriteSlot, &Node, &Visibility)>()
             .iter(w)
             .filter(|(_, _, v)| **v != Visibility::Hidden)
-            .filter_map(|(_, n, _)| if let (Val::Px(l), Val::Px(t)) = (n.left, n.top) { Some((l, t)) } else { None })
+            .filter_map(|(_, n, _)| if let (Val::Px(l), Val::Px(t), Val::Px(bw)) = (n.left, n.top, n.width) { (bw == 20.0 && t == 30.0).then_some((l, t)) } else { None })
             .collect();
-        assert!(boxes.contains(&(210.0, 40.0)), "the knife's box under slot 3: {boxes:?}");
+        assert!(boxes.contains(&(338.0, 30.0)), "the knife's box under slot 3: {boxes:?}");
+    }
+
+    /// At 320 x 240 the menu's columns start at 74, its pictures at y 22.
+    #[test]
+    fn the_320_menu_has_its_own_places() {
+        let weapon = |id: &str, reserve| MenuWeapon { id: id.into(), reserve, most: 90, ..Default::default() };
+        let menu = Menu { slots: vec![vec![weapon("cs16:weapon_ak47", 45), weapon("cs16:weapon_usp", 0)]], chosen: Some((0, 0)) };
+        let mut p = pictures_320();
+        let small = p.0.get_mut(&320).unwrap();
+        for k in ["bucket1", "bucket2", "bucket3", "bucket4", "bucket5", "bucket0"] {
+            small.insert(k.into(), (Handle::<Image>::default(), UVec2::splat(12)));
+        }
+        for id in ["cs16:weapon_ak47", "cs16:weapon_usp"] {
+            small.insert(menu_key(id), (Handle::<Image>::default(), UVec2::new(80, 20)));
+            small.insert(menu_lit_key(id), (Handle::<Image>::default(), UVec2::new(80, 20)));
+        }
+        small.insert("selection".into(), (Handle::<Image>::default(), UVec2::new(80, 20)));
+        let f = Frame { health: Some(100), menu: Some(menu), ..Default::default() };
+        let mut app = app(p, f, (320, 240, 1.0));
+        let nodes: Vec<[f32; 4]> = shown(&mut app).iter().map(|n| n.0).filter(|r| r[1] < 80.0).collect();
+        assert!(nodes.contains(&[74.0, 10.0, 12.0, 12.0]), "bucket 1");
+        assert!(nodes.contains(&[74.0, 22.0, 80.0, 20.0]), "the first picture");
+        assert!(nodes.contains(&[74.0, 47.0, 80.0, 20.0]), "the second, 25 apart");
+        assert!(nodes.contains(&[79.0, 22.0, 5.0, 2.0]), "the bar's filled part, 10 x 2 from x + 5");
     }
 
     #[test]
-    fn the_round_timer_is_centred_on_the_screen() {
-        let f = Frame { health: Some(100), timer: Some(165), ..Default::default() };
+    fn the_round_timer_starts_at_the_screen_s_centre() {
+        let f = Frame { health: Some(100), timer: Some(164), ..Default::default() };
         let mut app = app(pictures(), f, (640, 480, 1.0));
         let nodes = shown(&mut app);
-        // Stopwatch (24) + `2` + colon (10) + `4` `5`: 24 + 3 x 20 + 10 = 94
-        // wide, from 320 - 47 = 273, on the health row's cross height.
-        assert!(nodes.iter().any(|n| n.0 == [273.0, 443.0, 24.0, 24.0]));
-        assert!(nodes.iter().any(|n| n.0 == [297.0, 448.0, 20.0, 25.0]), "minutes");
-        assert!(nodes.iter().any(|n| n.0 == [327.0, 448.0, 20.0, 25.0]), "seconds, tens");
+        // `2:44` at 640 x 480: the stopwatch's left edge on the centre
+        // (320, 442), the minutes from 326, the colon's squares at 372
+        // (alpha 100), the seconds from 378.
+        assert!(nodes.iter().any(|n| n.0 == [320.0, 442.0, 24.0, 24.0]), "stopwatch");
+        assert!(nodes.iter().any(|n| n.0 == [346.0, 442.0, 20.0, 25.0]), "minutes");
+        assert!(nodes.iter().any(|n| n.0 == [378.0, 442.0, 20.0, 25.0]), "seconds, tens");
+        assert!(nodes.iter().any(|n| n.0 == [398.0, 442.0, 20.0, 25.0]), "seconds, ones");
+        let squares: Vec<[f32; 4]> = nodes.iter().map(|n| n.0).filter(|r| r[2] == 2.0 && r[3] == 2.0).collect();
+        assert_eq!(squares, vec![[372.0, 448.0, 2.0, 2.0], [372.0, 461.0, 2.0, 2.0]]);
+        // All dim: the HUD colour at alpha 100.
+        let dim = Color::srgba_u8(255, 160, 0, 100).to_linear();
+        assert!(nodes.iter().filter(|n| n.0[1] == 442.0 || n.0[2] == 2.0).all(|n| n.1 == dim));
+    }
+
+    /// 320 x 240 with `2:44`: stopwatch (160, 216), `2` at 176, the colon's
+    /// squares at x 192, y 220 and 228, the seconds at 196 and 208.
+    #[test]
+    fn the_320_timer_has_its_own_places() {
+        let f = Frame { health: Some(100), timer: Some(164), ..Default::default() };
+        let mut app = app(pictures_320(), f, (320, 240, 1.0));
+        let nodes = shown(&mut app);
+        assert!(nodes.iter().any(|n| n.0 == [160.0, 216.0, 16.0, 16.0]), "stopwatch");
+        assert!(nodes.iter().any(|n| n.0 == [176.0, 216.0, 12.0, 16.0]), "minutes");
+        assert!(nodes.iter().any(|n| n.0 == [196.0, 216.0, 12.0, 16.0]) && nodes.iter().any(|n| n.0 == [208.0, 216.0, 12.0, 16.0]), "seconds");
+        let squares: Vec<[f32; 4]> = nodes.iter().map(|n| n.0).filter(|r| r[2] == 2.0 && r[3] == 2.0).collect();
+        assert_eq!(squares, vec![[192.0, 220.0, 2.0, 2.0], [192.0, 228.0, 2.0, 2.0]]);
     }
 
     /// Below 640 wide the 320 layout's pictures lay the HUD out; a wider
@@ -223,27 +275,17 @@ mod collected {
     //! hand's spread, the selection's state, the round's clock).
 
     use bevy::prelude::*;
-    use chimera_client::client::weapon_menu::{WeaponMenu, WeaponMenuTimes};
-    use chimera_core::core::{Health, LocalPlayer, SimClock};
+    use chimera_client::client::weapon_menu::WeaponMenu;
+    use chimera_core::core::{Health, LocalPlayer, MovementState, SimClock, Velocity};
     use chimera_sim::{
         mode::{Match, Phase},
-        weapon::{Hitscan, Inventory, Magazine, SpreadShape, Weapon},
+        weapon::{AltModes, Inventory, Magazine, Weapon},
     };
-    use cs16_ui::hud::{Cs16HudState, Fades, collect};
+    use cs16_ui::hud::{Cs16HudState, Fades, FastSwitch, collect, keep_open};
 
-    fn gun(world: &mut World, id: &'static str, slot: u8, spread: f32, clip: u32) -> Entity {
-        let hitscan = Hitscan {
-            range: 100.0,
-            pellets: 1,
-            spread: SpreadShape::Disc { inaccuracy: spread, spread: 0.0 },
-            punch_scale: 0.0,
-            tracer_every: 0,
-            redrawn_through_characters: false,
-            odd_box: None,
-            centre_first: false,
-        };
+    fn gun(world: &mut World, id: &'static str, slot: u8, clip: u32) -> Entity {
         let mag = Magazine { clip, size: 30, reserve: 0, reserve_max: 90, reload_time: 2.0, reload_while_held: false, auto_reload: false };
-        world.spawn((Weapon { id, slot, owner: None, draw_time: 0.0, max_speed: None }, hitscan, mag)).id()
+        world.spawn((Weapon { id, slot, owner: None, draw_time: 0.0, max_speed: None }, mag)).id()
     }
 
     fn world() -> (App, Entity, Entity) {
@@ -251,25 +293,25 @@ mod collected {
         app.init_resource::<Cs16HudState>()
             .init_resource::<Fades>()
             .init_resource::<WeaponMenu>()
-            .init_resource::<WeaponMenuTimes>()
             .insert_resource(Match { phase: Phase::Live, round_ends: Some(100.0), ..default() })
             .insert_resource(SimClock { now: 40.5, ..default() })
             .add_systems(Update, collect);
-        let ak = gun(app.world_mut(), "cs16:weapon_ak47", 0, 0.0, 30);
-        let usp = gun(app.world_mut(), "cs16:weapon_usp", 1, 0.0, 0);
+        let ak = gun(app.world_mut(), "cs16:weapon_ak47", 0, 30);
+        let usp = gun(app.world_mut(), "cs16:weapon_usp", 1, 0);
         let mut inv = Inventory::default();
         inv.weapons = vec![ak, usp];
         inv.active = Some(ak);
-        app.world_mut().spawn((LocalPlayer, Health::default(), inv));
+        app.world_mut().spawn((LocalPlayer, Health::default(), inv, MovementState { on_ground: true, ..default() }, Velocity::default()));
         (app, ak, usp)
     }
 
     #[test]
-    fn the_timer_counts_the_round_s_seconds_up() {
+    fn the_timer_counts_the_round_s_whole_seconds_down() {
         let (mut app, ..) = world();
         app.update();
-        assert_eq!(app.world().resource::<Cs16HudState>().frame.timer, Some(60));
-        // A limit too far off to show (the sandbox's) is none.
+        // 59.5 s left, truncated.
+        assert_eq!(app.world().resource::<Cs16HudState>().frame.timer, Some(59));
+        // A limit too far off to show (the sandbox's: over a day) is none.
         app.world_mut().resource_mut::<Match>().round_ends = Some(1.0e7);
         app.update();
         assert_eq!(app.world().resource::<Cs16HudState>().frame.timer, None);
@@ -280,19 +322,74 @@ mod collected {
     }
 
     #[test]
-    fn the_crosshair_follows_the_held_gun_s_spread_and_hides_when_dead() {
+    fn the_crosshair_follows_the_player_s_movement_and_hides_when_dead() {
         let (mut app, ak, _) = world();
-        app.update();
-        assert_eq!(app.world().resource::<Cs16HudState>().frame.crosshair, Some(0.0));
-        // 0.1 tangent units at a 1.5 rad view (the fallback) on 480 rows.
-        app.world_mut().get_mut::<Hitscan>(ak).unwrap().spread = SpreadShape::Disc { inaccuracy: 0.1, spread: 0.0 };
-        app.update();
-        let gap = app.world().resource::<Cs16HudState>().frame.crosshair.unwrap();
-        assert!((gap - 0.1 / (0.75f32).tan() * 240.0).abs() < 0.01, "{gap}");
         let me = app.world_mut().query_filtered::<Entity, With<LocalPlayer>>().single(app.world()).unwrap();
+        app.update();
+        let base = |app: &App| app.world().resource::<Cs16HudState>().frame.crosshair.map(|c| c.base);
+        assert_eq!(base(&app), Some(4), "the AK-47 at rest");
+        // Running at 250 units a second: 6; in the air: 8.
+        app.world_mut().entity_mut(me).insert(Velocity(Vec3::X * 250.0 * 0.0254));
+        app.update();
+        assert_eq!(base(&app), Some(6));
+        app.world_mut().get_mut::<MovementState>(me).unwrap().on_ground = false;
+        app.update();
+        assert_eq!(base(&app), Some(8));
+        // A shot opens the gap by the step (4), once per frame.
+        app.world_mut().get_mut::<MovementState>(me).unwrap().on_ground = true;
+        app.world_mut().entity_mut(me).insert(Velocity::default());
+        app.update();
+        let gap = app.world().resource::<Fades>().gap;
+        app.world_mut().get_mut::<Magazine>(ak).unwrap().clip = 27;
+        app.update();
+        assert_eq!(app.world().resource::<Fades>().gap, (gap + 4.0).min(15.0));
+        // The silencer's mode doesn't change an AK; a Glock's semi-automatic mode widens it.
+        app.world_mut().get_mut::<Magazine>(ak).unwrap().clip = 30;
+        app.world_mut().entity_mut(ak).insert(AltModes::new(2, 1.0, false));
+        app.update();
+        assert_eq!(base(&app), Some(4));
         app.world_mut().entity_mut(me).insert(chimera_core::core::Dead { since: 0.0 });
         app.update();
         assert_eq!(app.world().resource::<Cs16HudState>().frame.crosshair, None);
+    }
+
+    #[test]
+    fn a_sniper_rifle_has_no_crosshair() {
+        let (mut app, ..) = world();
+        let awp = gun(app.world_mut(), "cs16:weapon_awp", 0, 10);
+        let me = app.world_mut().query_filtered::<Entity, With<LocalPlayer>>().single(app.world()).unwrap();
+        app.world_mut().get_mut::<Inventory>(me).unwrap().active = Some(awp);
+        app.update();
+        assert_eq!(app.world().resource::<Cs16HudState>().frame.crosshair, None);
+    }
+
+    /// No timeout: the selection stays open however long it is untouched.
+    #[test]
+    fn the_menu_has_no_timeout_and_closes_on_death() {
+        let (mut app, _, usp) = world();
+        app.init_resource::<FastSwitch>().add_systems(Update, keep_open.before(collect));
+        {
+            let mut m = app.world_mut().resource_mut::<WeaponMenu>();
+            m.choosing = true;
+            m.shown_for = Some(0.0);
+            m.highlighted = Some(usp);
+        }
+        for _ in 0..5 {
+            // The shell would add the frame's time (10 s a frame here).
+            app.world_mut().resource_mut::<WeaponMenu>().shown_for.as_mut().map(|t| *t += 10.0);
+            app.update();
+        }
+        assert!(app.world().resource::<WeaponMenu>().choosing);
+        assert!(app.world().resource::<Cs16HudState>().frame.menu.is_some());
+        let me = app.world_mut().query_filtered::<Entity, With<LocalPlayer>>().single(app.world()).unwrap();
+        app.world_mut().entity_mut(me).insert(chimera_core::core::Dead { since: 0.0 });
+        app.update();
+        assert!(!app.world().resource::<WeaponMenu>().choosing);
+    }
+
+    #[test]
+    fn fast_switch_is_off_by_default() {
+        assert_eq!(FastSwitch::default().0, 0);
     }
 
     #[test]
@@ -312,6 +409,5 @@ mod collected {
         assert_eq!(menu.slots.iter().map(Vec::len).collect::<Vec<_>>(), vec![1, 1]);
         // The USP has no rounds: its picture is the empty colour's.
         assert!(!menu.slots[0][0].empty && menu.slots[1][0].empty);
-        assert_eq!(menu.fade, 1.0);
     }
 }

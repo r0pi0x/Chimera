@@ -20,7 +20,7 @@
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun, grenade and melee weapon (`melee_weapons`:
 //! TF2's nine, the knives) of the playable games as the ladder, `refill_ammo`, no knife finale, no time to speak of
-//! (`TIME_LIMIT`), no rotation or vote, no music (`music = "none"`: no
+//! (`TIME_LIMIT`; the host's `mp_timelimit` gives it one), no rotation or vote, no music (`music = "none"`: no
 //! game's music director plays its moments), no pre-match lobby (`lobby =
 //! false`: entered at once from a match, with no end screen, lobby or
 //! Start, and without waiting for the server's own game files; who goes

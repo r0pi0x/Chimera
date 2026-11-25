@@ -13,13 +13,16 @@
 //! `d_` kill icons and the headshot mark for every app's kill feed.
 //!
 //! Also drawn (hud.md): the dynamic crosshair (four 1-pixel lines of
-//! `CROSSHAIR_COLOUR` added onto the frame, their gap the weapon's spread
-//! projected to the screen plus a small base gap, opening at once and
-//! closing over a fraction of a second; the shell's crosshair is off), the
-//! weapon selection's bucket list while the shell's `WeaponMenu` is open
-//! (`hud_fastswitch 0`), the round timer, and the 320 layout below 640
-//! pixels wide (`resolution_for`: that layout's own sprites; the digits'
-//! cell size sets the numbers' spacing, as the spec's formulas have it).
+//! `cl_crosshair_color` around the centre: the weapon's base gap by its
+//! movement rule (`Rule`, `base_gap`), opened a step per shot up to 15 and
+//! closed 1.3 % + 0.1 pixel per drawn frame (`Fades::step`, frame rate
+//! dependent as the spec keeps it), scaled by `cl_crosshair_size`; hidden
+//! for the snipers and at a field of view of 40 or less; the shell's is
+//! off), the weapon selection's bucket list while the shell's `WeaponMenu`
+//! is open (`hud_fastswitch 0`, no timeout: `keep_open`), the round timer
+//! and the 320 layout below 640 pixels wide (`resolution_for`: that
+//! layout's own sprites; the digits' cell size sets the numbers' spacing,
+//! as the spec's formulas have it).
 //!
 //! - `Frame`: what the HUD shows, from the local player's state;
 //!   `draws`: the frame laid out as sprites and filled boxes in screen
@@ -29,26 +32,27 @@
 //!   draws) and `load_pictures`.
 //!
 //! Known shortcuts:
-//! - The crosshair's numbers are ours where hud.md leaves them open
-//!   (question 3): the line lengths 5, 7 and 9 pixels by the width's size
-//!   class, a base gap of 4 pixels, closing with a 0.1 s time constant;
-//!   only `cl_dynamiccrosshair` (the shell's) is read, not hud.md's
-//!   `cl_crosshair_color`, `_size` and `_translucent`.
-//! - The round timer's colon (two squares of a fifth of a digit, a half
-//!   digit wide) and its rows are ours (question 2); it shows the match's
-//!   time left (`Match::round_ends`), hidden without one or with more
-//!   than 99:59 left.
+//! - Money's place and flash are not drawn (hud.md question 2; the party
+//!   has no money).
+//! - The pistols' speed rule starts at 0 as hud.md has it (question 3,
+//!   still to confirm by a capture), and `hud_fastswitch 1` with several
+//!   weapons in a slot switches to the first one instead of opening the
+//!   menu or cycling (question 3).
 //! - The weapon menu draws for the party's rungs as the player holds them
-//!   (slots 1-5 always, the open slot's pictures); its ammunition bars and
-//!   the closing time (question 4; the shell's `WeaponMenuTimes`) are not
-//!   drawn, and `cs16:hud_fastswitch` is 1 by default as CS:S's here.
+//!   (slots 1-5 always, the open slot's pictures); a grenade's ammunition
+//!   bar is not drawn (only magazine weapons have a reserve to show), and
+//!   the menu closes with the weapon's death or spectating, not on a round
+//!   reset. The crosshair's night vision colour and the raised shield's
+//!   hiding are not drawn (neither exists in the party).
+//! - The round timer shows the match's time left (`Match::round_ends`,
+//!   truncated to seconds) while the match is live, hidden without a limit
+//!   or with more than a day left (the sandbox's), not the server's own
+//!   hide message.
 //! - The kill feed is the app's, with CS 1.6's `d_` icons tinted 255 80 0
 //!   and blended by their brightness (not added), `d_skull` for a CS 1.6
 //!   weapon without an icon; its layout and names are the app's.
-//! - Not drawn: money (unused in the party), the flashbang fade's own (the
-//!   shell's flash white is drawn), the damage type icons.
-//! - The 320 layout reuses the 640 positions' formulas with that layout's
-//!   cell sizes (the install's digits are 12 x 16, hud.md says 13 high).
+//! - Not drawn: the flashbang fade's own (the shell's flash white is
+//!   drawn), the damage type icons.
 //! - Ours where the spec leaves it open: armour's lit rows truncated
 //!   (24 x armour / 100); a hit from within 50 units needs the attacker's
 //!   position (a network client, which has no attacker, lights by the
@@ -59,16 +63,16 @@ use std::collections::BTreeMap;
 
 use bevy::{asset::RenderAssetUsages, prelude::*};
 use chimera_client::client::{
-    FirstPersonCamera,
     hud::{CrosshairColor, GAME_HUD_Z, GameDraws, HudRoot},
     hud_text::{GlyphParams, HudGlyphMaterial},
-    weapon_menu::{WeaponMenu, WeaponMenuTimes},
+    weapon_menu::{WeaponMenu, menu_input},
     weapon_icons::{WeaponIcon, WeaponIcons},
 };
-use chimera_core::core::{DamageTaken, Dead, Health, Intent, LocalPlayer, SimClock, Spectating};
+use chimera_core::console::ConsoleAppExt;
+use chimera_core::core::{DamageTaken, Dead, Health, Intent, LocalPlayer, MovementState, SimClock, Spectating, Velocity};
 use chimera_sim::{
     mode::{Match, Phase},
-    weapon::{Armor, Hitscan, Inventory, Magazine, Weapon, Zoomed, grenade::Throwable},
+    weapon::{AltModes, Armor, Inventory, Magazine, Weapon, Zoomed, grenade::Throwable},
 };
 use chimera_world::map::hud::UiImage;
 
@@ -110,18 +114,26 @@ pub mod consts {
     pub const PAIN_DRAIN: f32 = 2.0;
     pub const PAIN_NEAR: f32 = 50.0;
     pub const PAIN_SIDE: f32 = 0.3;
-    /// The crosshair's colour (`cl_crosshair_color` "50 250 50"), added.
+    /// The crosshair's defaults: `cl_crosshair_color` "50 250 50",
+    /// `cl_crosshair_translucent` 1, `cl_crosshair_size` auto.
     pub const CROSSHAIR_COLOUR: [u8; 3] = [50, 250, 50];
-    /// Ours (hud.md question 3): the gap at rest, a line's length by size
-    /// class (width under 640, under 1024, more), and the time constant a
-    /// gap closes with.
-    pub const CROSSHAIR_BASE_GAP: f32 = 4.0;
-    pub const CROSSHAIR_LENGTHS: [i32; 3] = [5, 7, 9];
-    pub const CROSSHAIR_CLOSE: f32 = 0.1;
-    /// The weapon menu: the top left corner, the space between cells, the
-    /// gap under the slot numbers, the dim, empty and chosen alphas, and
-    /// the empty colour.
-    pub const MENU_ORIGIN: i32 = 10;
+    /// The gap's most after shots (a base above it stays), and what a
+    /// drawn frame closes it by: a share of it and a flat pixel part.
+    pub const CROSSHAIR_MOST_GAP: f32 = 15.0;
+    pub const CROSSHAIR_CLOSE_SHARE: f32 = 0.013;
+    pub const CROSSHAIR_CLOSE_FLAT: f32 = 0.1;
+    /// The crosshair's alpha: at the start, what a shot takes off (down to
+    /// the least) and what a frame gives back (up to 255).
+    pub const CROSSHAIR_ALPHA: f32 = 200.0;
+    pub const CROSSHAIR_SHOT_ALPHA: f32 = 40.0;
+    pub const CROSSHAIR_LEAST_ALPHA: f32 = 120.0;
+    pub const CROSSHAIR_REGAIN_ALPHA: f32 = 2.0;
+    /// The scoped zoom steps (this field of view or less) hide it.
+    pub const CROSSHAIR_HIDDEN_FOV: f32 = 40.0;
+    /// The weapon menu: the top row's y, the space between cells, the
+    /// gap under the slot numbers and right of the radar, the dim, empty
+    /// and picture alphas, and the empty colour.
+    pub const MENU_TOP: i32 = 10;
     pub const MENU_GAP: i32 = 5;
     pub const MENU_UNDER: i32 = 10;
     pub const EMPTY_COLOUR: [u8; 3] = [255, 16, 16];
@@ -129,13 +141,17 @@ pub mod consts {
     pub const MENU_BOX_EMPTY_ALPHA: u8 = 96;
     pub const MENU_PICTURE_ALPHA: u8 = 192;
     pub const MENU_EMPTY_ALPHA: u8 = 128;
+    /// The ammunition bar's filled part's colour (the rest is the HUD
+    /// colour at `MENU_BOX_ALPHA`).
+    pub const MENU_BAR_COLOUR: [u8; 3] = [0, 160, 0];
     /// Slots the menu always shows.
     pub const MENU_SLOTS: usize = 5;
-    /// The round timer turns the warning colour under this many seconds.
+    /// The round timer flashes the reddish colour at this many seconds
+    /// or less.
     pub const TIMER_WARNING: u32 = 20;
-    /// A round with more than this left (99:59 is the most two minute
-    /// digits and two second digits show) has no limit worth showing.
-    pub const TIMER_MOST: u32 = 100 * 60 - 1;
+    /// A round with more than a day left has no limit worth showing (the
+    /// sandbox's).
+    pub const TIMER_MOST: u32 = 24 * 3600;
 }
 
 use consts::*;
@@ -152,6 +168,195 @@ pub enum Ammo {
     Count(u32),
 }
 
+/// The crosshair's size setting (`cl_crosshair_size`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CrossSize {
+    #[default]
+    Auto,
+    Small,
+    Medium,
+    Large,
+}
+
+impl CrossSize {
+    /// "auto", "small", "medium", "large" or 0-3.
+    pub fn parse(text: &str) -> Option<Self> {
+        Some(match text.trim().to_ascii_lowercase().as_str() {
+            "auto" | "0" => Self::Auto,
+            "small" | "1" => Self::Small,
+            "medium" | "2" => Self::Medium,
+            "large" | "3" => Self::Large,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+        }
+    }
+
+    /// The scale base on a screen `w` wide (hud.md, "Crosshair").
+    pub fn base(self, w: i32) -> i32 {
+        match self {
+            Self::Auto if w <= 640 => w,
+            Self::Auto if w < 1024 => 800,
+            Self::Auto | Self::Large => 640,
+            Self::Small => 1024,
+            Self::Medium => 800,
+        }
+    }
+}
+
+/// The crosshair's console variables (`cl_crosshair_color`, `_translucent`
+/// and `_size`; the shell's `cl_dynamiccrosshair` is read too).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrosshairLook {
+    pub colour: [u8; 3],
+    /// 1: added onto the frame; 0: blended.
+    pub translucent: u8,
+    pub size: CrossSize,
+}
+
+impl Default for CrosshairLook {
+    fn default() -> Self {
+        Self { colour: CROSSHAIR_COLOUR, translucent: 1, size: CrossSize::Auto }
+    }
+}
+
+/// `cl_crosshair_color`'s value: three integers, each clamped to 0-255.
+pub fn parse_colour(text: &str) -> Option<[u8; 3]> {
+    let v: Vec<i64> = text.split_whitespace().map(|n| n.parse().ok()).collect::<Option<_>>()?;
+    let [r, g, b] = v[..] else { return None };
+    Some([r, g, b].map(|c| c.clamp(0, 255) as u8))
+}
+
+/// Whether the weapon's x1.4 applies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Boost {
+    No,
+    /// Always (the M4A1's: its test looks at a USP's silencer).
+    Always,
+    /// In the weapon's first mode (semi-automatic, automatic, unsilenced).
+    FirstMode,
+}
+
+/// A weapon's crosshair (hud.md, "Per-weapon gap"): the base gap `base`
+/// and the step `step` a shot opens it by, and its movement rule.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rule {
+    pub base: i32,
+    pub step: f32,
+    /// Doubles in the air.
+    pub air: bool,
+    /// Halves ducked.
+    pub duck: bool,
+    /// Widens by 1.5 at this speed (units a second) or more, on the ground.
+    pub speed: Option<f32>,
+    pub boost: Boost,
+}
+
+impl Rule {
+    const fn new(base: i32, step: f32) -> Self {
+        Self { base, step, air: false, duck: false, speed: None, boost: Boost::No }
+    }
+    const fn moving(mut self, air: bool, duck: bool, speed: Option<f32>) -> Self {
+        self.air = air;
+        self.duck = duck;
+        self.speed = speed;
+        self
+    }
+    const fn boosted(mut self, boost: Boost) -> Self {
+        self.boost = boost;
+        self
+    }
+    fn has_movement(&self) -> bool {
+        self.air || self.duck || self.speed.is_some() || self.boost != Boost::No
+    }
+}
+
+/// The crosshair rule of weapon `id` (`cs16:weapon_ak47`); none: no
+/// crosshair at all (the four sniper rifles). A weapon outside the table:
+/// base 4, step 3, no movement rule.
+pub fn rule_of(id: &str) -> Option<Rule> {
+    let name = id.rsplit(':').next().unwrap_or(id);
+    let name = name.strip_prefix("weapon_").unwrap_or(name);
+    let pistol = Rule::new(8, 3.0).moving(true, true, Some(0.0));
+    let rifle = |base, step, speed| Rule::new(base, step).moving(true, false, Some(speed));
+    Some(match name {
+        "scout" | "awp" | "g3sg1" | "sg550" => return None,
+        "p228" | "deagle" | "fiveseven" => pistol,
+        "glock18" | "usp" => pistol.boosted(Boost::FirstMode),
+        "elite" => Rule::new(4, 3.0),
+        "m3" => Rule::new(8, 6.0),
+        "xm1014" => Rule::new(9, 4.0),
+        "mac10" => Rule::new(9, 3.0).moving(true, false, None),
+        "tmp" => Rule::new(7, 3.0).moving(true, false, None),
+        "mp5navy" | "ump45" => Rule::new(6, 3.0).moving(true, false, None),
+        "p90" => rifle(7, 3.0, 170.0),
+        "galil" => rifle(4, 3.0, 140.0),
+        "famas" => rifle(4, 3.0, 140.0).boosted(Boost::FirstMode),
+        "ak47" => rifle(4, 4.0, 140.0),
+        "m4a1" => rifle(4, 3.0, 140.0).boosted(Boost::Always),
+        "sg552" => rifle(5, 3.0, 140.0),
+        "aug" => rifle(3, 3.0, 140.0),
+        "m249" => rifle(6, 3.0, 140.0),
+        "knife" => Rule::new(7, 3.0),
+        "hegrenade" | "flashbang" | "smokegrenade" => Rule::new(8, 3.0),
+        "c4" => Rule::new(6, 3.0),
+        _ => Rule::new(4, 3.0),
+    })
+}
+
+/// The local player's movement as the crosshair reads it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stance {
+    pub on_ground: bool,
+    pub ducked: bool,
+    /// The whole velocity's length, units a second.
+    pub speed: f32,
+}
+
+impl Default for Stance {
+    fn default() -> Self {
+        Self { on_ground: true, ducked: false, speed: 0.0 }
+    }
+}
+
+/// This frame's base gap `d` (hud.md, "This frame's base"): the rule's
+/// base, then (`dynamic`: `cl_dynamiccrosshair`) the air, duck and speed
+/// rules and the x1.4, each product truncated; `mode`: the weapon's
+/// `AltModes` mode.
+pub fn base_gap(rule: &Rule, stance: &Stance, mode: u8, dynamic: bool) -> i32 {
+    let mut d = rule.base;
+    if !dynamic || !rule.has_movement() {
+        return d;
+    }
+    if rule.air && !stance.on_ground {
+        d *= 2;
+    } else if stance.ducked && rule.duck {
+        d /= 2;
+    } else if rule.speed.is_some_and(|v| stance.speed >= v) {
+        d = d * 3 / 2;
+    }
+    if rule.boost == Boost::Always || (rule.boost == Boost::FirstMode && mode == 0) {
+        d = d * 14 / 10;
+    }
+    d
+}
+
+/// The crosshair this frame: the base gap and step of the held weapon and
+/// the variables it is drawn by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Crosshair {
+    pub base: i32,
+    pub step: f32,
+    pub look: CrosshairLook,
+}
+
 /// What the HUD shows.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Frame {
@@ -163,54 +368,91 @@ pub struct Frame {
     /// The weapon in hand's id.
     pub weapon_id: String,
     pub ammo: Ammo,
-    /// The crosshair's target gap in pixels (the weapon's spread
-    /// projected, without the base gap); none: not drawn (dead, a scope up,
+    /// The crosshair; none: not drawn (dead, a sniper rifle, a scope up,
     /// no player).
-    pub crosshair: Option<f32>,
+    pub crosshair: Option<Crosshair>,
     /// The weapon selection while it is open.
     pub menu: Option<Menu>,
-    /// Seconds left of the round, while it runs.
+    /// Whole seconds left of the round, while it runs.
     pub timer: Option<u32>,
 }
 
 /// One weapon in the selection.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct MenuWeapon {
     pub id: String,
     /// No ammunition left (clip and reserve; a grenade's count).
     pub empty: bool,
+    /// The reserve and the most the ammunition type carries (0: none, no
+    /// bar).
+    pub reserve: u32,
+    pub most: u32,
 }
 
 /// The weapon selection: the weapons by slot (0-based) and the
-/// highlighted one's slot and place, and how opaque it is (0-1, fading).
+/// highlighted one's slot and place.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Menu {
     pub slots: Vec<Vec<MenuWeapon>>,
     pub chosen: Option<(usize, usize)>,
-    pub fade: f32,
 }
 
-/// The numbers' fades (fade units) and what they last showed.
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+/// The numbers' fades (fade units), the crosshair's gap state and the
+/// timer's flash, and what the numbers last showed.
+#[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Fades {
     pub health: f32,
     pub armour: f32,
     pub ammo: f32,
-    /// The crosshair's gap now (pixels, over the base gap).
+    /// The crosshair's gap now, pixels at the 640 scale (hud.md's `g`),
+    /// and its alpha.
     pub gap: f32,
+    pub alpha: f32,
+    /// Seconds into the timer's flash phase and whether it shows the
+    /// reddish colour (the first phase after the start does).
+    pub flash: f32,
+    pub reddish: bool,
     last: Option<(Option<u32>, (u32, bool), String, Ammo)>,
 }
 
+impl Default for Fades {
+    fn default() -> Self {
+        Self { health: 0.0, armour: 0.0, ammo: 0.0, gap: 0.0, alpha: CROSSHAIR_ALPHA, flash: 0.0, reddish: true, last: None }
+    }
+}
+
 impl Fades {
-    /// Drain the fades by `dt` seconds, then restart those whose value
-    /// changed in `f` (the first frame seen restarts none).
+    /// Drain the fades by `dt` seconds, step the crosshair's gap and the
+    /// timer's flash, then restart those fades whose value changed in `f`
+    /// (the first frame seen restarts none). The gap and its alpha move
+    /// once per call (per drawn frame, as hud.md has it), not per second.
     pub fn step(&mut self, f: &Frame, dt: f32) {
         for v in [&mut self.health, &mut self.armour, &mut self.ammo] {
             *v = (*v - DRAIN * dt).max(0.0);
         }
-        // The crosshair's gap opens at once and closes over a moment.
-        let target = f.crosshair.unwrap_or(0.0);
-        self.gap = if target >= self.gap { target } else { target + (self.gap - target) * (-dt / CROSSHAIR_CLOSE).exp() };
+        // A shot: this weapon's clip fell since the last frame.
+        let fired = matches!(
+            (&self.last, f.ammo),
+            (Some((_, _, w, Ammo::Magazine { clip: before, .. })), Ammo::Magazine { clip, .. }) if *w == f.weapon_id && clip < *before
+        );
+        if let Some(c) = &f.crosshair {
+            if fired {
+                self.gap = (self.gap + c.step).min(CROSSHAIR_MOST_GAP);
+                self.alpha = (self.alpha - CROSSHAIR_SHOT_ALPHA).max(CROSSHAIR_LEAST_ALPHA);
+            } else {
+                self.gap -= CROSSHAIR_CLOSE_SHARE * self.gap + CROSSHAIR_CLOSE_FLAT;
+                self.alpha += CROSSHAIR_REGAIN_ALPHA;
+            }
+            self.gap = self.gap.max(c.base as f32);
+            self.alpha = self.alpha.min(255.0);
+        }
+        if let Some(t) = f.timer.filter(|t| *t <= TIMER_WARNING) {
+            self.flash += dt;
+            if self.flash > t as f32 / 40.0 + 0.1 {
+                self.flash = 0.0;
+                self.reddish = !self.reddish;
+            }
+        }
         let now = (f.health, f.armour, f.weapon_id.clone(), f.ammo);
         if let Some((health, armour, weapon, ammo)) = &self.last {
             if *health != f.health {
@@ -309,78 +551,101 @@ fn number(out: &mut Vec<Draw>, n: u32, x: i32, y: i32, cell: Cell, colour: [u8; 
     x + (n.to_string().len() as i32).max(3) * cell.dw
 }
 
-/// The crosshair's four lines for a gap of `gap` pixels on a `w` x `h`
-/// screen: left, right, up, down; one pixel thick, `CROSSHAIR_LENGTHS` by
-/// the width's size class.
-pub fn crosshair_lines(gap: f32, w: i32, h: i32) -> Vec<Draw> {
-    let len = CROSSHAIR_LENGTHS[if w < 640 { 0 } else if w < 1024 { 1 } else { 2 }];
-    let g = (CROSSHAIR_BASE_GAP + gap).round() as i32;
-    let (cx, cy) = (w / 2, h / 2);
-    [[cx - g - len, cy, len, 1], [cx + g, cy, len, 1], [cx, cy - g - len, 1, len], [cx, cy + g, 1, len]]
+/// The crosshair's four lines (hud.md, "Crosshair"): gap state `g` (at the
+/// 640 scale), this frame's base `d`, alpha `a`, on a `w` x `h` screen;
+/// left, right, up, down, one pixel thick. The length is `(g - d) / 2 + 5`
+/// truncated; with the scale base `S` of `cl_crosshair_size` other than
+/// `w`, the gap and length scale by `w / S`. Added onto the frame when
+/// translucent, else blended.
+pub fn crosshair_lines(c: &Crosshair, g: f32, a: f32, w: i32, h: i32) -> Vec<Draw> {
+    let length = ((g - c.base as f32) * 0.5 + 5.0) as i32;
+    let s = c.look.size.base(w);
+    let (gap, len) = if s == w { (g, length) } else { (w as f32 * g / s as f32, (w as f32 * length as f32 / s as f32) as i32) };
+    let (cx, cy) = ((w / 2) as f32, (h / 2) as f32);
+    let (cx_i, cy_i) = (w / 2, h / 2);
+    let rects = [
+        [(cx - gap - len as f32 + 1.0) as i32, cy_i, len, 1],
+        [(cx + gap) as i32, cy_i, len, 1],
+        [cx_i, (cy - gap - len as f32 + 1.0) as i32, 1, len],
+        [cx_i, (cy + gap) as i32, 1, len],
+    ];
+    let alpha = a.clamp(0.0, 255.0) as u8;
+    rects
         .into_iter()
-        .map(|rect| Draw::Add { rect, colour: CROSSHAIR_COLOUR, alpha: 255 })
+        .map(|rect| if c.look.translucent == 1 { Draw::Add { rect, colour: c.look.colour, alpha } } else { Draw::Fill { rect, colour: c.look.colour, alpha } })
         .collect()
 }
 
 /// The weapon selection laid out (hud.md, "Weapon menu"): the slot
-/// numbers along the top, a box per weapon under a closed slot, the open
-/// slot's pictures under its number.
-fn menu_draws(out: &mut Vec<Draw>, m: &Menu, size: &impl Fn(&str) -> Option<UVec2>) {
-    let fade = m.fade.clamp(0.0, 1.0);
-    let a = |v: u8| (v as f32 * fade) as u8;
+/// numbers along the top from the radar's right, a box per weapon under a
+/// closed slot, the open slot's pictures under its number with an
+/// ammunition bar each; `w`: the screen's width (the layout).
+fn menu_draws(out: &mut Vec<Draw>, m: &Menu, w: i32, size: &impl Fn(&str) -> Option<UVec2>) {
+    let wide = w >= 640;
     let bucket = |slot: usize| format!("bucket{}", (slot + 1) % 10);
-    let cell = size("bucket1").unwrap_or(UVec2::splat(20));
-    let top = MENU_ORIGIN + cell.y as i32 + MENU_UNDER;
-    let mut x = MENU_ORIGIN;
+    let cell = size("bucket1").unwrap_or(UVec2::splat(if wide { 20 } else { 12 }));
+    let radar = size("radar").map_or(if wide { 128 } else { 64 }, |s| s.x as i32);
+    let fallback = if wide { UVec2::new(170, 45) } else { UVec2::new(80, 20) };
+    let (bar_w, bar_h) = if wide { (20, 4) } else { (10, 2) };
+    let top = cell.y as i32 + MENU_UNDER;
+    let mut x = radar + MENU_UNDER;
     for slot in 0..m.slots.len().max(MENU_SLOTS) {
         let weapons = m.slots.get(slot).map(Vec::as_slice).unwrap_or(&[]);
         let open = m.chosen.is_some_and(|(s, _)| s == slot);
-        let wide = if open { weapons.iter().filter_map(|w| size(&menu_key(&w.id))).map(|s| s.x as i32).max() } else { None };
-        out.push(Draw::Sprite { pic: bucket(slot), x, y: MENU_ORIGIN, src: None, colour: HUD_COLOUR, alpha: a(255) });
-        for (k, w) in weapons.iter().enumerate() {
+        let first = weapons.first().map_or(fallback, |w| size(&menu_key(&w.id)).unwrap_or(fallback));
+        out.push(Draw::Sprite { pic: bucket(slot), x, y: MENU_TOP, src: None, colour: HUD_COLOUR, alpha: 255 });
+        for (k, weapon) in weapons.iter().enumerate() {
             if open {
-                let sz = size(&menu_key(&w.id)).unwrap_or(UVec2::new(170, 45));
-                let y = top + k as i32 * (sz.y as i32 + MENU_GAP);
+                let y = top + k as i32 * (first.y as i32 + MENU_GAP);
+                let (colour, alpha) = if weapon.empty { (EMPTY_COLOUR, MENU_EMPTY_ALPHA) } else { (HUD_COLOUR, MENU_PICTURE_ALPHA) };
                 if m.chosen == Some((slot, k)) {
-                    out.push(Draw::Sprite { pic: menu_lit_key(&w.id), x, y, src: None, colour: HUD_COLOUR, alpha: a(255) });
-                    out.push(Draw::Sprite { pic: "selection".into(), x, y, src: None, colour: HUD_COLOUR, alpha: a(255) });
-                } else if w.empty {
-                    out.push(Draw::Sprite { pic: menu_key(&w.id), x, y, src: None, colour: EMPTY_COLOUR, alpha: a(MENU_EMPTY_ALPHA) });
+                    out.push(Draw::Sprite { pic: menu_lit_key(&weapon.id), x, y, src: None, colour, alpha });
+                    out.push(Draw::Sprite { pic: "selection".into(), x, y, src: None, colour, alpha });
                 } else {
-                    out.push(Draw::Sprite { pic: menu_key(&w.id), x, y, src: None, colour: HUD_COLOUR, alpha: a(MENU_PICTURE_ALPHA) });
+                    out.push(Draw::Sprite { pic: menu_key(&weapon.id), x, y, src: None, colour, alpha });
+                }
+                if weapon.reserve > 0 && weapon.most > 0 {
+                    let f = (weapon.reserve as f32 / weapon.most as f32).clamp(0.0, 1.0);
+                    let filled = ((f * bar_w as f32) as i32).max(1);
+                    let bx = x + bar_w / 2;
+                    out.push(Draw::Add { rect: [bx, y, filled, bar_h], colour: MENU_BAR_COLOUR, alpha: 255 });
+                    if filled < bar_w {
+                        out.push(Draw::Add { rect: [bx + filled, y, bar_w - filled, bar_h], colour: HUD_COLOUR, alpha: MENU_BOX_ALPHA });
+                    }
                 }
             } else {
                 let y = top + k as i32 * (cell.y as i32 + MENU_GAP);
-                let (colour, alpha) = if w.empty { (EMPTY_COLOUR, MENU_BOX_EMPTY_ALPHA) } else { (HUD_COLOUR, MENU_BOX_ALPHA) };
-                out.push(Draw::Fill { rect: [x, y, cell.x as i32, cell.y as i32], colour, alpha: a(alpha) });
+                let (colour, alpha) = if weapon.empty { (EMPTY_COLOUR, MENU_BOX_EMPTY_ALPHA) } else { (HUD_COLOUR, MENU_BOX_ALPHA) };
+                out.push(Draw::Add { rect: [x, y, cell.x as i32, cell.y as i32], colour, alpha });
             }
         }
-        x += wide.unwrap_or(cell.x as i32) + MENU_GAP;
+        x += if open { first.x as i32 } else { cell.x as i32 } + MENU_GAP;
     }
 }
 
-/// The round timer: the stopwatch, minutes, a colon of two squares and
-/// two seconds digits, centred on the screen's middle on the health row.
-fn timer_draws(out: &mut Vec<Draw>, secs: u32, w: i32, y0: i32, row: i32, cell: Cell, alpha: u8, size: &impl Fn(&str) -> Option<UVec2>) {
-    let colour = if secs < TIMER_WARNING { WARNING_COLOUR } else { HUD_COLOUR };
-    let icon = size("stopwatch").unwrap_or(UVec2::splat(ICON as u32));
+/// The round timer (hud.md, "Round timer"): the stopwatch with its left
+/// edge on the screen's centre, the minutes in two places, a colon of two
+/// 2 x 2 squares and the seconds in two, all at the dim alpha, in the
+/// reddish colour in the warning's flash phase. Whole seconds `secs`.
+fn timer_draws(out: &mut Vec<Draw>, secs: u32, reddish: bool, w: i32, h: i32, cell: Cell, size: &impl Fn(&str) -> Option<UVec2>) {
+    let colour = if secs <= TIMER_WARNING && reddish { EMPTY_COLOUR } else { HUD_COLOUR };
+    let alpha = DIM as u8;
+    let sw = size("stopwatch").map_or(ICON, |s| s.x as i32);
+    let y = (h as f32 - 1.5 * cell.fh as f32) as i32;
+    out.push(Draw::Sprite { pic: "stopwatch".into(), x: w / 2, y, src: None, colour, alpha });
+    let from = w / 2 + sw / 4;
     let minutes = (secs / 60).to_string();
-    let colon = cell.dw / 2;
-    let total = icon.x as i32 + (minutes.len() as i32 + 2) * cell.dw + colon;
-    let mut x = w / 2 - total / 2;
-    out.push(Draw::Sprite { pic: "stopwatch".into(), x, y: y0, src: None, colour, alpha });
-    x += icon.x as i32;
-    for b in minutes.bytes() {
-        out.push(Draw::Sprite { pic: format!("number_{}", b - b'0'), x, y: row, src: None, colour, alpha });
-        x += cell.dw;
+    let first = from + (2 - minutes.len() as i32) * cell.dw;
+    for (k, b) in minutes.bytes().enumerate() {
+        out.push(Draw::Sprite { pic: format!("number_{}", b - b'0'), x: first + k as i32 * cell.dw, y, src: None, colour, alpha });
     }
-    let square = (cell.dw / 5).max(1);
-    for third in [3, 7] {
-        out.push(Draw::Fill { rect: [x + (colon - square) / 2, row + cell.fh * third / 10, square, square], colour, alpha });
+    let end = from + 2 * cell.dw;
+    for dy in [cell.fh / 4, cell.fh - cell.fh / 4] {
+        out.push(Draw::Add { rect: [end + sw / 4, y + dy, 2, 2], colour, alpha });
     }
-    x += colon;
+    let mut x = end + sw / 2;
     for d in [secs % 60 / 10, secs % 10] {
-        out.push(Draw::Sprite { pic: format!("number_{d}"), x, y: row, src: None, colour, alpha });
+        out.push(Draw::Sprite { pic: format!("number_{d}"), x, y, src: None, colour, alpha });
         x += cell.dw;
     }
 }
@@ -394,12 +659,12 @@ pub fn draws(f: &Frame, fades: &Fades, pain: &[f32; 4], w: i32, h: i32, size: im
     let health_now = f.health.unwrap_or(100);
     // The crosshair, then the selection over the view.
     if f.health.is_some()
-        && let Some(_) = f.crosshair
+        && let Some(c) = &f.crosshair
     {
-        out.extend(crosshair_lines(fades.gap, w, h));
+        out.extend(crosshair_lines(c, fades.gap, fades.alpha, w, h));
     }
     if let Some(m) = &f.menu {
-        menu_draws(&mut out, m, &size);
+        menu_draws(&mut out, m, w, &size);
     }
     // The pain arcs (hud.md, "Damage direction").
     for (k, s) in pain.iter().enumerate() {
@@ -423,7 +688,7 @@ pub fn draws(f: &Frame, fades: &Fades, pain: &[f32; 4], w: i32, h: i32, size: im
     let row = y0 + cell.fh / 5;
     // The round timer.
     if let Some(secs) = f.timer {
-        timer_draws(&mut out, secs, w, y0, row, cell, DIM as u8, &size);
+        timer_draws(&mut out, secs, fades.reddish, w, h, cell, &size);
     }
     // Health.
     let cross = size("cross").map_or(ICON, |s| s.x as i32);
@@ -649,41 +914,47 @@ pub fn spawn_root(mut commands: Commands) {
     ));
 }
 
-/// `hud_fastswitch` (`cs16:hud_fastswitch`): 1 by default, as CS:S's in the
-/// party; 0: the slot keys open the weapon selection (hud.md, "Weapon
-/// menu") and attack takes the weapon.
-#[derive(Resource)]
+/// `hud_fastswitch` (`cs16:hud_fastswitch`): 0 by default, as hud.md has
+/// it (parity); 0: the slot keys open the weapon selection (hud.md,
+/// "Weapon menu") and attack takes the weapon; 1: slot keys switch at once.
+#[derive(Resource, Default)]
 pub struct FastSwitch(pub u8);
-
-impl Default for FastSwitch {
-    fn default() -> Self {
-        FastSwitch(1)
-    }
-}
 
 /// Slot keys go through the shell's weapon selection with fast switch off
 /// while this HUD has its pictures.
 pub fn takes_slots(menu: Option<ResMut<WeaponMenu>>, fast: Res<FastSwitch>, pictures: Res<HudPictures>) {
     if let Some(mut menu) = menu {
-        let takes = fast.0 == 0 && pictures.0.contains_key(&640);
+        let takes = fast.0 == 0 && !pictures.0.is_empty();
         if menu.takes_slots != takes {
             menu.takes_slots = takes;
         }
     }
 }
 
-/// The weapon selection as the HUD shows it: the weapons held by slot, the
-/// highlighted one's place, the fade.
-fn menu_frame(
-    menu: &WeaponMenu,
-    times: &WeaponMenuTimes,
-    inv: Option<&Inventory>,
-    weapons: &Query<(&Weapon, Option<&Magazine>, Option<&Throwable>, Option<&Hitscan>)>,
-) -> Option<Menu> {
+/// The weapon selection has no timeout (hud.md, "Closing"): while it is
+/// open its clock is held at the start, so the shell never closes it; it
+/// closes when the local player dies or spectates.
+pub fn keep_open(menu: Option<ResMut<WeaponMenu>>, player: Option<Single<(Has<Dead>, Has<Spectating>), With<LocalPlayer>>>) {
+    let Some(mut menu) = menu else { return };
+    if !menu.choosing || menu.shown_for.is_none() {
+        return;
+    }
+    if player.is_some_and(|p| p.0 || p.1) {
+        menu.cancel();
+    } else if menu.shown_for != Some(0.0) {
+        menu.shown_for = Some(0.0);
+    }
+}
+
+/// The weapons a player's frame reads.
+type WeaponQuery<'w, 's> = Query<'w, 's, (&'static Weapon, Option<&'static Magazine>, Option<&'static Throwable>, Option<&'static AltModes>)>;
+
+/// The weapon selection as the HUD shows it: the weapons held by slot and
+/// the highlighted one's place.
+fn menu_frame(menu: &WeaponMenu, inv: Option<&Inventory>, weapons: &WeaponQuery) -> Option<Menu> {
     if !menu.choosing {
         return None;
     }
-    let fade = menu.alpha(times)?;
     let mut slots: Vec<Vec<MenuWeapon>> = Vec::new();
     let mut chosen = None;
     for e in inv.map_or(&[][..], |i| &i.weapons[..]) {
@@ -700,21 +971,26 @@ fn menu_frame(
         if menu.highlighted == Some(*e) {
             chosen = Some((slot, slots[slot].len()));
         }
-        slots[slot].push(MenuWeapon { id: w.id.to_string(), empty });
+        let (reserve, most) = mag.map_or((0, 0), |m| (m.reserve, m.reserve_max));
+        slots[slot].push(MenuWeapon { id: w.id.to_string(), empty, reserve, most });
     }
-    Some(Menu { slots, chosen, fade })
+    Some(Menu { slots, chosen })
 }
 
 /// The local player's state into the frame, the fades stepped, the
 /// window's size read.
 #[allow(clippy::type_complexity)]
 pub fn collect(
-    player: Option<Single<(&Health, Option<&Armor>, Option<&Inventory>, Has<Dead>, Has<Spectating>, Option<&Zoomed>), With<LocalPlayer>>>,
-    weapons: Query<(&Weapon, Option<&Magazine>, Option<&Throwable>, Option<&Hitscan>)>,
+    player: Option<
+        Single<
+            (&Health, Option<&Armor>, Option<&Inventory>, Has<Dead>, Has<Spectating>, Option<&Zoomed>, Option<&Velocity>, Option<&MovementState>),
+            With<LocalPlayer>,
+        >,
+    >,
+    weapons: WeaponQuery,
     windows: Query<&Window>,
-    camera: Query<&Projection, With<FirstPersonCamera>>,
-    (menu, times): (Option<Res<WeaponMenu>>, Option<Res<WeaponMenuTimes>>),
-    (round, clock, crosshair): (Option<Res<Match>>, Option<Res<SimClock>>, Option<Res<CrosshairColor>>),
+    menu: Option<Res<WeaponMenu>>,
+    (round, clock, crosshair, look): (Option<Res<Match>>, Option<Res<SimClock>>, Option<Res<CrosshairColor>>, Option<Res<CrosshairLook>>),
     time: Option<Res<Time>>,
     mut fades: ResMut<Fades>,
     mut state: ResMut<Cs16HudState>,
@@ -725,7 +1001,7 @@ pub fn collect(
         .map_or(state.screen, |w| (w.physical_width() as i32, w.physical_height() as i32, w.scale_factor()));
     let f = match player {
         Some(p) => {
-            let (health, armour, inv, dead, spectating, zoomed) = *p;
+            let (health, armour, inv, dead, spectating, zoomed, velocity, movement) = *p;
             let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
             let ammo = match held {
                 Some((_, Some(m), ..)) => Ammo::Magazine { clip: m.clip, reserve: m.reserve },
@@ -733,14 +1009,21 @@ pub fn collect(
                 _ => Ammo::None,
             };
             let alive = !dead && !spectating;
-            // The spread (tangent units) as pixels on this screen.
-            let fov = camera.iter().next().map_or(1.5, |p| if let Projection::Perspective(p) = p { p.fov } else { 1.5 });
-            let spread = held.and_then(|(.., h)| h).map_or(0.0, |h| h.spread.width());
             let dynamic = crosshair.is_none_or(|c| c.dynamic != 0);
-            let gap = if dynamic { spread / (fov / 2.0).tan() * screen.1 as f32 / 2.0 } else { 0.0 };
+            let stance = Stance {
+                on_ground: movement.is_none_or(|m| m.on_ground),
+                ducked: movement.is_some_and(|m| m.crouching),
+                speed: velocity.map_or(0.0, |v| v.0.length() / METERS_PER_UNIT),
+            };
+            let mode = held.and_then(|(.., a)| a).map_or(0, |a| a.current);
+            let scoped = zoomed.is_some_and(|z| z.fov <= CROSSHAIR_HIDDEN_FOV);
+            let crosshair = held
+                .and_then(|(w, ..)| rule_of(w.id))
+                .filter(|_| alive && !scoped)
+                .map(|rule| Crosshair { base: base_gap(&rule, &stance, mode, dynamic), step: rule.step, look: look.map_or_else(CrosshairLook::default, |l| *l) });
             let timer = round.zip(clock).and_then(|(m, c)| {
                 (m.phase == Phase::Live)
-                    .then(|| m.round_ends.map(|e| (e - c.now).max(0.0).ceil() as u32))
+                    .then(|| m.round_ends.map(|e| (e - c.now).max(0.0) as u32))
                     .flatten()
                     .filter(|left| *left <= TIMER_MOST)
             });
@@ -749,8 +1032,8 @@ pub fn collect(
                 armour: armour.map_or((0, false), |a| ((a.amount * 100.0).round().max(0.0) as u32, a.helmet)),
                 weapon_id: held.map(|(w, ..)| w.id.to_string()).unwrap_or_default(),
                 ammo,
-                crosshair: (alive && !zoomed.is_some_and(|z| z.scope)).then_some(gap),
-                menu: menu.zip(times).and_then(|(m, t)| menu_frame(&m, &t, inv, &weapons)).filter(|_| alive),
+                crosshair,
+                menu: menu.and_then(|m| menu_frame(&m, inv, &weapons)).filter(|_| alive),
                 timer,
             }
         }
@@ -892,6 +1175,46 @@ pub fn sync(
     }
 }
 
+/// `cl_crosshair_color`, `_translucent` and `_size` (hud.md, "Console
+/// variables"): a bad value prints its usage; translucent is then reset to
+/// 1 and the size kept.
+fn register_crosshair_cvars(app: &mut App) {
+    let d = CrosshairLook::default();
+    app.console_cvar(
+        "cs16:cl_crosshair_color",
+        "CS 1.6's crosshair colour: three integers 0-255, \"50 250 50\".",
+        "50 250 50",
+        |w| w.get_resource::<CrosshairLook>().map(|l| format!("{} {} {}", l.colour[0], l.colour[1], l.colour[2])),
+        |w, v| {
+            let c = parse_colour(v).ok_or("usage: cs16:cl_crosshair_color \"<red> <green> <blue>\" (0-255 each)")?;
+            w.get_resource_or_init::<CrosshairLook>().colour = c;
+            Ok(())
+        },
+    );
+    app.console_cvar(
+        "cs16:cl_crosshair_translucent",
+        "1: the crosshair is added onto the frame; 0: blended at its alpha.",
+        "1",
+        |w| w.get_resource::<CrosshairLook>().map(|l| l.translucent.to_string()),
+        |w, v| {
+            let t = v.trim().parse::<u8>().ok().filter(|t| *t <= 1);
+            w.get_resource_or_init::<CrosshairLook>().translucent = t.unwrap_or(1);
+            t.map(|_| ()).ok_or_else(|| "usage: cs16:cl_crosshair_translucent 0 or 1 (reset to 1)".to_string())
+        },
+    );
+    app.console_cvar(
+        "cs16:cl_crosshair_size",
+        "CS 1.6's crosshair size: auto, small, medium, large (or 0-3).",
+        d.size.name(),
+        |w| w.get_resource::<CrosshairLook>().map(|l| l.size.name().to_string()),
+        |w, v| {
+            let s = CrossSize::parse(v).ok_or("usage: cs16:cl_crosshair_size auto, small, medium or large (0-3); kept")?;
+            w.get_resource_or_init::<CrosshairLook>().size = s;
+            Ok(())
+        },
+    );
+}
+
 /// CS 1.6's HUD: its state, root and nodes, drawing while its HUD is the
 /// gameplay's; its pictures and kill icons loaded once here.
 pub struct Cs16HudPlugin;
@@ -901,12 +1224,15 @@ impl Plugin for Cs16HudPlugin {
         app.world_mut().get_resource_or_init::<chimera_client::client::hud::HudDraws>().0.push((GAME, DRAWS));
         // Its kill feed is the app's: it shows none of its own.
         chimera_client::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, GAME, |_| 0);
+        app.init_resource::<FastSwitch>();
         chimera_core::console::resource_cvar::<FastSwitch, u8>(
             app,
             "cs16:hud_fastswitch",
-            "0: a slot key opens the weapon selection, attack takes the weapon (CS 1.6's default); 1: slot keys switch at once (ours by default).",
+            "0: a slot key opens the weapon selection, attack takes the weapon (CS 1.6's default); 1: slot keys switch at once.",
             |f| &mut f.0,
         );
+        app.init_resource::<CrosshairLook>();
+        register_crosshair_cvars(app);
         app.init_resource::<Cs16HudState>()
             .init_resource::<Fades>()
             .init_resource::<Pain>()
@@ -919,7 +1245,7 @@ impl Plugin for Cs16HudPlugin {
                 Update,
                 (
                     // Before the shell's selection reads the slot keys.
-                    takes_slots.before(chimera_client::client::weapon_menu::menu_input).run_if(chimera_core::gameplay::hud_is(GAME)),
+                    (takes_slots, keep_open).before(menu_input).run_if(chimera_core::gameplay::hud_is(GAME)),
                     (collect, pain, sync).chain().run_if(chimera_core::gameplay::hud_is(GAME)),
                     load_pictures,
                 ),
@@ -1020,22 +1346,288 @@ mod tests {
         assert!(sprites(&draws(&knife, &Fades::default(), &[0.0; 4], 640, 480, sizes), "ammo:").is_empty());
     }
 
-    /// The crosshair opens to the target at once and closes over a moment.
+    fn ak_crosshair(base: i32) -> Crosshair {
+        Crosshair { base, step: 4.0, look: CrosshairLook::default() }
+    }
+
+    fn with(c: Crosshair, clip: u32) -> Frame {
+        Frame { health: Some(100), weapon_id: "cs16:weapon_ak47".into(), ammo: Ammo::Magazine { clip, reserve: 90 }, crosshair: Some(c), ..default() }
+    }
+
+    fn stance(on_ground: bool, ducked: bool, speed: f32) -> Stance {
+        Stance { on_ground, ducked, speed }
+    }
+
+    fn base(id: &str, s: Stance, mode: u8) -> i32 {
+        base_gap(&rule_of(id).unwrap(), &s, mode, true)
+    }
+
+    /// hud.md's test cases: the base gap by weapon, stance and mode.
     #[test]
-    fn the_crosshair_gap_opens_at_once_and_closes_slowly() {
+    fn the_base_gap_follows_the_weapon_rules() {
+        let (still, run, air, duck) = (stance(true, false, 0.0), stance(true, false, 250.0), stance(false, false, 0.0), stance(true, true, 0.0));
+        assert_eq!([base("cs16:weapon_ak47", still, 0), base("cs16:weapon_ak47", run, 0), base("cs16:weapon_ak47", air, 0)], [4, 6, 8]);
+        // The M4A1: x1.4 with the silencer on or off (mode 0 or 1).
+        assert_eq!([base("cs16:weapon_m4a1", still, 0), base("cs16:weapon_m4a1", still, 1)], [5, 5]);
+        assert_eq!([base("cs16:weapon_m4a1", run, 0), base("cs16:weapon_m4a1", air, 0)], [8, 11]);
+        // A pistol's speed rule starts at 0: standing already widens it.
+        assert_eq!([base("cs16:weapon_deagle", still, 0), base("cs16:weapon_deagle", duck, 0), base("cs16:weapon_deagle", air, 0)], [12, 4, 16]);
+        assert_eq!([base("cs16:weapon_glock18", still, 0), base("cs16:weapon_glock18", still, 1)], [16, 12], "semi-automatic, burst");
+        assert_eq!([base("cs16:weapon_usp", still, 0), base("cs16:weapon_usp", still, 1)], [16, 12], "without, with the silencer");
+        assert_eq!([base("cs16:weapon_famas", stance(true, false, 0.0), 0), base("cs16:weapon_famas", still, 1)], [5, 4]);
+        assert_eq!([base("cs16:weapon_mp5navy", still, 0), base("cs16:weapon_mp5navy", air, 0)], [6, 12]);
+        // The p90 widens from 170, the AK from 140; shotguns and the elite never move.
+        assert_eq!([base("cs16:weapon_p90", stance(true, false, 160.0), 0), base("cs16:weapon_p90", stance(true, false, 170.0), 0)], [7, 10]);
+        assert_eq!([base("cs16:weapon_m3", air, 0), base("cs16:weapon_elite", run, 0), base("cs16:weapon_knife", air, 0)], [8, 4, 7]);
+        // Not in the table: 4, no rule.
+        assert_eq!(base("cs16:weapon_unknown", air, 0), 4);
+        // cl_dynamiccrosshair 0: movement doesn't widen it.
+        assert_eq!(base_gap(&rule_of("cs16:weapon_ak47").unwrap(), &air, 0, false), 4);
+        // The snipers have none at all.
+        for id in ["scout", "awp", "g3sg1", "sg550"] {
+            assert_eq!(rule_of(&format!("cs16:weapon_{id}")), None);
+        }
+        assert_eq!(rule_of("cs16:weapon_aug").map(|r| r.base), Some(3));
+    }
+
+    /// hud.md's test cases: shots open the gap by a step, a frame closes
+    /// it 1.3 % + 0.1 pixel, per drawn frame whatever its length.
+    #[test]
+    fn the_gap_opens_by_a_step_per_shot_and_closes_per_frame() {
         let mut f = Fades::default();
-        let at = |gap| Frame { health: Some(100), crosshair: Some(gap), ..default() };
-        f.step(&at(30.0), 0.016);
-        assert_eq!(f.gap, 30.0);
-        f.step(&at(0.0), 0.1);
-        assert!((f.gap - 30.0 * (-1.0f32).exp()).abs() < 0.01);
-        f.step(&at(0.0), 2.0);
-        assert!(f.gap < 0.001);
-        // Lines: 1920 wide takes 9 pixel lines, 4 + gap from the centre.
-        let lines = crosshair_lines(0.0, 1920, 1080);
-        assert_eq!(lines[0], Draw::Add { rect: [947, 540, 9, 1], colour: CROSSHAIR_COLOUR, alpha: 255 });
-        assert_eq!(crosshair_lines(0.0, 800, 600).len(), 4);
-        assert!(matches!(crosshair_lines(0.0, 639, 480)[0], Draw::Add { rect: [r, _, 5, 1], .. } if r == 639 / 2 - 4 - 5));
+        f.step(&with(ak_crosshair(4), 30), 0.016);
+        // At rest: the base, the alpha 200 + 2 (it starts at 200).
+        assert_eq!((f.gap, f.alpha), (4.0, 202.0));
+        // One shot: 4 + 4 = 8, the alpha 40 down from where it was.
+        let before = f.alpha;
+        f.step(&with(ak_crosshair(4), 29), 0.0);
+        assert_eq!((f.gap, f.alpha), (8.0, before - 40.0));
+        // A frame without one: 8 - (0.104 + 0.1).
+        f.step(&with(ak_crosshair(4), 29), 0.0);
+        assert!((f.gap - 7.796).abs() < 1e-4, "{}", f.gap);
+        // The frame's length changes nothing.
+        let mut g = f.clone();
+        f.step(&with(ak_crosshair(4), 29), 0.001);
+        g.step(&with(ak_crosshair(4), 29), 1.0);
+        assert_eq!(f.gap, g.gap);
+        // From 15 back to the AK's 4 takes 51 frames.
+        let mut f = Fades { gap: 15.0, ..default() };
+        let mut frames = 0;
+        while f.gap > 4.0 {
+            f.step(&with(ak_crosshair(4), 30), 0.01);
+            frames += 1;
+        }
+        assert_eq!((frames, f.gap), (51, 4.0));
+        // Three shots in three frames of the M3 (step 6): up to 15.
+        let m3 = |clip| Frame { weapon_id: "cs16:weapon_m3".into(), crosshair: Some(Crosshair { base: 8, step: 6.0, look: CrosshairLook::default() }), ..with(ak_crosshair(8), clip) };
+        let mut f = Fades::default();
+        f.step(&m3(8), 0.0);
+        assert_eq!(f.gap, 8.0);
+        f.step(&m3(7), 0.0);
+        assert_eq!(f.gap, 14.0);
+        f.step(&m3(6), 0.0);
+        assert_eq!(f.gap, 15.0, "clamped");
+        // A base above 15 stays; the grenades and knife (no clip) never open it.
+        let mut f = Fades::default();
+        f.step(&with(ak_crosshair(16), 30), 0.0);
+        assert_eq!(f.gap, 16.0);
+        let he = |n| Frame { health: Some(100), weapon_id: "cs16:weapon_hegrenade".into(), ammo: Ammo::Count(n), crosshair: Some(Crosshair { base: 8, step: 3.0, look: CrosshairLook::default() }), ..default() };
+        let mut f = Fades::default();
+        f.step(&he(2), 0.0);
+        f.step(&he(1), 0.0);
+        assert_eq!(f.gap, 8.0);
+    }
+
+    /// hud.md's test cases: the lines' places and lengths, the scale
+    /// bases, translucent or blended.
+    #[test]
+    fn the_lines_follow_the_size_setting() {
+        let rects = |l: Vec<Draw>| l.into_iter().map(|d| match d { Draw::Add { rect, .. } | Draw::Fill { rect, .. } => rect, _ => panic!() }).collect::<Vec<_>>();
+        let c = ak_crosshair(4);
+        // 640 x 480 at rest: left 312-316, right 324-328, top 232-236, bottom 244-248.
+        assert_eq!(rects(crosshair_lines(&c, 4.0, 200.0, 640, 480)), vec![[312, 240, 5, 1], [324, 240, 5, 1], [320, 232, 1, 5], [320, 244, 1, 5]]);
+        // One shot: gap 8, length (8 - 4) / 2 + 5 = 7.
+        assert_eq!(rects(crosshair_lines(&c, 8.0, 160.0, 640, 480))[0], [306, 240, 7, 1]);
+        // Auto at 1920 x 1080: scale 3, gap 12, lines 15.
+        assert_eq!(rects(crosshair_lines(&c, 4.0, 200.0, 1920, 1080)), vec![[934, 540, 15, 1], [972, 540, 15, 1], [960, 514, 1, 15], [960, 552, 1, 15]]);
+        // Auto at 800 x 600: as at 640 (scale 1).
+        assert_eq!(rects(crosshair_lines(&c, 4.0, 200.0, 800, 600))[1], [404, 300, 5, 1]);
+        // Rest lengths with auto: 5 up to 800 wide (the table's scale 800 gives 6 at 1023, where
+        // the prose says 5: the table is followed), 8 at 1024, 10 at 1280, 15 at 1920.
+        let long = |w| match crosshair_lines(&c, 4.0, 200.0, w, w * 3 / 4)[0] { Draw::Add { rect, .. } => rect[2], _ => 0 };
+        assert_eq!([long(640), long(800), long(1023), long(1024), long(1280), long(1920)], [5, 5, 6, 8, 10, 15]);
+        // Small at 640 x 480: gap 2.5, lines 3.
+        let small = Crosshair { look: CrosshairLook { size: CrossSize::Small, ..default() }, ..c };
+        assert_eq!(rects(crosshair_lines(&small, 4.0, 200.0, 640, 480))[..2], [[315, 240, 3, 1], [322, 240, 3, 1]]);
+        // The colour, alpha and blending by the variables.
+        let blended = Crosshair { look: CrosshairLook { translucent: 0, colour: [1, 2, 3], ..default() }, ..c };
+        assert_eq!(crosshair_lines(&blended, 4.0, 200.0, 640, 480)[0], Draw::Fill { rect: [312, 240, 5, 1], colour: [1, 2, 3], alpha: 200 });
+        assert!(matches!(crosshair_lines(&c, 4.0, 200.0, 640, 480)[0], Draw::Add { colour: CROSSHAIR_COLOUR, alpha: 200, .. }));
+    }
+
+    #[test]
+    fn the_variables_parse_as_the_spec_says() {
+        assert_eq!(parse_colour("50 250 50"), Some([50, 250, 50]));
+        assert_eq!(parse_colour("300 -4 7"), Some([255, 0, 7]));
+        assert_eq!(parse_colour("1 2"), None);
+        assert_eq!(parse_colour("red"), None);
+        assert_eq!(CrossSize::parse("Large"), Some(CrossSize::Large));
+        assert_eq!(CrossSize::parse("2"), Some(CrossSize::Medium));
+        assert_eq!(CrossSize::parse("4"), None);
+        assert_eq!(CrosshairLook::default(), CrosshairLook { colour: [50, 250, 50], translucent: 1, size: CrossSize::Auto });
+    }
+
+    /// hud.md's test cases: the timer's flash phases.
+    #[test]
+    fn the_timer_flashes_reddish_at_twenty_seconds() {
+        let at = |t| Frame { health: Some(100), timer: Some(t), ..default() };
+        let mut f = Fades::default();
+        assert!(f.reddish, "the first warning phase is the reddish one");
+        f.step(&at(25), 5.0);
+        assert!(f.reddish && f.flash == 0.0, "above 20 s it doesn't run");
+        // 20 s left: the phase lasts 0.6 s.
+        f.step(&at(20), 0.6);
+        assert!(f.reddish);
+        f.step(&at(20), 0.001);
+        assert!(!f.reddish && f.flash == 0.0);
+        // At 19 s: 0.575 s.
+        f.step(&at(19), 0.575);
+        assert!(!f.reddish);
+        f.step(&at(19), 0.001);
+        assert!(f.reddish);
+    }
+
+    /// hud.md's timer test cases, 640 x 480 and 320 x 240.
+    #[test]
+    fn the_timer_sits_by_the_formulas() {
+        let stop = |k: &str| match k {
+            "stopwatch" => Some(UVec2::splat(24)),
+            "number_0" => Some(UVec2::new(20, 25)),
+            _ => None,
+        };
+        let draws_at = |t, reddish, w, h, sz: &dyn Fn(&str) -> Option<UVec2>| {
+            let mut out = Vec::new();
+            let cell = sz("number_0").map_or(Cell { dw: 20, fh: 25 }, |s| Cell { dw: s.x as i32, fh: s.y as i32 });
+            timer_draws(&mut out, t, reddish, w, h, cell, &sz);
+            out
+        };
+        let d = draws_at(164, true, 640, 480, &stop);
+        let at: Vec<_> = d.iter().map(|d| match d {
+            Draw::Sprite { pic, x, y, .. } => (pic.clone(), *x, *y),
+            Draw::Add { rect, .. } => ("sq".into(), rect[0], rect[1]),
+            _ => panic!(),
+        }).collect();
+        assert_eq!(at, vec![
+            ("stopwatch".into(), 320, 442), ("number_2".into(), 346, 442), ("sq".into(), 372, 448), ("sq".into(), 372, 461),
+            ("number_4".into(), 378, 442), ("number_4".into(), 398, 442),
+        ]);
+        // Always dim; 25 s the HUD colour, 20 s reddish in its phase, the HUD colour in the other.
+        assert!(d.iter().all(|d| matches!(d, Draw::Sprite { colour: HUD_COLOUR, alpha: 100, .. } | Draw::Add { colour: HUD_COLOUR, alpha: 100, .. })));
+        assert!(draws_at(20, true, 640, 480, &stop).iter().all(|d| matches!(d, Draw::Sprite { colour: EMPTY_COLOUR, .. } | Draw::Add { colour: EMPTY_COLOUR, .. })));
+        assert!(draws_at(20, false, 640, 480, &stop).iter().all(|d| matches!(d, Draw::Sprite { colour: HUD_COLOUR, .. } | Draw::Add { colour: HUD_COLOUR, .. })));
+        assert!(draws_at(25, true, 640, 480, &stop).iter().all(|d| matches!(d, Draw::Sprite { colour: HUD_COLOUR, .. } | Draw::Add { colour: HUD_COLOUR, .. })));
+        // 65 s: the seconds `0` and `5` at 378 and 398; the minutes' 1 in the second place.
+        let d = draws_at(65, true, 640, 480, &stop);
+        assert_eq!(sprites(&d, "number_").iter().map(|s| (s.0.clone(), s.1)).collect::<Vec<_>>(), vec![("number_1".into(), 346), ("number_0".into(), 378), ("number_5".into(), 398)]);
+        // Zero minutes is one digit; 100 minutes or more grows to the left; 0:00 is still drawn.
+        assert_eq!(sprites(&draws_at(0, true, 640, 480, &stop), "number_").len(), 3);
+        assert_eq!(sprites(&draws_at(6000, true, 640, 480, &stop), "number_")[0].1, 326 - 20);
+        // 320 x 240: stopwatch (160, 216); `2` at 176; colon x 192, y 220 and 228; seconds 196, 208.
+        let small = |k: &str| match k {
+            "stopwatch" => Some(UVec2::splat(16)),
+            "number_0" => Some(UVec2::new(12, 16)),
+            _ => None,
+        };
+        let d = draws_at(164, true, 320, 240, &small);
+        let at: Vec<_> = d.iter().map(|d| match d {
+            Draw::Sprite { pic, x, y, .. } => (pic.clone(), *x, *y),
+            Draw::Add { rect, .. } => ("sq".into(), rect[0], rect[1]),
+            _ => panic!(),
+        }).collect();
+        assert_eq!(at, vec![
+            ("stopwatch".into(), 160, 216), ("number_2".into(), 176, 216), ("sq".into(), 192, 220), ("sq".into(), 192, 228),
+            ("number_4".into(), 196, 216), ("number_4".into(), 208, 216),
+        ]);
+    }
+
+    /// hud.md's test cases: the 320 layout's worked positions at 320 x 240.
+    #[test]
+    fn the_320_layout_sits_by_the_formulas() {
+        let small = |k: &str| match k {
+            "number_0" => Some(UVec2::new(12, 16)),
+            "cross" | "suit_empty" | "suit_full" | "suithelmet_empty" | "suithelmet_full" | "stopwatch" => Some(UVec2::splat(16)),
+            k if k.starts_with("bucket") => Some(UVec2::splat(12)),
+            "selection" => Some(UVec2::new(80, 20)),
+            k if k.starts_with("menu") => Some(UVec2::new(80, 20)),
+            k if k.starts_with("ammo:") => Some(UVec2::splat(24)),
+            _ => None,
+        };
+        let f = Frame { health: Some(100), armour: (50, false), weapon_id: "cs16:weapon_ak47".into(), ammo: Ammo::Magazine { clip: 30, reserve: 90 }, ..default() };
+        let d = draws(&f, &Fades::default(), &[0.0; 4], 320, 240, small);
+        assert_eq!(sprites(&d, "cross"), vec![("cross".into(), 8, 216)]);
+        let n = sprites(&d, "number_");
+        assert_eq!(n[..3].iter().map(|s| (s.1, s.2)).collect::<Vec<_>>(), vec![(22, 219), (34, 219), (46, 219)]);
+        assert!(d.iter().any(|d| matches!(d, Draw::Fill { rect: [64, 219, 1, 16], .. })), "the bar");
+        // Armour icon at (64, 214), its number from x 80.
+        assert_eq!(sprites(&d, "suit_empty"), vec![("suit_empty".into(), 64, 214)]);
+        assert_eq!(n[3].1, 80 + 12);
+        // Ammunition: the clip from 200, the bar at 242, the reserve from 250.
+        assert_eq!(n[5].1, 200 + 12);
+        assert!(d.iter().any(|d| matches!(d, Draw::Fill { rect: [242, 219, 1, 16], .. })));
+        assert_eq!(n[7].1, 250 + 12);
+    }
+
+    /// hud.md's menu test cases: 640 x 480 and 320 x 240.
+    #[test]
+    fn the_menu_sits_right_of_the_radar() {
+        let big = |k: &str| match k {
+            "number_0" => Some(UVec2::new(20, 25)),
+            k if k.starts_with("bucket") => Some(UVec2::splat(20)),
+            "selection" => Some(UVec2::new(170, 45)),
+            k if k.starts_with("menu") => Some(UVec2::new(170, 45)),
+            _ => None,
+        };
+        let w = |id: &str, empty, reserve, most| MenuWeapon { id: id.into(), empty, reserve, most };
+        // Slot 2 holds only the USP, open: the numbers at 138, 163, 338, 363, 388.
+        let menu = Menu { slots: vec![vec![w("cs16:weapon_ak47", false, 0, 0)], vec![w("cs16:weapon_usp", false, 0, 0)]], chosen: Some((1, 0)) };
+        let f = Frame { health: Some(100), menu: Some(menu), ..default() };
+        let d = draws(&f, &Fades::default(), &[0.0; 4], 640, 480, big);
+        let xs: Vec<i32> = sprites(&d, "bucket").iter().map(|s| s.1).collect();
+        assert_eq!(xs, vec![138, 163, 338, 363, 388]);
+        assert!(sprites(&d, "bucket").iter().all(|s| s.2 == 10));
+        // The USP's lit picture and the selection at (163, 30), no brighter than the rest (192).
+        assert_eq!(sprites(&d, "menu_s:cs16:weapon_usp"), vec![("menu_s:cs16:weapon_usp".into(), 163, 30)]);
+        assert_eq!(sprites(&d, "selection"), vec![("selection".into(), 163, 30)]);
+        assert!(d.iter().any(|d| matches!(d, Draw::Sprite { pic, alpha: 192, .. } if pic == "menu_s:cs16:weapon_usp")));
+        // The AK in closed slot 1: a 20 x 20 box at (138, 30) at alpha 128, additive.
+        assert!(d.iter().any(|d| matches!(d, Draw::Add { rect: [138, 30, 20, 20], colour: HUD_COLOUR, alpha: 128 })));
+        // Slot 1 open, the AK with 45 of 90: the bar at (148, 30), 10 greenish, 10 HUD colour at 128.
+        let menu = Menu { slots: vec![vec![w("cs16:weapon_ak47", false, 45, 90)]], chosen: Some((0, 0)) };
+        let f = Frame { health: Some(100), menu: Some(menu), ..default() };
+        let d = draws(&f, &Fades::default(), &[0.0; 4], 640, 480, big);
+        assert!(d.contains(&Draw::Add { rect: [148, 30, 10, 4], colour: MENU_BAR_COLOUR, alpha: 255 }));
+        assert!(d.contains(&Draw::Add { rect: [158, 30, 10, 4], colour: HUD_COLOUR, alpha: 128 }));
+        // A weapon without ammunition: the reddish colour at 128 in the open slot; no reserve, no bar.
+        let menu = Menu { slots: vec![vec![w("cs16:weapon_ak47", false, 0, 90), w("cs16:weapon_deagle", true, 0, 35)], vec![]], chosen: Some((0, 0)) };
+        let f = Frame { health: Some(100), menu: Some(menu), ..default() };
+        let d = draws(&f, &Fades::default(), &[0.0; 4], 640, 480, big);
+        assert!(d.iter().any(|d| matches!(d, Draw::Sprite { pic, colour: EMPTY_COLOUR, alpha: 128, y: 80, .. } if pic == "menu:cs16:weapon_deagle")));
+        assert!(!d.iter().any(|d| matches!(d, Draw::Add { colour: MENU_BAR_COLOUR, .. })));
+        // 320 x 240: columns from 74, the pictures from y 22, 25 apart, the bar 10 x 2 at x + 5.
+        let small = |k: &str| match k {
+            "number_0" => Some(UVec2::new(12, 16)),
+            k if k.starts_with("bucket") => Some(UVec2::splat(12)),
+            "selection" => Some(UVec2::new(80, 20)),
+            k if k.starts_with("menu") => Some(UVec2::new(80, 20)),
+            _ => None,
+        };
+        let menu = Menu { slots: vec![vec![w("cs16:weapon_ak47", false, 45, 90), w("cs16:weapon_deagle", false, 0, 0)]], chosen: Some((0, 0)) };
+        let f = Frame { health: Some(100), menu: Some(menu), ..default() };
+        let d = draws(&f, &Fades::default(), &[0.0; 4], 320, 240, small);
+        assert_eq!(sprites(&d, "bucket")[0], ("bucket1".into(), 74, 10));
+        assert_eq!(sprites(&d, "menu:cs16:weapon_deagle"), vec![("menu:cs16:weapon_deagle".into(), 74, 47)]);
+        assert!(d.contains(&Draw::Add { rect: [79, 22, 5, 2], colour: MENU_BAR_COLOUR, alpha: 255 }));
+        assert_eq!(sprites(&d, "bucket")[1].1, 74 + 80 + 5);
     }
 
     #[test]

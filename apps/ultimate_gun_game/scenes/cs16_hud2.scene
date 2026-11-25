@@ -1,9 +1,11 @@
 # CS 1.6's HUD, second part (specs/cs16/hud.md; cs16_ui::hud): the dynamic
 # crosshair at rest and after a burst, the weapon selection open on slot 1
-# (hud_fastswitch 0), and the round timer when a match runs. The window's
-# size picks the layout (320 under 640 pixels wide, else 640).
+# (hud_fastswitch 0), and the round timer. The window's size picks the
+# layout (320 under 640 pixels wide, else 640). Launch with a match limit
+# so the timer shows (it flashes reddish at 20 s or less; the scene's last
+# shot is near 15 s):
 #   CHIMERA_CS16_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 +volume 0 \
-#       +sandbox cs16:de_dust2 --scene apps/ultimate_gun_game/scenes/cs16_hud2.scene --out <dir>
+#       +mp_timelimit 40 +sandbox cs16:de_dust2 --scene apps/ultimate_gun_game/scenes/cs16_hud2.scene --out <dir>
 wait_for map_loaded 6000
 wait_for spawned 3000
 wait 2
@@ -22,3 +24,6 @@ wait 5
 slot1
 wait 3
 shot cs16_hud2_menu
+cancelselect
+gwait 17
+shot cs16_hud2_timer
