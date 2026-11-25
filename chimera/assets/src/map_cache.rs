@@ -24,7 +24,10 @@
 //!   the console runs. `CHIMERA_MAP_CACHE_GB` caps its size
 //!   (`DEFAULT_CAP_GB`): after each write entries go until the rest fit
 //!   (**Eviction**: other builds' entries first, least recently used
-//!   first, then this build's; a hit marks its entry used. A key names
+//!   first, then this build's and those of keys that name no build
+//!   (entries every build reads: evicted as another build's they went at
+//!   every write of a full cache and never read back, docs/performance.md,
+//!   "Start cost, fourth pass"); a hit marks its entry used. A key names
 //!   its build by its `GENERATION_PART`, chimera_world's map format
 //!   version, and the entry's file name starts with a short hash of it,
 //!   `<build>-<key>.map`; the builds a process looked up are its own, so
@@ -323,12 +326,17 @@ impl MapCache {
 
     /// `evict_with` for a process whose builds are `current`: other
     /// builds' entries go first, least recently used first, then this
-    /// one's (module docs, "Eviction"); then the left-behind files.
+    /// one's and those that name no build (module docs, "Eviction");
+    /// then the left-behind files.
     fn evict_for(&self, keep: Option<&Path>, read: disk::Reader, current: &BTreeSet<String>) {
         let mut entries = self.entries();
         let mut total: u64 = entries.iter().map(|e| e.1).sum();
         let cap = disk::limit_cap(self.cap, total, &self.dir, read);
-        entries.sort_by_key(|e| (generation_of(&e.0).is_some_and(|g| current.contains(g)), e.2));
+        // An entry that names no build is no other build's: it reads in
+        // every build until its own version changes (the weapon
+        // documents' tables, a game's install data, the nav meshes), so
+        // it goes by its use, with this process's builds' entries.
+        entries.sort_by_key(|e| (generation_of(&e.0).is_none_or(|g| current.contains(g)), e.2));
         for (path, size, _) in entries {
             if total <= cap {
                 break;
@@ -1063,8 +1071,69 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
     convert: impl FnOnce() -> Result<T, String>,
     read: disk::Reader,
 ) -> Result<(T, Outcome), String> {
+    cached_asked(cache, mount, key, served, || convert().map(|v| (v, None)), read)
+}
+
+/// `cached` for a value made from a mount that costs much to open (a
+/// Source game's: every archive's directory is read, 1.4 G instructions
+/// for TF2's; docs/performance.md, "Start cost, fourth pass"), so that a
+/// hit opens none of it. The mount is named in two parts: `archives`,
+/// the archive files it would open, which go in the key by path, size
+/// and modification time (an archive that changes is another entry), and
+/// `light`, its other layers in their order (loose folders, the asset
+/// store: they open for nothing), which the entry's inputs are checked
+/// against as `cached`'s are against its mount. `make` opens the whole
+/// mount and returns the value with everything it asked of it
+/// (`Mount::track`); an asked file an archive serves reads as missing
+/// from `light` at the write and at every check alike, one in a loose
+/// folder or the store is checked by its content. A value that depends
+/// on anything else (a key, a setting) has it in `key`.
+pub fn cached_unopened<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    light: &Mount,
+    archives: &[PathBuf],
+    key: Key,
+    make: impl FnOnce() -> Result<(T, BTreeSet<Access>), String>,
+) -> Result<(T, Outcome), String> {
+    cached_unopened_with(cache, light, archives, key, make, &disk::space)
+}
+
+/// `cached_unopened` with the free-space reader.
+pub fn cached_unopened_with<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    light: &Mount,
+    archives: &[PathBuf],
+    key: Key,
+    make: impl FnOnce() -> Result<(T, BTreeSet<Access>), String>,
+    read: disk::Reader,
+) -> Result<(T, Outcome), String> {
+    let key = archives.iter().fold(key, |k, a| k.part("archive", archive_stamp(a)));
+    cached_asked(cache, light, key, None, || make().map(|(v, asked)| (v, Some(asked))), read)
+}
+
+/// An archive file by what a look at its folder says: its path, size and
+/// modification time (`missing` when it isn't there).
+fn archive_stamp(path: &Path) -> String {
+    let stat = fs::metadata(path).ok().map(|m| {
+        let modified = m.modified().ok().and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+        format!("{} {modified}", m.len())
+    });
+    format!("{}\n{}", path.display(), stat.as_deref().unwrap_or("missing"))
+}
+
+/// `cached_served_with`, with a conversion that may say itself what it
+/// asked (`cached_unopened`: of a mount that isn't `mount`); None: what
+/// was asked of `mount` meanwhile.
+fn cached_asked<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    mount: &Mount,
+    key: Key,
+    served: Option<&Served>,
+    convert: impl FnOnce() -> Result<(T, Option<BTreeSet<Access>>), String>,
+    read: disk::Reader,
+) -> Result<(T, Outcome), String> {
     let Some(cache) = cache else {
-        return convert().map(|v| (v, Outcome::Off));
+        return convert().map(|(v, _)| (v, Outcome::Off));
     };
     // The served entry's key: the same parts but the layers, which name
     // this machine's folders (its inputs' fingerprints say which files).
@@ -1137,8 +1206,9 @@ pub fn cached_served_with<T: Serialize + DeserializeOwned>(
         return Ok((v, Outcome::Served));
     }
     let tracking = mount.track();
-    let value = convert()?;
-    let accesses = tracking.finish();
+    let (value, asked) = convert()?;
+    let tracked = tracking.finish();
+    let accesses = asked.unwrap_or(tracked);
     let inputs = inputs(mount, accesses);
     if let Err(e) = write_entry(cache, &path, &key, inputs, &value, read) {
         eprintln!("map cache: {}: {e}", path.display());
@@ -1396,9 +1466,9 @@ mod tests {
         let cache = MapCache::at(&root, 250);
         let now = SystemTime::now();
         let name = |g: &str, n: u8| format!("{g}-{}.map", format!("{n:02x}").repeat(32));
-        // Oldest first: this build's two, then another build's, then a
-        // key that names no build.
-        let files = [name("aaaaaaaa", 1), name("aaaaaaaa", 2), name("bbbbbbbb", 3), "c.map".into()];
+        // Oldest first: this build's, then one of a key that names no
+        // build (read by every build), then two of other builds.
+        let files = [name("aaaaaaaa", 1), "c.map".into(), name("bbbbbbbb", 3), name("cccccccc", 4)];
         for (i, f) in files.iter().enumerate() {
             let p = root.join(f);
             fs::write(&p, [0u8; 100]).unwrap();
@@ -1408,8 +1478,14 @@ mod tests {
         cache.evict_for(None, &roomy, &current);
         let mut left: Vec<String> = cache.entries().iter().map(|e| e.0.file_name().unwrap().to_string_lossy().into_owned()).collect();
         left.sort();
-        // Plain LRU would take this build's two; the others go instead.
+        // Plain LRU would take the two oldest; the other builds' go
+        // instead, and the entry that names no build stays as this
+        // build's do.
         assert_eq!(left, [files[0].clone(), files[1].clone()]);
+        // Among those kept, the least recently used goes first.
+        MapCache::at(&root, 150).evict_for(None, &roomy, &current);
+        let left: Vec<String> = cache.entries().iter().map(|e| e.0.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(left, [files[1].clone()]);
         // A key's file name carries its build.
         let k = Key::new("t", "v1").part(GENERATION_PART, "f1");
         assert_eq!(generation_of(Path::new(&format!("{}.map", k.stem()))), k.generation.as_deref());
