@@ -42,6 +42,21 @@ impl<'a> Tracer<'a, '_, '_> {
     /// so a velocity just clipped along a surf ramp (surf_sedona's, 200 m
     /// up) read as entering it again and the player stopped dead.
     pub(crate) fn sweep_brushes(&self, half: Vec3, from: Vec3, delta: Vec3) -> BrushHit {
+        self.sweep_brushes_in::<true>(half, from, delta)
+    }
+
+    /// `sweep_brushes` without the map's solids and terrain (a hull trace
+    /// stands for them, `hulls`): only its ladder volumes, the other
+    /// characters and the movers are swept.
+    #[inline(never)]
+    pub(crate) fn sweep_brushes_hulled(&self, half: Vec3, from: Vec3, delta: Vec3) -> BrushHit {
+        self.sweep_brushes_in::<false>(half, from, delta)
+    }
+
+    /// The sweep, with the map's solids and terrain (`WORLD`) or without
+    /// (a const, so the sweep of the whole world is compiled as it was).
+    #[inline(always)]
+    fn sweep_brushes_in<const WORLD: bool>(&self, half: Vec3, from: Vec3, delta: Vec3) -> BrushHit {
         let eps = TRACE_BACKOFF * METERS_PER_UNIT;
         let touch = SOLID_SKIN * METERS_PER_UNIT;
         let to = from + delta;
@@ -60,6 +75,7 @@ impl<'a> Tracer<'a, '_, '_> {
         // Brushes hit at the current fraction: (index, normal, ladder,
         // where the box really reaches the brush).
         let mut tied: Vec<(usize, Vec3, bool, f32)> = Vec::new();
+        let others = if WORLD { 0 } else { self.others.len() };
         'brush: for (i, b) in self.world_near(lo, hi).chain(
             self.others
                 .iter()
@@ -69,6 +85,10 @@ impl<'a> Tracer<'a, '_, '_> {
                 .map(|(j, b)| (brushes.len() + j, b)),
         ) {
             if b.max.cmplt(lo).any() || b.min.cmpgt(hi).any() {
+                continue;
+            }
+            // Hull traced: of the map's own, only ladder volumes.
+            if !WORLD && (if i < brushes.len() { !b.ladder } else { i >= brushes.len() + others }) {
                 continue;
             }
             let (mut enter, mut leave) = (-1.0f32, 1.0f32);
@@ -219,6 +239,18 @@ impl<'a> Tracer<'a, '_, '_> {
 
     /// Whether a box (engine centre and half size) overlaps a brush by more
     /// than the solid skin.
+    /// `in_brush` among the other characters and the movers only (the
+    /// map's solids are a hull's, `hulls`; its ladder volumes hold nobody:
+    /// a climber stands in them).
+    pub(crate) fn in_others(&self, half: Vec3, centre: Vec3) -> bool {
+        let skin = SOLID_SKIN * METERS_PER_UNIT;
+        self.others.iter().any(|b| {
+            b.max.cmpgt(centre - half).all()
+                && b.min.cmplt(centre + half).all()
+                && b.planes.iter().all(|(n, d)| n.dot(centre) - (d + n.abs().dot(half)) < -skin)
+        })
+    }
+
     pub(crate) fn in_brush(&self, half: Vec3, centre: Vec3) -> bool {
         let skin = SOLID_SKIN * METERS_PER_UNIT;
         let terrain = self.terrain_near(centre - half, centre + half);

@@ -2689,11 +2689,18 @@ fn layers_by_path() {
 /// above, so it is no way around the layering. `cs_source`'s scenario
 /// tests run the map as the game does, its drawn parts and sounds with it
 /// (`chimera_present`'s `MapPlugin`); the game's own build never links it.
-const TEST_ONLY: &[(&str, &[&str], &str)] = &[(
-    "games/cs_source",
-    &["chimera_present"],
-    "the scenario tests' maps with what draws and plays them",
-)];
+const TEST_ONLY: &[(&str, &[&str], &str)] = &[
+    (
+        "games/cs_source",
+        &["chimera_present"],
+        "the scenario tests' maps with what draws and plays them",
+    ),
+    (
+        "chimera/movement",
+        &["chimera_sim"],
+        "the scenario tests' base (`SimBasePlugins`): the movement's own seams on the harness",
+    ),
+];
 
 /// Every package's features in the build of `selection` (`cargo tree`
 /// arguments) with `--features dev`, tests included: package and version

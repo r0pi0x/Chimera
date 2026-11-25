@@ -23,7 +23,7 @@ names the seams, the specs give the numbers and rules.
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
 | S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases (aliases dropped 2026-11-24, last log entry): each in the log |
-| S7-S9 GoldSrc seams | not started | clip hulls, command milliseconds, edge friction |
+| S7-S9 GoldSrc seams | S7 done (2026-11-25) | clip hulls (S7: in the log), command milliseconds, edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
 ## 1. What is there (origin/main, 2026-11-24)
@@ -513,3 +513,43 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   everywhere); kept: `SourceMovementAppExt::source_movement`,
   `cs_source::movement::SourceMovementPlugin`, `useable_ladders`,
   `to_source`. A rename only: golden hashes unchanged.
+- 2026-11-25, S7: clip hulls. `trace/hulls.rs`: `ClipHulls` (a map's
+  hulls: each hull's box around the traced point, `contents(hull,
+  point)`, `trace(hull, start, end) -> HullHit`), `MapClipHulls` (the
+  loaded map's, map-scoped) and the seam, `HullTracer`: which hull is a
+  character's standing and which its ducked box (by size; no hull for the
+  standing box: no hull traces at all) and the way from the feet to each
+  hull's point (the box's minimum less the hull's: 36 and 18 units up for
+  boxes centred on their point), added to a trace's ends and taken off
+  its result. `QuakeConfig::clip_hulls` (off in `reference()` and every
+  Source game): with it, on a map with `MapClipHulls`, the world part of
+  a sweep or solid test of the standing or ducked box is the hull's
+  trace or contents; the map's ladder volumes, the other characters, the
+  movers and the props are swept as before and the nearest wins; any
+  other box (the ladder floor probe's point), any other movement and any
+  map without hulls sweep boxes. The ground test's quarter boxes are left
+  out for a hull-traced box (a hull is the whole box's). A start in solid
+  is fraction 0, as the spec's mover treats it. The implementation over
+  the BSP's clip nodes is the hand-off's (`goldsrc_engine`). Tests, the
+  crate's first integration tests (`chimera/movement/tests/it/`, on
+  `SimBasePlugins`, which the architecture check allows it for tests
+  only): `course` (a floor, a 12-unit step, a 20-degree ramp with a drop,
+  a 50-unit ceiling, a wall, 2 000 units over the greybox, as map brushes
+  and as a test's `ClipHulls` of the same solids grown by the hull's box)
+  and `hulls`: a hull-traced run of the course with no brush of it in the
+  map goes where the swept run goes, within 0.05 units every tick, same
+  flags (step, ramp, fall, landing, duck under the ceiling, wall); the
+  ducked box is the ducked hull (no standing up under the ceiling); a map
+  without hulls, a movement not asking and a 48-unit body sweep, bit for
+  bit. Hashes equal. The step, against this main without the change
+  (CS:S 71 353 measured; the others' last logged): CS:S 71 718 (+0.51 %),
+  HL2:DM 67 376 (+0.48 %), TF2 71 821 (+0.40 %), DoD:S 74 123 (+0.48 %):
+  about 350 instructions a tick, under the 1 % limit. Looked for and not
+  found in the sweeps: a movement tracing hulls takes its own copies of
+  the sweep and the solid test (`sweep_box_hulled`, `solid_box_hulled`,
+  `sweep_brushes_hulled`), so the swept path is the code it was behind one
+  test of `Tracer::hulls`; the count was the same with the hull branch
+  inside the sweep (71 772) and with the dispatch inlined (71 718), so it
+  is not in the sweeps; where it is was not found (the step itself
+  fetches one more resource and builds a wider `Tracer`: not measured
+  apart).

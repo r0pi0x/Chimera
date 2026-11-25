@@ -341,7 +341,8 @@ impl Mover<'_, '_, '_, '_> {
             let down = self.feet - Vec3::Z * GROUND_PROBE;
             let full = self.trace.sweep_box(lo, hi, self.feet, down);
             let mut ground = (full.hit() && full.normal.z >= WALKABLE_NORMAL_Z).then_some(full);
-            if ground.is_none() {
+            // (A hull trace is the whole box's already: no quarters.)
+            if ground.is_none() && self.trace.hulls.is_none() {
                 let mid = Vec3::ZERO;
                 let quarters = [
                     (Vec3::new(lo.x, lo.y, lo.z), Vec3::new(mid.x, mid.y, hi.z)),

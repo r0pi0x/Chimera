@@ -2,9 +2,12 @@
 //! the other characters' boxes, moving solids and ladder volumes (`boxes`,
 //! exactly, plane by plane) and through props (physics shape casts), the
 //! nearest hit reported as the spec's traces report it (`Trace`), in Source
-//! units from the feet; solid and water point tests.
+//! units from the feet; solid and water point tests. On a map with clip
+//! hulls, for a movement that asks for them, the world part of a standing
+//! or ducked box's sweep is a hull trace instead (`hulls`).
 
 mod boxes;
+pub mod hulls;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -94,6 +97,10 @@ pub(crate) struct Tracer<'a, 'w, 's> {
     /// For each of `others`: the moving solid it belongs to (None for
     /// characters).
     pub(crate) owners: &'a [Option<Entity>],
+    /// The map's clip hulls, for a movement tracing them
+    /// (`QuakeConfig::clip_hulls`): the world part of its standing and
+    /// ducked boxes' sweeps and solid tests. None: box sweeps.
+    pub(crate) hulls: Option<hulls::HullTracer<'a>>,
 }
 
 impl<'a> Tracer<'a, '_, '_> {
@@ -113,10 +120,34 @@ impl<'a> Tracer<'a, '_, '_> {
     }
 
     /// `sweep_box` by a move `delta` (Source units) from `from`.
+    #[inline]
     pub(crate) fn sweep_box_by(&self, lo: Vec3, hi: Vec3, from: Vec3, delta: Vec3) -> Trace {
+        // A movement tracing hulls takes its own copy of the sweep, so
+        // the sweep of one that doesn't is compiled as it was (the work
+        // counts of docs/plans/active/shared-movement.md, S7).
+        if self.hulls.is_some() {
+            return self.sweep_box_hulled(lo, hi, from, delta);
+        }
+        self.sweep_box_swept(lo, hi, from, delta)
+    }
+
+    fn sweep_box_swept(&self, lo: Vec3, hi: Vec3, from: Vec3, delta: Vec3) -> Trace {
+        self.sweep_box_in::<false>(lo, hi, from, delta)
+    }
+
+    #[inline(never)]
+    fn sweep_box_hulled(&self, lo: Vec3, hi: Vec3, from: Vec3, delta: Vec3) -> Trace {
+        self.sweep_box_in::<true>(lo, hi, from, delta)
+    }
+
+    /// The sweep; with `HULLS`, the world part of a box that is a hull's
+    /// is that hull's trace (`hulls`).
+    #[inline(always)]
+    fn sweep_box_in<const HULLS: bool>(&self, lo: Vec3, hi: Vec3, from: Vec3, delta: Vec3) -> Trace {
         let size = hi - lo;
         let centre = |feet: Vec3| to_engine(feet + (lo + hi) / 2.0);
-        let start_solid = self.solid_box(lo, hi, from);
+        let hull = if HULLS { self.hull_of(lo, hi) } else { None };
+        let start_solid = if HULLS { self.solid_box_hulled(lo, hi, from) } else { self.solid_box_swept(lo, hi, from) };
         let to = from + delta;
         let len = delta.length();
         let miss = Trace {
@@ -133,7 +164,10 @@ impl<'a> Tracer<'a, '_, '_> {
         }
         // Box half size in engine axes (x, up, z).
         let half = Vec3::new(size.x, size.z, size.y) * METERS_PER_UNIT / 2.0;
-        let brush = self.sweep_brushes(half, centre(from), to_engine(delta));
+        let brush = match hull {
+            None => self.sweep_brushes(half, centre(from), to_engine(delta)),
+            Some(_) => self.sweep_brushes_hulled(half, centre(from), to_engine(delta)),
+        };
         let mut best = Trace {
             owner: brush.owner,
             ladder: brush.ladder,
@@ -143,6 +177,23 @@ impl<'a> Tracer<'a, '_, '_> {
             start_solid,
             surface: brush.surface.map(HitSurface::Brush),
         };
+        if let Some((hulls, id, offset)) = hull {
+            // The world as this box's hull: traced at the hull's point,
+            // the end back at the feet (`hulls`, the seam).
+            let hit = hulls.trace(id, from + offset, to + offset);
+            let fraction = if hit.start_solid { 0.0 } else { hit.fraction };
+            if fraction < best.fraction {
+                best = Trace {
+                    owner: None,
+                    ladder: false,
+                    fraction,
+                    end: if hit.start_solid { from } else { hit.end - offset },
+                    normal: hit.normal,
+                    start_solid,
+                    surface: None,
+                };
+            }
+        }
         let shape = Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0);
         let Ok(dir) = Dir3::new(to_engine(delta / len)) else {
             return best;
@@ -204,7 +255,25 @@ impl<'a> Tracer<'a, '_, '_> {
         self.sweep_box_by(lo, hi, from, delta)
     }
 
+    /// The hull to trace the world with for the box `lo`..`hi`, and the
+    /// way from the feet to its point: the movement traces hulls and the
+    /// box is its standing or ducked one.
+    #[inline]
+    pub(crate) fn hull_of(&self, lo: Vec3, hi: Vec3) -> Option<(&'a dyn hulls::ClipHulls, usize, Vec3)> {
+        let h = self.hulls.as_ref()?;
+        let (id, offset) = h.of(lo, hi, self.half_width, self.heights)?;
+        Some((h.hulls, id, offset))
+    }
+
+    #[inline]
     pub(crate) fn solid_box(&self, lo: Vec3, hi: Vec3, feet: Vec3) -> bool {
+        if self.hulls.is_some() {
+            return self.solid_box_hulled(lo, hi, feet);
+        }
+        self.solid_box_swept(lo, hi, feet)
+    }
+
+    fn solid_box_swept(&self, lo: Vec3, hi: Vec3, feet: Vec3) -> bool {
         let full = hi - lo;
         if self.in_brush(
             Vec3::new(full.x, full.z, full.y) * METERS_PER_UNIT / 2.0,
@@ -212,6 +281,28 @@ impl<'a> Tracer<'a, '_, '_> {
         ) {
             return true;
         }
+        self.in_shapes(lo, hi, feet)
+    }
+
+    /// `solid_box` for a movement tracing hulls: a hull's box is in solid
+    /// where its point's contents are, or in another character or mover.
+    #[inline(never)]
+    fn solid_box_hulled(&self, lo: Vec3, hi: Vec3, feet: Vec3) -> bool {
+        let full = hi - lo;
+        let (half, centre) = (Vec3::new(full.x, full.z, full.y) * METERS_PER_UNIT / 2.0, to_engine(feet + (lo + hi) / 2.0));
+        let in_brush = match self.hull_of(lo, hi) {
+            None => self.in_brush(half, centre),
+            Some((hulls, id, offset)) => {
+                hulls.contents(id, feet + offset) == hulls::HullContents::Solid || self.in_others(half, centre)
+            }
+        };
+        in_brush || self.in_shapes(lo, hi, feet)
+    }
+
+    /// Whether the box overlaps a physics shape (props) by more than the
+    /// solid skin.
+    #[inline(always)]
+    fn in_shapes(&self, lo: Vec3, hi: Vec3, feet: Vec3) -> bool {
         let size = (hi - lo - Vec3::splat(2.0 * SOLID_SKIN)).max(Vec3::splat(0.01));
         let shape = Collider::cuboid(
             size.x * METERS_PER_UNIT,

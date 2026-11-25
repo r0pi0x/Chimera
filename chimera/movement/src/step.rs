@@ -25,7 +25,10 @@ use crate::{
     pushaway, shadow,
     slots::MovementSlot,
     state::{SettleOnGround, QuakeMovement},
-    trace::Tracer,
+    trace::{
+        Tracer,
+        hulls::{HullTracer, MapClipHulls},
+    },
     units::{METERS_PER_UNIT, ORIGIN_ABOVE_FEET, to_engine, to_units},
 };
 
@@ -91,11 +94,12 @@ pub(crate) fn step(
         MessageWriter<crate::map::entities::FireEntityOutput>,
         (Option<Res<crate::core::MapLadders>>, Option<Res<crate::core::MapGame>>),
     ),
-    (clock, first, mut grid_cache, mut waist_steps): (
+    (clock, first, mut grid_cache, mut waist_steps, clip_hulls): (
         Res<crate::core::SimClock>,
         Res<crate::core::FirstTimePredicted>,
         Local<Option<crate::core::BrushGrid>>,
         Local<u32>,
+        Option<Res<MapClipHulls>>,
     ),
     other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<QuakeMovement>)>,
     (health, dead, noblock, teams, (collider_of, afloat, turbo_groups)): (
@@ -235,6 +239,7 @@ pub(crate) fn step(
             others: &[],
             terrain: terrain.as_deref(),
             owners: &[],
+            hulls: None,
         };
         lines::fix_ends(&tracer, &mut l.0);
     }
@@ -356,6 +361,15 @@ pub(crate) fn step(
             others: &others,
             terrain: terrain.as_deref(),
             owners: &owners,
+            // The map's clip hulls for a movement that traces them
+            // (`QuakeConfig::clip_hulls`), when its box is a hull's.
+            hulls: if cfg.clip_hulls {
+                clip_hulls
+                    .as_ref()
+                    .and_then(|h| HullTracer::new(&*h.0, cfg.half_width, (cfg.stand_height, cfg.duck_height)))
+            } else {
+                None
+            },
         };
         let mut mover = Mover {
             cfg,

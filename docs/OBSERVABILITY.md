@@ -115,6 +115,10 @@ in the lowest crate whose public API it needs:
   (chimera/client/tests/it/): scenario tests of the engine's movement,
   weapons or shell parts on the greybox (`chimera_world::greybox`) with
   the engine's base, `Sim::new(SimBasePlugins, ..)`;
+  `chimera_movement` (chimera/movement/tests/it/): the shared player
+  movement's own seams (clip hulls, command milliseconds, edge friction)
+  on a course of brushes over the greybox with the reference config
+  (`course`), nothing of a game or a loader;
   The **test kit** (`chimera_sim::testkit`, feature `testkit`, turned
   on by dev-dependencies only) is what these run on instead of a game's
   data: a weapon set as TOML in round numbers (`kit:pistol`, `kit:rifle`,

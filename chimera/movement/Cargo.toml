@@ -40,8 +40,16 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 # without this line a build that leaves the client shell out builds another
 # bevy_winit, and with it another Bevy and every crate of ours.
 bevy_winit.workspace = true
+# The engine's base for the scenario tests (`SimBasePlugins`).
+chimera_sim = { workspace = true, features = ["testkit"] }
+
+# The integration tests (tests/it/): the movement's own seams on a small
+# course, on the headless harness with the engine's base alone.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
 
 [features]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p chimera_movement --features dev` shares the game's Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev"]

@@ -2786,6 +2786,7 @@ dependencies = [
  "bevy",
  "bevy_winit",
  "chimera_core",
+ "chimera_sim",
  "chimera_world",
  "serde",
  "workspace-hack",

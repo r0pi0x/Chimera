@@ -258,6 +258,12 @@ pub struct QuakeConfig {
     /// velocity_modifier`) climbs back to 1, per second (CS:S, weapons.md
     /// M18: +0.005 a 0.015 s tick).
     pub velocity_modifier_recovery: f32,
+    /// The world is traced through the map's clip hulls where it has them
+    /// (`trace::hulls`: GoldSrc maps), the standing box through its hull
+    /// and the ducked box through its own; on every other map, and for a
+    /// box no hull is made for, the box sweep. Off (Source's games): the
+    /// box sweep everywhere.
+    pub clip_hulls: bool,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -505,6 +511,7 @@ impl QuakeConfig {
             ladder_on_output: "OnPlayerGotOnLadder",
             ladder_off_output: "OnPlayerGotOffLadder",
             velocity_modifier_recovery: 1.0 / 3.0,
+            clip_hulls: false,
         }
     }
 }

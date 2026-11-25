@@ -15,7 +15,9 @@
 //! files: `config` (the config, its cvars by name, the configs by
 //! movement id), `state` (`QuakeMovement`), `hooks` (what a game sets
 //! before the step: `MoveSpeed`, `MoveTraits`, `MoveStance`,
-//! `StepSounds`), `units`, `trace` (the box sweep), `mover` (one
+//! `StepSounds`), `units`, `trace` (the box sweep; `trace::hulls`: a map's
+//! clip hulls, `ClipHulls` and `MapClipHulls`, traced in its place by a
+//! movement that asks for them), `mover` (one
 //! character's tick, in parts: ground, air, duck, jump, water, ladders,
 //! `lines` (ladder lines), falls, steps, stuck), `step` (the system),
 //! `shadow`, `pushaway`, `drown`; this file is the root: the systems as
@@ -171,6 +173,7 @@ pub use hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds};
 pub use mover::falls::punch_spring;
 pub use mover::lines::{self, EntityLadders, ForcedMove, LadderFrom, UseableLadder, UseableLadders};
 pub use state::{SettleOnGround, QuakeMovement};
+pub use trace::hulls::{ClipHulls, HullContents, HullHit, MapClipHulls};
 pub use units::{to_engine, to_units};
 
 // `crate::core`, `crate::map`, `crate::slots` and `crate::console` inside,
@@ -182,6 +185,7 @@ use bevy::prelude::*;
 
 use crate::{
     core::PredictedAppExt,
+    map::MapScopedApp,
     mover::stuck::{footing, seat},
     slots::RegisterSlots,
     step::step,
@@ -198,6 +202,7 @@ impl Plugin for QuakeMovementPlugin {
         app.init_resource::<QuakeConfigs>()
             .init_resource::<UseableLadders>()
             .init_resource::<EntityLadders>()
+            .map_scoped::<MapClipHulls>()
             .add_message::<crate::map::PlaySound>()
             .add_message::<crate::map::entities::FireEntityOutput>()
             .add_systems(First, lines::build_ladders)
