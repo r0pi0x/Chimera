@@ -217,10 +217,16 @@ pub fn gun(id: &str) -> params::Gun {
 }
 
 /// A weapon built from its data: its numbers, a new weapon's state, the
-/// stock frame kept off it, its zoom its own, and its rounds as the
-/// engine's `Magazine` where it has a magazine of rounds.
+/// stock frame kept off it, its zoom its own where it has zoom levels
+/// (`OwnZoom` says the right click zooms: the shoulder camera's tap and
+/// hold, `third_person::ShoulderInput::secondary`; a gun with none leaves
+/// the camera alone), and its rounds as the engine's `Magazine` where it
+/// has a magazine of rounds.
 fn build(e: &mut EntityWorldMut, gun: &params::Gun) {
-    e.insert((HaloWeapon(Arc::new(gun.clone())), HaloGun::new(gun), OwnFrame, OwnZoom));
+    e.insert((HaloWeapon(Arc::new(gun.clone())), HaloGun::new(gun), OwnFrame));
+    if gun.zoom_levels > 0 {
+        e.insert(OwnZoom);
+    }
     if let Some(m) = gun.magazine.filter(|m| m.rounds_loaded_maximum > 0) {
         let (loaded, reserve) = m.new_rounds();
         e.insert(Magazine {

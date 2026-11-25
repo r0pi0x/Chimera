@@ -275,7 +275,7 @@ Visual checks (offscreen, docs/OBSERVABILITY.md section 2):
    there the swap is unbound until the player picks a key.
 2. **Right mouse** (`+attack2`) on a gun whose right click aims or zooms
    (`weapon::Zoom`, or a game's `OwnZoom`: Combat Arms' sights, HL2:DM's
-   crossbow, Halo's guns): a tap goes to first person and gives the gun
+   crossbow, Halo's guns with zoom levels): a tap goes to first person and gives the gun
    its click (its own ADS or scope; first person while that zoom lasts,
    back to third when it ends); a hold zooms over the shoulder in third
    person (closer, narrower FOV, slower mouse) and the gun gets nothing.

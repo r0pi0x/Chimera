@@ -1543,7 +1543,9 @@ pub struct ViewZoom(pub f32);
 
 /// On a weapon: the game keeps its owner's `Zoomed` itself while it is
 /// drawn (Combat Arms' scopes, with their transitions); `apply_zoom`
-/// leaves it alone then.
+/// leaves it alone then. Only on a weapon that zooms: the shoulder camera
+/// takes it (or `Zoom`) to mean the right click zooms (a gun with none
+/// keeps its right click and the camera).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct OwnZoom;
 

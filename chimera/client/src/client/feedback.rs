@@ -34,8 +34,9 @@
 //!   The UI cues sound (`ui_select` on opening and sending, `ui_hover` on
 //!   a switch, `ui_back` on cancel, `ui_denied` on an empty send).
 //! - **Send** hands a `Report` (the words, the frame, and `collect_state`'s
-//!   `ReportState` from the key press: build, app, the game and the
-//!   screens up (`screen_text`), the PC, perf,
+//!   `ReportState` from the key press: build, app, the game, the
+//!   screens up (`screen_text`) and the camera
+//!   (`third_person::report_text`), the PC, perf,
 //!   net, changed cvars and binds, console lines) to the `FeedbackOutbox`
 //!   (`Outbox`). The app's is `AssetsOutbox`: the JPEG and the zip on a
 //!   thread (`chimera_assets::feedback`: its secret filter is the only
@@ -643,6 +644,7 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
         game += &format!("minigame: {}\n", m.def.id);
     }
     game += &screen_text(w);
+    game += &super::third_person::report_text(w);
     game += &super::world_report::setup_text(w);
     game += &super::world_report::hand_text(w);
     // What the last hits did (a listen host's or a local game's server).

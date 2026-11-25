@@ -1395,7 +1395,9 @@ pub fn run(
                 scope: false,
                 sensitivity: Some(1.0 / hw.0.magnification(g.zoom)),
             });
-        if inv.active.is_some_and(|a| guns.contains(a)) {
+        // A gun with no zoom leaves the holder's `Zoomed` to the engine
+        // (it has no `OwnZoom`: `weapons::build`).
+        if inv.active.and_then(|a| guns.get(a).ok()).is_some_and(|(_, hw, ..)| hw.0.zoom_levels > 0) {
             match zoomed {
                 Some(z) => commands.entity(owner).insert(z),
                 None => commands.entity(owner).remove::<Zoomed>(),

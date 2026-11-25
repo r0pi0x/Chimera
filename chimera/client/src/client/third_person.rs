@@ -26,7 +26,8 @@
 //!   marks where the shot would land instead (`Shoulder::blocked`). Melee
 //!   and thrown weapons show none.
 //! - **Right mouse** on a gun whose right click zooms or aims down sights
-//!   (`weapon::Zoom`, a game's `OwnZoom`): a tap (shorter than
+//!   (`weapon::Zoom`, a game's `OwnZoom`, which only a gun that zooms
+//!   has: Halo's with zoom levels): a tap (shorter than
 //!   `tap_secs`) passes the click to the gun and shows first person while
 //!   its zoom lasts; held, the camera zooms over the shoulder (closer,
 //!   narrower FOV, slower mouse) and the gun gets no click. Any other
@@ -802,6 +803,58 @@ fn aim_through_crosshair(
     intent.move_axis = turn_move(intent.move_axis, look.x, aim.x);
     intent.yaw = aim.x;
     intent.pitch = aim.y;
+}
+
+/// The shoulder camera's state for a report's `game.txt`
+/// (`feedback::collect_state`): wanted and held off, on, the glide and
+/// the aim zoom, the right mouse's tap and hold, the look; the local
+/// player's `Zoomed` (and scope), whether the gun in hand zooms (`Zoom`,
+/// `OwnZoom`), a turn limit (`core::ViewYawLimit`) and the command's
+/// angles and move axis.
+pub fn report_text(w: &mut World) -> String {
+    let deg = |r: f32| r.to_degrees();
+    let mut out = String::new();
+    if let Some(m) = w.get_resource::<CameraMode>() {
+        out += &format!("camera: third person wanted {}, held off {}\n", m.third_person, m.held_off);
+    }
+    if let Some(s) = w.get_resource::<Shoulder>() {
+        out += &format!(
+            "shoulder: on {}, blend {:.2}, zoom {:.2}, tap_zoom {}, hold_zoom {}, button down {}, look {}, orbit {}\n",
+            s.on,
+            s.blend,
+            s.zoom,
+            s.aim.tap_zoom.map_or("none".into(), |t| format!("at {t:.2} s")),
+            s.aim.hold_zoom,
+            s.aim.down_at.is_some(),
+            s.look.map_or("none".into(), |l| format!("yaw {:.1} pitch {:.1}", deg(l.x), deg(l.y))),
+            s.orbit,
+        );
+    }
+    let mut q = w.query_filtered::<(
+        &Intent,
+        Option<&crate::weapon::Zoomed>,
+        Option<&crate::weapon::Inventory>,
+        Option<&crate::core::ViewYawLimit>,
+    ), With<LocalPlayer>>();
+    let Some((intent, zoomed, inv, limit)) = q.iter(w).next() else {
+        return out;
+    };
+    let (intent, zoomed, active, limit) = (intent.clone(), zoomed.copied(), inv.and_then(|i| i.active), limit.copied());
+    let zooms = active.and_then(|a| w.get_entity(a).ok()).map(|e| e.contains::<crate::weapon::Zoom>() || e.contains::<crate::weapon::OwnZoom>());
+    out += &format!(
+        "zoomed: {}; the gun zooms: {}\n",
+        zoomed.map_or("no".into(), |z| format!("fov {:.1}, scope {}", z.fov, z.scope)),
+        zooms.map_or("no gun".into(), |z| if z { "yes" } else { "no" }.to_string()),
+    );
+    out += &format!(
+        "command: yaw {:.1} pitch {:.1}, move axis ({:.3}, {:.3}); turn limit: {}\n",
+        deg(intent.yaw),
+        deg(intent.pitch),
+        intent.move_axis.x,
+        intent.move_axis.y,
+        limit.map_or("none".into(), |l| format!("centre {:.1}, half {:.1}", deg(l.centre), deg(l.half))),
+    );
+    out
 }
 
 /// What `follow_eye` needs to place the shoulder camera.

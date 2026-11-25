@@ -9,7 +9,7 @@
 //! the camera's look, the distances scaled with the eye height, the host's
 //! switch. M5: held free look orbits the camera and leaves the aim, eases
 //! back when let go, and never leaves the eye where third person is
-//! forbidden.
+//! forbidden. Right mouse: a gun with no zoom keeps the shoulder.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
@@ -548,4 +548,55 @@ fn free_look_never_leaves_the_eye_where_third_person_is_forbidden() {
     let s = sim.app.world().resource::<Shoulder>();
     assert!(!s.drawn() && !s.orbiting());
     assert_eq!(sim.intent(shooter).yaw, aim.yaw, "the aim doesn't turn");
+}
+
+/// A tap of the right mouse (bound to `+attack2`) as `write_local_intent`
+/// reads it: down one tick, up the next.
+fn tap_right(sim: &mut Sim) -> bool {
+    {
+        let mut c = sim.app.world_mut().resource_mut::<chimera_core::console::Console>();
+        c.binds.insert("mouse2".into(), "+attack2".into());
+    }
+    sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
+    sim.ticks(1);
+    let me = sim_local(sim);
+    let pressed = sim.intent(me).secondary;
+    let mut m = sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+    m.clear();
+    m.release(MouseButton::Right);
+    sim.ticks(1);
+    sim.app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+    pressed
+}
+
+fn sim_local(sim: &mut Sim) -> Entity {
+    let w = sim.app.world_mut();
+    w.query_filtered::<Entity, With<LocalPlayer>>().single(w).unwrap()
+}
+
+/// Reports 5ed5f983 (Halo's assault rifle) and ccd31222 (TF2's
+/// crossbow): a right click on a gun that doesn't zoom is the gun's own
+/// and leaves the camera on the shoulder (it flicked to first person and
+/// back); on a gun that zooms (`OwnZoom`) a tap still goes to first person
+/// for the gun's zoom (the user's tap and hold).
+#[test]
+fn a_tap_on_a_gun_with_no_zoom_stays_in_third_person() {
+    let (mut sim, shooter) = mouse_scene();
+    third_person(&mut sim, true);
+    sim.seconds(0.6);
+    assert!(sim.app.world().resource::<Shoulder>().on);
+    assert!(tap_right(&mut sim), "the gun gets its right click at once");
+    for _ in 0..30 {
+        sim.ticks(1);
+        let s = sim.app.world().resource::<Shoulder>();
+        assert!(s.on && s.blend == 1.0 && s.aim.tap_zoom.is_none(), "stays on the shoulder: {} {}", s.on, s.blend);
+        assert!(!sim.app.world().resource::<CameraMode>().held_off);
+    }
+    // The same gun made to zoom: the tap is the gun's zoom in first person.
+    let gun = sim.app.world().get::<chimera_sim::weapon::Inventory>(shooter).unwrap().active.unwrap();
+    sim.app.world_mut().entity_mut(gun).insert(chimera_sim::weapon::OwnZoom);
+    assert!(!tap_right(&mut sim), "held back for the tap");
+    assert!(sim.app.world().resource::<Shoulder>().aim.tap_zoom.is_some());
+    sim.ticks(1);
+    assert!(sim.app.world().resource::<CameraMode>().held_off, "first person for the gun's zoom");
 }

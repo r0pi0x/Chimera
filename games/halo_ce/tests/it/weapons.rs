@@ -260,6 +260,23 @@ fn the_pistols_zoom_halves_the_field_of_view() {
     assert!(sim.app.world().get::<Zoomed>(p).is_none());
 }
 
+/// Report 5ed5f983: only a gun with zoom levels says its right click
+/// zooms (`OwnZoom`, which the shoulder camera's tap and hold read); the
+/// assault rifle's right click leaves it alone and nothing zooms it.
+#[test]
+fn only_a_gun_that_zooms_has_its_own_zoom() {
+    use chimera_sim::weapon::OwnZoom;
+    let (pistol_sim, _, pistol) = armed(PISTOL);
+    assert!(pistol_sim.app.world().get::<OwnZoom>(pistol).is_some(), "the pistol zooms");
+    let (mut sim, p, rifle) = armed(ASSAULT_RIFLE);
+    assert!(sim.app.world().get::<OwnZoom>(rifle).is_none(), "the assault rifle has no zoom");
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.ticks(5);
+    assert!(sim.app.world().get::<Zoomed>(p).is_none(), "the rifle's right click zooms nothing");
+}
+
 /// Fire `id` at a full Spartan 1.5 m ahead, aimed at `height` of its
 /// box's height (the head from 0.83 up: `weapon::hitgroup_at`), until it
 /// dies: the shots it took.
