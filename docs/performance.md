@@ -5683,6 +5683,117 @@ process's start (the start map still loads before the app exists; not
 done: the first match's start and the server's asset fetch move with
 it); the server's animation sets (457 MB for the five Source games).
 
+## Start cost, third pass (2026-11-25)
+
+What "Load cost, second pass" left at every start: the base game's
+simulation (30.6 G there) and the shell and HUDs (13.0 G). Same run
+(`ultimate_gun_game --offscreen 320x180 +after 1 ugg_new 7 13
+combat_arms:warehouse`, dev profile, six games, read back).
+
+**The boot log counted another thread.** `CHIMERA_BOOT_LOG`'s stages are
+the starting thread's instructions and those of every thread started
+since, and one of those never rests in an offscreen run: the sound
+output's (`cpal_alsa_out`). `--offscreen` points ALSA at the null device
+(`offscreen::silence_audio_device`), whose writes return at once, so the
+thread mixes as fast as a core goes, from the moment Bevy's plugins are
+added (seen in `/proc/<pid>/task/*/stat`: a whole core through the app's
+build and every frame after). Each stage therefore read about 2.5 times
+what it ran: the "30.6 G" was 15.0 G of the app's own, the "13.0 G" 4.9 G.
+The log now says both (`N M instructions (M M this thread's)`): the
+second is the stage. The thread itself is left as it is (below).
+
+**Where the 15.0 G and the 4.9 G went** (this thread's, M instructions;
+by stage marks between the plugins and inside the costly ones, taken out
+again):
+
+| | before | after |
+|---|---|---|
+| Combat Arms' attribute files (`CaData::attributes`): 21 MB decrypted (920), parsed (2,900), read into records (2,000) | 5,850 | 211 |
+| its weapon set (`CaData::weapon_set`): the merged documents read back, then `WeaponSet::parse`: 16 MB of TOML parsed (3,132), the bases merged (801), 2,363 `WeaponData` made (902), the rest (284) | 5,119 | 2,479 |
+| the set registered (`add_weapon_set`: each weapon's hooks' parameters) | 805 | 816 |
+| the rules' settings (`rules::settings`): the install's mission index, every mission file of every map, for three numbers of the server file | 649 | 45 |
+| TF2's guns (`Tf2GunsPlugin`): mounting TF2 again to read its scripts (1,415), its documents and unlocks | 1,570 | 1,553 |
+| DoD:S's guns: mounting it again (612) | 628 | 624 |
+| the other plugins of the simulation, the other games' | 380 | 344 |
+| **physics and the game's simulation** | **15,000** | **6,072** |
+| Combat Arms' HUD (`CaHudPlugin`, the install's UI): the weapons' names (the weapons and item files parsed again: 2,047), the attachments' (the modification and item files again: 1,433), the string table (572), the art decoded (552), the layouts (300) | 4,909 | 1,440 |
+| **the shell and the HUDs** | **4,950** | **1,483** |
+| the window and Bevy's plugins | 795 | 795 |
+
+The other games' simulations and HUDs are under 60 M each (their systems
+are gated by `games_in_play`; building them costs nothing worth cutting).
+
+**What was cut.**
+
+- **The attribute records are kept on disk** (`data::attributes_kept`):
+  `read_attributes`' result (the records of twelve files and the
+  problems it found, said again on a hit) is an entry of the converted
+  cache, keyed by the reader's version (`ATTRIBUTES_READER`: build.rs
+  hashes `read_attributes`, the record types and LithTech's formats) and
+  checked against the files' fingerprints as every entry's inputs are, so
+  a hit reads no file: 5,850 to 211 M (a 7 MB entry). The record types
+  derive serde; records that don't come back from the encoding as they
+  went in aren't written. Not while the reads are recorded
+  (`CHIMERA_VFS_LOG`: the record is what the asset store packs).
+- **The names' keys are read with the records**
+  (`InstallAttributes::item_names`): the HUD parsed the weapons file a
+  second time and the item file a second and third (the shop's weapons
+  were the first) and the modification file a second, 17 MB of text, for
+  each weapon's and attachment's display name. `read_attributes` now
+  takes each name's string key while it has the three documents, and the
+  front end resolves them in its string table (`install::load_with`):
+  3,480 M to nothing. The same names: `heavy::display_names`.
+- **A big weapon set's tables are kept on disk**
+  (`weapon::data::kept_docs`): `WeaponSet::parse` reads the parsed
+  tables of a set of 256 KB or more back from the converted cache (keyed
+  by every document's name and text), as values the cache's encoding can
+  hold (a `toml::Value` isn't self-describing), and merges each table
+  over its bases with one copy instead of three and an index instead of
+  a search: 3,132 to 988 M parsing, 801 to 309 M merging. Any game's set
+  of that size; Combat Arms' is the only one today (on the install:
+  parsed 4,614 M, read back 2,493 M with the records made).
+- **The mission index waits for a mission** (`CaData::server_file`): the
+  rules' settings read the server file alone; the index (649 M) is read
+  by the first match on a Combat Arms map that looks a mission up.
+
+Guards: chimera_sim's `kept_docs` tests (a table reads back as parsed:
+every kind of value, the order, the floats' bits; a set read back is the
+set parsed), combat_arms' `the_attribute_records_read_back_from_the_cache_as_read`
+(a hit gives the records and the names' keys, a changed file is read
+again) and, on the install, `heavy::guest_dressing::
+the_attribute_records_and_the_weapon_set_read_back_the_same`.
+
+Touching `game/data.rs` and `data/attributes.rs` changed Combat Arms'
+converter hash (`world::CONVERTER`): its kept dressing and worlds
+convert once more, and its published converted entries need
+republishing.
+
+**Left, measured.**
+
+- **The offscreen sound thread** (above): a core for the length of every
+  offscreen run and test, and a boot log whose totals need the second
+  number. ALSA has no device that keeps time without hardware; the cure
+  is no output stream when an offscreen run doesn't record its sound.
+- **TF2's and DoD:S's mounts at the plugins' build** (1,415 and 612 M): a
+  Source game's mount reads every VPK directory, and nothing holds the
+  one the start map's loaders made (tried: sharing a directory's tree
+  between archives open at the same time found none open). Holding them
+  for the process would cost their size (TF2's directories are tens of
+  MB in memory); keeping the scripts' numbers on disk needs a key that
+  doesn't need the mount. `source_formats` also builds at opt-level 1 in
+  the dev profile (`lithtech_formats` has an override): a release build
+  pays a fraction of this.
+- **The weapon set's records** (901 M for 2,363 `WeaponData` from their
+  tables, 988 M reading the tables back, 816 M registering): `WeaponData`
+  doesn't serialize (hooks hold TOML tables, and its serde attributes
+  aren't the cache's encoding's); a ladder deals a dozen of the 2,363.
+- **The install's UI** (1.4 G: the string table, the art, the layouts):
+  could be an entry like the records.
+- The kept dressings' decodes (TF2 2,580 M: a whole kit for a dozen
+  guns: dressing by model means an entry per model or a kit that decodes
+  in parts, neither a small change) and the server's animation sets
+  (457 MB): not touched in this pass.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset

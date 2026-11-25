@@ -313,6 +313,13 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   4,671 M, read back 54 M, the same documents
   (`heavy::guest_dressing::the_merged_weapon_documents_read_back_the_same`).
   The other 10.3 G stay until the records or the set serialize.
+  **The records and the set's tables (2026-11-25).** The records now
+  serialize: `data::attributes_kept` keeps `read_attributes`' result as
+  an entry (keyed by `ATTRIBUTES_READER`, its inputs the attribute
+  files; 5.9 G to 0.2 G a start), and `WeaponSet::parse` keeps a big
+  set's parsed tables (`weapon::data::kept_docs`, keyed by the texts;
+  3.1 G to 1.0 G). The `WeaponData` made from the tables still aren't
+  kept (0.9 G). docs/performance.md, "Start cost, third pass".
   **Halo, not moved (no disc image here).** How its donors would sit
   behind the same API: one `Dressing` for `audio::GUEST`'s whole chain
   (game `halo_ce`, converter `maps::CONVERTER`, mount `maps::mount_for`

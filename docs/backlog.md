@@ -3103,7 +3103,8 @@ docs/plans/active/sound.md.
 ## 9. Performance
 
 - **Every game installed, what's left (2026-11-25).** Measured in
-  performance.md, "Every game installed" and "Load cost, second pass" (a
+  performance.md, "Every game installed", "Load cost, second pass" and
+  "Start cost, third pass" (a
   start with six games read back: the start map 39.6 to 24.2 G
   instructions; the server 2.4-3.0 GB to 1.6-2.1 GB). **Done in the
   second pass:** a map read back keeps its DXT textures as blocks
@@ -3111,9 +3112,18 @@ docs/plans/active/sound.md.
   when written, fetched or unstamped, not on every read (5.8 G a start
   to nothing); Combat Arms' worlds go through the converted-map cache by
   default (warehouse's loader 12.6 to 3.5 G); the server keeps no render
-  meshes of the kit (0.9 GB). **Left,** by size: (1) the base game's
-  simulation and UI install at every start (30.6 G and 13.0 G), TF2's
-  simulation 3.4 G; (2) a guest dressing is the whole game's kit though
+  meshes of the kit (0.9 GB). **Done in the third pass:** the base game's
+  simulation and HUD at every start, 15.0 and 4.9 G of the main thread's
+  (the 30.6 and 13.0 G counted the offscreen sound thread too), to 6.1
+  and 1.5 G: Combat Arms' attribute records and its weapon set's
+  parsed tables kept on disk, the display names' keys read with the
+  records instead of the files parsed again, the mission index left to
+  the first mission. **Left,** by size: (1) at every start, TF2's and
+  DoD:S's mounts made again for their scripts (1.4 and 0.6 G), the
+  2,363 weapon records made from their tables and registered (0.9 and
+  0.8 G) and their tables read back (1.0 G), Combat Arms' install UI
+  (1.4 G); and an offscreen run's sound thread, which takes a core for
+  the whole run (the null ALSA device never waits); (2) a guest dressing is the whole game's kit though
   a ladder deals a dozen guns: dress by the ladder's models, not its
   games (TF2's kept dressing still decodes 2.6 G of arrays); (3) on the
   server, the animation sets (457 MB for the five Source games) and what
