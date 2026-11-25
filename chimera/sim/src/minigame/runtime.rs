@@ -10,7 +10,9 @@
 //!   the match is over or about to start (`Starting`, or `Waiting` with
 //!   `players.min` in: the start places everyone as one batch, so a join
 //!   then, a restart's too, isn't spawned twice; it follows its weapon's
-//!   game at once all the same, as a spawn makes it), and is marked
+//!   game at once all the same, as a spawn makes it, and is
+//!   `AwaitingStart` until then, which games' spawn parts wait for), and
+//!   is marked
 //!   `InMinigame`; the rules module
 //!   hears of it first (`minigame::Joined`, an entity event triggered and
 //!   applied there: the ladder's join rung). A match's start
@@ -269,6 +271,10 @@ pub fn respawn(world: &mut World, e: Entity) {
     let at = spawn_point_in(world, e, def.spawn.points, def.spawn.min_distance, def.spawn.facing);
     if !crate::spawning::revive(world, e, at) {
         return;
+    }
+    // Placed: no longer waiting for its first life.
+    if let Some(mut a) = world.get_resource_mut::<AwaitingStart>() {
+        a.0.remove(&e);
     }
     if let Some(m) = def.slots.movement.as_deref()
         && world.get::<MovementSlot>(e).is_none_or(|s| s.0 != m)
@@ -563,7 +569,10 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
         }
         if !match_about_to_start(world) {
             respawn(world, e);
-        } else if world.get_resource::<ActiveMinigame>().is_some_and(|a| a.def.slots.identity == Some(IdentityDef::Weapon)) {
+            continue;
+        }
+        world.get_resource_or_init::<AwaitingStart>().0.insert(e);
+        if world.get_resource::<ActiveMinigame>().is_some_and(|a| a.def.slots.identity == Some(IdentityDef::Weapon)) {
             // Placed by the start's batch, but already the game of what it
             // holds (as a spawn makes it): with no identity a game's
             // per-character parts (Combat Arms' pose and hitboxes) took it
@@ -573,6 +582,22 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
             world.entity_mut(e).insert(FollowsWeapon);
             crate::identity::follow(world, e);
         }
+    }
+}
+
+/// The joins taken in while the match was about to start, not yet placed
+/// (`take_in`) until the start's spawn (`respawn`), their first life: a
+/// game's spawn parts wait for it (Combat Arms' armour: given to such a
+/// join as the game of the gun it held before, it stayed on into a life
+/// of another game's, CS:S players with 100 points of it). A resource,
+/// not a marker: a part on characters for a tick makes archetypes.
+#[derive(Resource, Default)]
+pub struct AwaitingStart(bevy::ecs::entity::EntityHashSet);
+
+impl AwaitingStart {
+    /// Whether `e` waits for the start to place it.
+    pub fn has(&self, e: Entity) -> bool {
+        self.0.contains(&e)
     }
 }
 

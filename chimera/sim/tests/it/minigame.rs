@@ -1419,3 +1419,25 @@ fn a_join_waiting_for_the_start_follows_its_weapon_at_once() {
     assert_eq!(w.get::<chimera_core::slots::GameIdentity>(b).map(|i| i.0.as_str()), Some("kit"), "b is its weapon's game");
     assert!(w.get::<chimera_core::slots::GameIdentity>(a).is_some(), "a spawned as its weapon's game");
 }
+
+/// A join taken in while the match is about to start waits for the start
+/// to place it (`AwaitingStart`, which games' spawn parts wait for:
+/// Combat Arms' armour, given to it as the game of the gun it held before,
+/// stayed on into a CS:S life: party_roster cross_game); placed, it no
+/// longer does.
+#[test]
+fn a_join_awaits_the_start_until_it_places_it() {
+    use chimera_sim::minigame::AwaitingStart;
+    let mut sim = started(DEF);
+    let a = player(&mut sim);
+    sim.ticks(2);
+    let waits = |sim: &Sim, e| sim.app.world().get_resource::<AwaitingStart>().is_some_and(|w| w.has(e));
+    assert!(!waits(&sim, a), "a spawned at its join (under `players.min`)");
+    let b = player(&mut sim);
+    sim.ticks(1);
+    assert_eq!(phase(&sim), Phase::Starting, "b's join brought the start");
+    assert!(waits(&sim, b), "b waits for the start");
+    sim.ticks(1);
+    assert_eq!(chimera_sim::testkit::active_id(sim.app.world(), b), Some(PISTOL), "the start arms b");
+    assert!(!waits(&sim, b) && !waits(&sim, a), "and no longer waits");
+}

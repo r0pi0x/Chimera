@@ -135,7 +135,7 @@ use bevy::prelude::*;
 
 pub use def::MinigameDef;
 pub use results::{MatchResults, NextMatch};
-pub use runtime::{InMinigame, JoinOrder, Protected, Staged};
+pub use runtime::{AwaitingStart, InMinigame, JoinOrder, Protected, Staged};
 
 use crate::{
     console::ConsoleAppExt,

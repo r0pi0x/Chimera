@@ -1906,7 +1906,8 @@ impl NetPart for CaSpread {
 
 /// Combat Arms' armour on its own characters only (`slots::
 /// GameIdentity::allows`; where identity follows the weapon, once it has
-/// one): one that first has health gets the default
+/// one and the match's start placed it, `minigame::AwaitingStart`): one
+/// that first has health gets the default
 /// armour; one that becomes Combat Arms' (another game's armour, or none)
 /// puts on the default gear over the armour it has (its amount kept);
 /// one that becomes another game's takes the gear off (what covers it is
@@ -1927,14 +1928,16 @@ fn armour_follows_identity(
         (With<Health>, With<Intent>),
     >,
     minigame: Option<Res<chimera_sim::minigame::ActiveMinigame>>,
+    awaiting: Option<Res<chimera_sim::minigame::AwaitingStart>>,
     mut commands: Commands,
 ) {
     // A minigame whose players' identity follows their weapon: a player
     // without one yet (before it is taken in, or holding nothing) isn't
-    // Combat Arms'.
+    // Combat Arms'; nor yet one waiting for the match's start to place it
+    // (its identity the gun it held before, not its first life's).
     let following = minigame.is_some_and(|m| m.def.slots.identity == Some(chimera_sim::minigame::def::IdentityDef::Weapon));
     for (e, armor, pieces, identity, follows, owner) in &characters {
-        if (follows || following) && identity.is_none() {
+        if (follows || following) && (identity.is_none() || awaiting.as_ref().is_some_and(|a| a.has(e))) {
             continue;
         }
         let ours = crate::slots::GameIdentity::allows(identity, super::GAME);
