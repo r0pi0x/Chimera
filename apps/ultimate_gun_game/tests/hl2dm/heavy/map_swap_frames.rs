@@ -94,6 +94,19 @@ const SETTLE_FRAMES: u32 = 100;
 /// now, each prop's once it rests), cs_office's 91-112 M.
 const SETTLE_FRAME: u64 = 130_000_000;
 
+/// The frames a map may take from the end of its load (the task's result
+/// taken) into the game: its spawn a step a frame (`prepare::StepAFrame`,
+/// tens of steps) and its settling (`SETTLE_FRAMES` and the hooks' own).
+/// A frame count, not a time: the load's frames on a busy machine are slower,
+/// not more, so this fails only when the spawn or settle stops finishing.
+const AFTER_LOAD_FRAMES: usize = 5_000;
+
+/// How long the load's task (its reading and conversion on other threads)
+/// may take before the test calls it hung: a backstop for a real hang only,
+/// generous for a machine busy with other builds and tests (the load's own
+/// cost is what the instruction limits measure, not its time).
+const LOAD_HANG_SECS: u64 = 1_800;
+
 /// Holds the loading screen (`MapHooks::settle`) for this many frames more.
 #[derive(Resource)]
 struct Hold(u32);
@@ -206,7 +219,7 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
     let (mut insert, mut collider_frames) = ((0, 0), (0, 0));
     let (mut step, mut settling) = (0, Settled::default());
     sim.app.world_mut().resource_mut::<Hold>().0 = SETTLE_FRAMES;
-    let mut count = |sim: &mut Sim| {
+    let count = |sim: &mut Sim| {
         let w = sim.app.world_mut();
         (
             w.query_filtered::<(), With<MapPart>>().iter(w).count(),
@@ -214,7 +227,9 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
         )
     };
     while console::map_loading(sim.app.world()) {
-        assert!(started.elapsed().as_secs() < 120, "{id}: not in after 120 s");
+        let after_load = frames.iter().filter(|f: &&(u64, u8, f64)| f.1 != 0).count();
+        assert!(after_load < AFTER_LOAD_FRAMES, "{id}: not in {AFTER_LOAD_FRAMES} frames after its load");
+        assert!(started.elapsed().as_secs() < LOAD_HANG_SECS, "{id}: not in after {LOAD_HANG_SECS} s (hung?)");
         let before = console::map_load_stage(sim.app.world());
         let had = count(sim);
         let a = counters.read().hw.map_or(0, |h| h.instructions);
