@@ -404,7 +404,7 @@ mod tests {
             rgba8: vec![255; 8 * 8 * 4],
             bc: Some(MapBc {
                 format: MapBcFormat::Bc1,
-                levels: vec![white.repeat(4), white.to_vec()],
+                levels: vec![white.repeat(4), white.to_vec()].into(),
             }),
         };
         assert!(t.keep_blocks_only() && t.rgba8.is_empty() && t.blocks_only());

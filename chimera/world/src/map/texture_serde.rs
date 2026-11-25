@@ -148,7 +148,7 @@ mod tests {
         };
         let bc = MapBc {
             format: MapBcFormat::Bc1,
-            levels: vec![[0xf800, 0x07e0, 0x001f, 0xffff].iter().flat_map(|&c| block(c)).collect(), block(0x07e0), block(0x001f), block(0xf800)],
+            levels: vec![[0xf800, 0x07e0, 0x001f, 0xffff].iter().flat_map(|&c| block(c)).collect(), block(0x07e0), block(0x001f), block(0xf800)].into(),
         };
         let mut t = MapTexture {
             name: "t".into(),

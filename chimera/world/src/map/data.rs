@@ -49,8 +49,13 @@ pub struct MapBc {
     /// Level 0 is the texture's size; each next one halves it (at least
     /// 1 x 1, one block for anything under 4 x 4). The chain may stop above
     /// 1 x 1 (Lithtech's files stop at 4 x 4).
-    #[serde(with = "crate::map::pod_serde::pod_vecs")]
-    pub levels: Vec<Vec<u8>>,
+    ///
+    /// Shared (`Arc`): a texture copied into another map (a kept guest
+    /// dressing's into every map, `map::kept::append`) holds the same
+    /// blocks, not a copy; every guest's blocks copied were 550 MB a map
+    /// with six games (docs/performance.md, "Every game installed").
+    #[serde(with = "crate::map::pod_serde::pod_arc_vecs")]
+    pub levels: std::sync::Arc<Vec<Vec<u8>>>,
 }
 
 /// A block compression format (`MapTexture::srgb` chooses the colour

@@ -18,7 +18,7 @@ fn texture(srgb: bool) -> MapTexture {
         rgba8: vec![255; 16 * 8 * 4],
         bc: Some(MapBc {
             format: MapBcFormat::Bc1,
-            levels: vec![level(16, 8), level(8, 4), level(4, 2), level(2, 1), level(1, 1)],
+            levels: vec![level(16, 8), level(8, 4), level(4, 2), level(2, 1), level(1, 1)].into(),
         }),
     }
 }
@@ -44,7 +44,7 @@ fn decoded_without_support_or_when_the_blocks_do_not_fit() {
         "16 x 8: five levels, box-filtered"
     );
     let mut t = texture(true);
-    t.bc.as_mut().unwrap().levels[1].pop();
+    std::sync::Arc::make_mut(&mut t.bc.as_mut().unwrap().levels)[1].pop();
     assert_eq!(
         to_image(&t, &look, true).texture_descriptor.format,
         TextureFormat::Rgba8UnormSrgb

@@ -1720,7 +1720,7 @@ pub fn dtx_bc(dtx: &Dtx, level: u32) -> Option<crate::map::MapBc> {
             (w % 4 == 0 && h % 4 == 0 && bytes.len() == MapBc::level_bytes(format, w, h)).then(|| bytes.to_vec())
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(MapBc { format, levels })
+    Some(MapBc { format, levels: levels.into() })
 }
 
 /// A mesh being built from the sections: its vertices' lightmap

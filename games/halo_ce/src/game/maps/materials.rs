@@ -1219,7 +1219,7 @@ pub fn texture(map: &MapFile, r: &TextureRequest, decode: bool) -> Result<MapTex
         };
         let bc = MapBc {
             format,
-            levels: face.iter().map(|l| l.data.to_vec()).collect(),
+            levels: face.iter().map(|l| l.data.to_vec()).collect::<Vec<_>>().into(),
         };
         if bc.fits(width, height) {
             texture.bc = Some(bc);

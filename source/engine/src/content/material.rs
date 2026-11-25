@@ -1756,7 +1756,7 @@ fn bc_levels(bytes: &[u8], header: &vtf::header::VTFHeader) -> Option<crate::map
                 .then(|| bytes.get(offset..offset + size).map(<[u8]>::to_vec))?
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(MapBc { format, levels })
+    Some(MapBc { format, levels: levels.into() })
 }
 
 /// Shaders the VMT parser doesn't know, read as the closest one it does.
