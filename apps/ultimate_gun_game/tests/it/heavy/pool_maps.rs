@@ -12,9 +12,9 @@
 //! - have its download set covered: every file of the map's game that the
 //!   server's load read since the change (`CHIMERA_VFS_LOG`, a file of
 //!   this test's) is in the published store's `map/<name>`, `base` or
-//!   `players` set of its game, or a piece's set (`weapon/`,
-//!   `character/`, `parts/`: the ladder's); another game's files in its
-//!   `base`, `players` or a piece's set. A file outside them would be
+//!   `players` set of its game (or a class's `players/<class>`: TF2's),
+//!   or a piece's set (`weapon/`, `character/`, `parts/`: the ladder's);
+//!   another game's files in its `base`, `players` or a piece's set. A file outside them would be
 //!   fetched on demand mid-match by a player without the installs
 //!   (`heavy::no_fetch_in_match` plays one client through a few maps).
 //!
@@ -147,7 +147,7 @@ fn covered(manifest: &Manifest, path: &str, own: Option<&str>) -> bool {
             || set == "players"
             || set == "common"
             || own.is_some_and(|n| set.eq_ignore_ascii_case(&format!("map/{n}")))
-            || ["weapon/", "character/", "parts/"].iter().any(|p| set.starts_with(p));
+            || ["weapon/", "character/", "parts/", "players/"].iter().any(|p| set.starts_with(p));
         wanted && (files.contains(path) || files.iter().any(|f| f.to_ascii_lowercase() == lower))
     })
 }
