@@ -7,6 +7,7 @@
 #[path = "../common/parts.rs"]
 mod parts;
 
+mod rung_passives;
 mod sandbox_gun_files;
 mod sandbox_platform;
 mod sandbox_range;

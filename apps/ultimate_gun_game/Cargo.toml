@@ -54,6 +54,7 @@ combat_arms.workspace = true
 combat_arms_ui.workspace = true
 hl2dm.workspace = true
 dods.workspace = true
+tf2.workspace = true
 # Decoding the offscreen runs' pictures (tests/base/heavy/report_frame.rs).
 image.workspace = true
 
