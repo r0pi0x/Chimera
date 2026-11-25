@@ -19,6 +19,8 @@
 //!   vertices holds the model (`MapHeldModel::bone`), any other (the
 //!   Elites' left gun) is a merged part on its own hand. The muzzle is
 //!   the first attachment, in the same frame.
+//! - **Dropped models** (`dropped`, `w_*.mdl`): a held model's loose form
+//!   (`map::loose::loose_key`), in the model's own space, as it lies.
 //! - **Sounds** (`sounds`): the waves a model's events name.
 //! - **Muzzle flashes** (`muzzle_flash`): a muzzle flash event's options,
 //!   a two-digit code (mdl.md, "Events": tens the scale, units which
@@ -259,6 +261,32 @@ pub fn held(mount: &Mount, path: &str, key: &str, skeleton: &[&str], decode: boo
             own: (!merged.is_empty()).then_some(own),
             merged,
             nose: None,
+            turned: Vec::new(),
+        },
+        studio::textures(&tex, path, decode),
+    ))
+}
+
+/// The dropped model at `path` (`w_*.mdl`) as held model `key`'s loose
+/// form (`map::loose::loose_key`), with its textures: body 0's meshes in
+/// the model's own space (its bind pose: lying as on the ground, facing
+/// +X), the nose +X.
+pub fn dropped(mount: &Mount, path: &str, key: &str, decode: bool) -> Result<(MapHeldModel, Vec<MapTexture>), String> {
+    let (mdl, tex) = read(mount, path)?;
+    let (meshes, bounds) = studio::meshes(&mdl, &tex, 1, &|_, p, n| Some((0, p, n))).pop().unwrap_or_default();
+    if meshes.is_empty() {
+        return Err(format!("{path}: no meshes"));
+    }
+    Ok((
+        MapHeldModel {
+            key: crate::map::loose::loose_key(key),
+            model: MapModel { meshes, bounds, ..Default::default() },
+            bone: String::new(),
+            muzzle: None,
+            attachments: Vec::new(),
+            own: None,
+            merged: Vec::new(),
+            nose: Some(Vec3::X),
             turned: Vec::new(),
         },
         studio::textures(&tex, path, decode),

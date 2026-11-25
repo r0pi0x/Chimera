@@ -8,21 +8,22 @@
 //! stab and its backstab by the attacker's level view, `Backstab::Aim`).
 //! Their models are the install's `v_*.mdl` (view, with the hands),
 //! `p_*.mdl` (held, on the player skeleton by bone name) and `w_*.mdl`
-//! (dropped: read for the asset sets), loaded with a map (`add_guns`:
+//! (dropped and thrown: the held model's loose form, `map::loose::
+//! loose_key`), loaded with a map (`add_guns`:
 //! `goldsrc_engine::content::weapon_models`, with the muzzle flashes their
 //! events name), what the view models play by `view` (`view::rules`),
 //! their sounds GoldSrc's waves by path
 //! (`goldsrc_engine::content::sounds`: the data's entries, the view
-//! models' sound events, the melee swings' and the grenades').
+//! models' sound events, the melee swings' and the grenades'); the HE's
+//! and smoke's looks from the install's sprites (`looks`).
 //!
 //! Each gun's speed is its data's `max_speed` (units/s; a scope's zoomed
 //! speed its `[alt] max_speed`), what the movement reads.
 //!
 //! Known shortcuts (beside `gun`'s, `grenades`' and `view`'s):
-//! - A dropped gun shows its held model (`p_`), not its `w_` model.
 //! - Shells are not ejected.
-//! - The bodies' weapon sequences (aiming, shooting each gun) are the
-//!   bodies' stand-in (`bodies`).
+//! - The bodies' sequence set per weapon (`[hooks."cs16:body_anim"]`,
+//!   `bodies::BodyAnim`) is ours (`bodies`).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::data::{WeaponData, WeaponDataAppExt, WeaponSet};
@@ -35,6 +36,7 @@ use crate::{
 
 pub mod grenades;
 pub mod gun;
+pub mod looks;
 pub mod penetration;
 pub mod view;
 
@@ -194,6 +196,21 @@ pub fn add_guns(mount: &Mount, wants: &dyn Fn(&str) -> bool, skeleton: &[&str], 
                 Err(e) => map.warnings.push(e),
             }
         }
+        // Its dropped model, the held one's loose form (`dropped_model`).
+        if let Some(path) = dropped_model(w).filter(|p| mount.contains(p)) {
+            match weapon_models::dropped(mount, &path, &w.id, decode) {
+                Ok((mut h, textures)) => {
+                    offset(&mut h.model, map.textures.len());
+                    map.textures.extend(textures);
+                    map.kit.held.push(h);
+                }
+                Err(e) => map.warnings.push(e),
+            }
+        }
+        // The sprites its look draws (`looks`).
+        for sprite in looks::sprites_of(&w.id) {
+            goldsrc_engine::content::sprites::particle_material(mount, sprite, decode, map);
+        }
         entries.extend(data_sounds(w));
     }
     // The muzzle flashes their view models' events name (`view::effect`).
@@ -269,7 +286,10 @@ pub const SKELETON: &[&str] = &[
 /// The hooks the data names.
 pub fn register_hooks(app: &mut App) {
     app.register_weapon_hook::<gun::GunParams>(gun::HOOK, |e, _, p| gun::insert(e, p))
-        .register_weapon_hook::<grenades::GrenadeParams>(grenades::HOOK, grenades::throwable);
+        .register_weapon_hook::<grenades::GrenadeParams>(grenades::HOOK, grenades::throwable)
+        .register_weapon_hook::<super::bodies::BodyAnim>(super::bodies::BODY_ANIM_HOOK, |e, _, p| {
+            e.insert(p.clone());
+        });
 }
 
 /// The game's weapons in an app's weapon registry: the data, its hooks,
@@ -288,6 +308,7 @@ impl Plugin for Cs16GunsPlugin {
         if let Err(e) = app.add_weapon_data(&chimera_core::game_data::texts(DATA)) {
             panic!("Counter-Strike 1.6 weapon data: {e}");
         }
+        app.add_plugins(looks::Cs16GrenadeLooksPlugin);
         app.add_message::<chimera_sim::weapon::WeaponEvent>()
             .predicted_part::<gun::Cs16Gun>()
             .view_anim_rules(super::GAME, view::rules())

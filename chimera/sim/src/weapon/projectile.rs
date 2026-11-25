@@ -915,7 +915,7 @@ fn face_nose(
 ) {
     let Some(assets) = assets else { return };
     let Ok((mut f, shown, mut t)) = flyers.get_mut(add.entity) else { return };
-    let Some(a) = assets.0.get(&shown.0).filter(|a| a.nose.is_some()) else { return };
+    let Some(a) = assets.form(&shown.0).filter(|a| a.nose.is_some()) else { return };
     let turn = a.nose_turn();
     // Its rotation as made, the old turn taken off: a tumbling one keeps
     // its launch's facing.

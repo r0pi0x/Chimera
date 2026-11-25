@@ -49,11 +49,11 @@
 //!   other bodies are not entities here (open question 3).
 //! - The trigger overlap is the player's box against the trigger's hull 0
 //!   regions (open question 10: the clip-hull test is not made).
-//! - Light styles: the patterns change, but GoldSrc maps draw style 0's
-//!   lightmap only (`content::lightmap`), so a switched light shows no
-//!   change; `tables::letter_brightness` is linear (open question 11).
-//! - Sprites keep their on/off state only: GoldSrc's sprites are not drawn
-//!   yet, so their frames don't animate; `env_glow` and `cycler_sprite`
+//! - Light styles: a switchable light is drawn on or off only (its
+//!   `pattern` key is not played, `content::lightmap`);
+//!   `tables::letter_brightness` is linear (open question 11).
+//! - Sprites keep their on/off state only: their frames don't animate
+//!   (`content::sprites` draws the first); `env_glow` and `cycler_sprite`
 //!   have no logic.
 //! - `ambient_generic`'s fades, spin-up and LFO are not stepped (it starts
 //!   and stops at its volume and pitch); presets are ignored.
@@ -1025,6 +1025,38 @@ impl World {
             let (path, volume) = (a.path.clone(), a.volume);
             self.effects.push(Effect::Sound { path, at, entity, volume });
         }
+    }
+
+    /// Every wave (a path under `sound/`) the entities may play, each
+    /// once, in entity order: the movers' sounds by their tables, the
+    /// ambient sounds, the breakables' break sounds, and `+use`'s two
+    /// (what a map's sound bank needs, `content::sounds::add_map`).
+    pub fn sound_paths(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut add = |p: Option<&String>| {
+            if let Some(p) = p.map(|p| p.trim().to_ascii_lowercase())
+                && !p.is_empty()
+                && !out.contains(&p)
+            {
+                out.push(p);
+            }
+        };
+        let fixed = ["common/wpn_select.wav".to_string(), "common/wpn_denyselect.wav".to_string()];
+        fixed.iter().for_each(|p| add(Some(p)));
+        for e in &self.ents {
+            match &e.kind {
+                Kind::Door(d) => [&d.move_sound, &d.stop_sound, &d.locked_sound, &d.unlocked_sound].into_iter().for_each(|p| add(p.as_ref())),
+                Kind::Button(b) => [&b.sound, &b.locked_sound, &b.unlocked_sound].into_iter().for_each(|p| add(p.as_ref())),
+                Kind::Train(t) => [&t.move_sound, &t.stop_sound].into_iter().for_each(|p| add(p.as_ref())),
+                Kind::Rotating(r) => add(r.sound.as_ref()),
+                Kind::Ambient(a) => add(Some(&a.path)),
+                Kind::Breakable(b) | Kind::Pushable(Some(b)) => {
+                    b.material.break_sounds().iter().for_each(|p| add(Some(&p.to_string())))
+                }
+                _ => {}
+            }
+        }
+        out
     }
 
     /// The looped ambient sounds playing now (map start: those not

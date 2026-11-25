@@ -26,8 +26,8 @@
 //!   (`core::Blinded::raised`), not the original's sum of holds; the
 //!   flash's line of sight is the shared one (the eye, not a random body
 //!   point).
-//! - The smoke cloud's size and timing (weapons.md open question 5) and
-//!   the HE's and smoke's looks are not drawn yet (no sprites).
+//! - The smoke cloud's size and timing (weapons.md open question 5) are
+//!   ours; the HE's and smoke's looks are `looks`'.
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{

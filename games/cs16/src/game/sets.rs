@@ -10,8 +10,9 @@
 //!   them (view, held, and the dropped `w_` beside the held, with their
 //!   `<name>t.mdl` texture and `<name>NN.mdl` sequence-group files) and
 //!   its sounds (`weapons::data_sounds`: each entry's waves under
-//!   `sound/`, and the view model's sound events) and the muzzle flash
-//!   sprites its view model's events name;
+//!   `sound/`, and the view model's sound events), the muzzle flash
+//!   sprites its view model's events name and the sprites a grenade's
+//!   look draws (`weapons::looks`);
 //! - `map/<name>` (`load_map`): the map converted as another game's
 //!   gameplay loads it (its world, the WADs its `wad` key names, its sky,
 //!   `sound/materials.txt`; the bodies it reads are `players`').
@@ -54,6 +55,10 @@ pub fn load_weapon(mount: &Mount, id: &str) -> bool {
         for sprite in codes.iter().filter_map(|c| goldsrc_engine::content::weapon_models::flash_sprite(c)) {
             let _ = mount.read(&sprite);
         }
+    }
+    // The sprites its look draws (`weapons::looks`).
+    for sprite in super::weapons::looks::sprites_of(&w.id) {
+        let _ = mount.read(sprite);
     }
     let mut table = Default::default();
     for entry in entries {

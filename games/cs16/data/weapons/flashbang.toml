@@ -26,3 +26,7 @@ icon = "d_flashbang"
 effect = "flash"
 max = 2
 bounce_sound = "weapons/grenade_hit1.wav"
+
+# The player model's sequences it plays (`ref_aim_grenade` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "grenade"

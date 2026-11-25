@@ -3,7 +3,9 @@
 //! spawns stand on the floor, a player walking from them never ends up
 //! inside a wall or player clip (hull 1, the game's own player hull, is
 //! the judge: docs/plans/active/goldsrc.md §3), and shots pass the player
-//! clip that stops characters. Passes with a note without an install.
+//! clip that stops characters; cs_militia's switchable lights convert as
+//! light styles, de_aztec's sprites and sounds as its entities name them.
+//! Passes with a note without an install.
 
 use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
@@ -198,4 +200,31 @@ fn shots_pass_player_clip_that_stops_characters() {
         assert!(*characters > 0, "probe {i}: characters pass the clip");
         assert_eq!(*shots, 0, "probe {i}: shots meet the clip");
     }
+}
+
+/// cs_militia's switchable lights (`shack`, style 33; `slight`, 32: both
+/// start lit) carry their own lightmap shares beside style 0, which a
+/// switch takes away; de_aztec draws its sprites (the unnamed ones on
+/// from the start) and both play sounds the map's entities name.
+#[test]
+fn light_styles_sprites_and_sounds() {
+    let Some(mount) = mount() else { return };
+    let militia = convert(&mount, "cs_militia", false);
+    let lightmap = militia.lightmap.as_ref().unwrap();
+    let styles: Vec<(u8, bool)> = lightmap.styles.iter().map(|s| (s.style, s.on)).collect();
+    assert_eq!(styles, vec![(32, true), (33, true)]);
+    for s in &lightmap.styles {
+        assert!(!s.texels.is_empty() && s.texels.len() == s.rgb.len() && s.pattern.is_empty());
+        assert!(s.rgb.iter().any(|c| c.iter().any(|v| *v > 0.0)), "style {} adds light", s.style);
+    }
+    // Off, the shack's style takes its share away.
+    let (dark, _) = lightmap.relit(&|s| if s.style == 33 { 0.0 } else { s.start() });
+    let t = lightmap.styles[1].texels[lightmap.styles[1].rgb.iter().position(|c| c[0] > 0.05).unwrap()] as usize;
+    assert!(dark[t][0] < lightmap.rgb[t][0] - 0.04);
+    let aztec = convert(&mount, "de_aztec", false);
+    assert_eq!(aztec.sprites.len(), 76, "{:?}", aztec.warnings);
+    assert!(aztec.sprites.iter().all(|s| s.entity.is_some() && s.size.x > 0.0));
+    assert!(aztec.sprites.iter().any(|s| s.start_on));
+    // Its thunder clap (entities.md's worked example).
+    assert!(aztec.sounds.entry("ambience/thunder_clap.wav").is_some(), "{:?}", aztec.sounds.entries.keys().collect::<Vec<_>>());
 }

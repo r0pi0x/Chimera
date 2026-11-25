@@ -30,7 +30,7 @@ use bevy::math::{Vec2, Vec3};
 use goldsrc_formats::{bsp::Bsp, materials::Materials};
 
 use super::{
-    lightmap::{Atlas, Packed},
+    lightmap::{Atlas, Packed, StyleStart},
     textures::{Families, Kind, kind, warp},
     to_engine, to_engine_dir,
 };
@@ -77,13 +77,14 @@ pub fn surface_kind(letter: char) -> &'static str {
 /// The meshes of `models` into `data.meshes` and the lightmap atlas into
 /// `data.lightmap`; `slots[t]` is BSP texture t's index into
 /// `data.textures` (None: drawn flat); `families` the lump's texture
-/// families.
+/// families; `styles` how each light style other than 0 starts.
 pub fn add_meshes(
     bsp: &Bsp,
     models: &[Drawn],
     slots: &[Option<usize>],
     families: &Families,
     materials: &Materials,
+    styles: &dyn Fn(u8) -> StyleStart,
     data: &mut MapData,
 ) {
     struct Pending {
@@ -125,10 +126,11 @@ pub fn add_meshes(
             let Some(plane) = bsp.planes.get(face.plane as usize) else { continue };
             let sign = if face.side != 0 { -1.0 } else { 1.0 };
             let normal = to_engine_dir(plane.normal.map(|c| c * sign)).normalize_or_zero();
-            // Its lightmap block (style 0), or the white one.
+            // Its lightmap blocks (each style's), or the white one.
             let block = match (bsp.lightmap_extent(face), bsp.face_lightmap(face)) {
                 (Some(ext), Some(bytes)) if Bsp::style_count(face) > 0 => {
-                    Some((atlas.add(ext.size[0], ext.size[1], bytes), ext))
+                    let styles = &face.styles[..Bsp::style_count(face)];
+                    Some((atlas.add_styled(ext.size[0], ext.size[1], bytes, styles), ext))
                 }
                 _ => None,
             };
@@ -198,7 +200,7 @@ pub fn add_meshes(
             }
         }
     }
-    let packed: Packed = atlas.finish();
+    let packed: Packed = atlas.finish(styles);
     for (_, mut p) in by_key {
         p.mesh.lightmap_uvs = p.luxels.iter().map(|&(b, l)| packed.uv(b, l)).collect();
         if !p.mesh.indices.is_empty() {

@@ -1,0 +1,39 @@
+# CS 1.6's body aiming and firing the AK-47 seen in third person, then an
+# HE grenade's explosion sprite (a scene script: chimera_client's
+# `scene`; games/cs16 bodies, weapons::looks).
+#   CHIMERA_CS16_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 \
+#       +sandbox cs16:de_dust2 --scene apps/ultimate_gun_game/scenes/cs16_body_he.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+god
+rung cs16:weapon_ak47
+wait 150
+thirdperson
+cam_idealyaw 140
+setang -10 0
+wait 60
+shot cs16_ak_aim
+setang 25 0
+wait 30
+shot cs16_ak_aim_down
+setang -10 0
++attack
+wait 3
+shot cs16_ak_shoot
+-attack
+wait 60
+firstperson
+cam_idealyaw 0
+rung cs16:weapon_hegrenade
+wait 150
+setang 30 0
+shot_after blast 2 cs16_he_a
+shot_after blast 8 cs16_he_b
++attack
+wait 90
+-attack
+wait_for blast 600
+wait 60

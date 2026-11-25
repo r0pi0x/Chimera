@@ -11,31 +11,66 @@
 //! On another game's map the same bodies are added by the guest dressing
 //! (`dress_guest_in`), so a CS 1.6 player wears its body there.
 //!
-//! What a body plays (`drive`, the placeholder movement's stand-in for
-//! CS 1.6's player animation): a gait sequence by the character's ground
-//! speed and stance (`idle1`, `walk`, `run`, `crouch_idle`,
+//! What a body plays (`drive`, CS 1.6's player animation as far as the
+//! model's own sequences tell it): a gait sequence by the character's
+//! ground speed and stance (`idle1`, `walk`, `run`, `crouch_idle`,
 //! `crouchrun`; `jump` in the air), its playback matched to the speed
-//! over its authored speed, and the stand-in pistol's aim
-//! (`ref_aim_onehanded`, `crouch_aim_onehanded`) layered over the upper
-//! body.
+//! over its authored speed; over the upper body the held weapon's set
+//! (`BodyAnim`, the weapon data's `[hooks."cs16:body_anim"] set`: the
+//! models' sequences are named `ref_aim_<set>`, `crouch_shoot_<set>` ...):
+//! its aim (`ref_aim_<set>`, `crouch_aim_<set>`) on the pitch blends
+//! (`body_pitch`, the view's pitch down, `aim_param`), and over it a
+//! gesture from its start to its end: a shot, swing or throw
+//! `ref_shoot_<set>` (the dual pistols `ref_shoot_` and `ref_shoot2_` by
+//! the clip's parity, as the view model's left and right), a reload
+//! `ref_reload_<set>` (`crouch_` for each while ducked). A weapon with no
+//! set (another game's) plays `onehanded`'s, as does a set the model
+//! lacks. The body holds its active weapon's held model (`hold_weapons`:
+//! `map::Held`, the `p_` model in the right hand).
 //!
 //! Known shortcuts:
-//! - The gait and aim choice is a stand-in until specs/cs16 has the
-//!   player animation (M1/M2): no shooting or reloading sequences, the aim
-//!   blend at the middle (pitch 0), no turning of the legs.
+//! - No spec says which set each weapon plays (view_and_hud.md has no
+//!   player animation): the sets in the data are ours, by the sequences'
+//!   names (`ak47`, `mp5`, `m249`, `knife`, `grenade`, `dualpistols` where
+//!   the model names the weapon; pistols `onehanded`, shotguns `shotgun`,
+//!   SMGs `carbine`, other rifles and snipers `rifle`).
+//! - Which way the pitch blends run (mdl.md open question 2) is read
+//!   from the model (the forearms point up at the blends' start, −90,
+//!   down at their end); the original may snap between blends instead.
+//! - No turning of the legs against the view, no swimming, death,
+//!   flinch or shield sequences; a server's hitboxes stay in the drawn
+//!   pose's place (no tick pose of their own).
 
 use bevy::prelude::*;
 use goldsrc_engine::content::{METERS_PER_UNIT, studio};
 
 use super::GAME;
+use chimera_sim::weapon::{Inventory, Magazine, Weapon, WeaponEvent, WeaponEventKind};
+use serde::Deserialize;
+
 use crate::{
-    core::{MovementState, Team, Velocity},
+    core::{Intent, MovementState, Team, Velocity},
     map::{
-        BodyModel, CharacterModels, MapData,
-        anim::{Animator, Layer},
+        BodyModel, CharacterModels, Held, MapData,
+        anim::{AnimSet, Animator, Layer},
+        interp::{RenderedView, eye_view},
     },
     mount::Mount,
 };
+
+/// The weapon data's hook naming the body's sequence set (module doc).
+pub const BODY_ANIM_HOOK: &str = "cs16:body_anim";
+
+/// The set a weapon without one plays.
+pub const FALLBACK: &str = "onehanded";
+
+/// A weapon's sequence set (`BODY_ANIM_HOOK`): `ak47` for
+/// `ref_aim_ak47` and its kin.
+#[derive(Component, Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BodyAnim {
+    pub set: String,
+}
 
 /// The classes' models, in class order (module doc).
 pub const CLASS_MODELS: [&str; 8] = [
@@ -103,39 +138,145 @@ pub fn gait(speed: f32, crouching: bool, on_ground: bool) -> &'static str {
     }
 }
 
-/// The stand-in pistol's aim for a stance.
-pub fn aim(crouching: bool) -> &'static str {
-    if crouching { "crouch_aim_onehanded" } else { "ref_aim_onehanded" }
+/// A sequence of `set` for a stance: `ref_<what>_<set>` standing,
+/// `crouch_<what>_<set>` ducked (`what`: `aim`, `shoot`, `shoot2`,
+/// `reload`).
+pub fn upper(what: &str, set: &str, crouching: bool) -> String {
+    format!("{}_{what}_{set}", if crouching { "crouch" } else { "ref" })
 }
 
-/// Bodies of this game play their gait and aim (module doc).
+/// The pitch blends' parameter for a view `pitch_up` degrees above level
+/// (module doc): the blends run from −90 (up) to +90 (down), GoldSrc's
+/// pitch (positive looking down).
+pub fn aim_param(pitch_up: f32) -> f32 {
+    (-pitch_up).clamp(-90.0, 90.0)
+}
+
+/// Sequence `what` of `set` (else of `FALLBACK`) for a stance in `anims`.
+fn find(anims: &AnimSet, what: &str, set: &str, crouching: bool) -> Option<usize> {
+    anims
+        .sequence(&upper(what, set, crouching))
+        .or_else(|| anims.sequence(&upper(what, FALLBACK, crouching)))
+}
+
+/// A body's gesture over its aim (module doc).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Gesture {
+    /// The sequence and how far in (0-1); None: none playing.
+    pub playing: Option<(usize, f32)>,
+}
+
+/// What a weapon did, by owner, this frame: the gesture to start
+/// (`what`) and the weapon.
+fn happened(events: &mut MessageReader<WeaponEvent>, magazines: &Query<&Magazine>) -> Vec<(Entity, &'static str)> {
+    let mut out = Vec::new();
+    for ev in events.read().filter(|e| e.shown()) {
+        let what = match ev.kind {
+            WeaponEventKind::Shot { .. } => {
+                // The dual pistols: the left gun on an odd clip after the
+                // shot (the view model's rule).
+                let odd = magazines.get(ev.weapon).is_ok_and(|m| m.clip % 2 == 1);
+                if odd { "shoot" } else { "shoot2" }
+            }
+            WeaponEventKind::Swing { .. } | WeaponEventKind::Thrown => "shoot",
+            WeaponEventKind::ReloadStarted => "reload",
+            _ => continue,
+        };
+        out.push((ev.owner, what));
+    }
+    out
+}
+
+/// Bodies of this game play their gait, aim and gestures (module doc).
 #[allow(clippy::type_complexity)]
 pub fn drive(
-    mut bodies: Query<(&mut Animator, &BodyModel, Option<&Velocity>, Option<&MovementState>)>,
+    mut bodies: Query<(
+        Entity,
+        &mut Animator,
+        &BodyModel,
+        Option<&Velocity>,
+        Option<&MovementState>,
+        Option<&Intent>,
+        Option<&RenderedView>,
+        Option<&Inventory>,
+        Option<&mut Gesture>,
+    )>,
+    sets: Query<&BodyAnim>,
+    magazines: Query<&Magazine>,
+    mut events: MessageReader<WeaponEvent>,
     models: Option<Res<CharacterModels>>,
     time: Res<Time>,
+    mut commands: Commands,
 ) {
+    let did = happened(&mut events, &magazines);
     let Some(models) = models else { return };
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
-    for (mut a, body, velocity, state) in &mut bodies {
+    for (e, mut a, body, velocity, state, intent, view, inventory, gesture) in &mut bodies {
         if !models.0.get(body.0).is_some_and(|m| m.game == Some(GAME)) {
             continue;
         }
+        let Some(mut gesture) = gesture else {
+            commands.entity(e).insert(Gesture::default());
+            continue;
+        };
         let speed = velocity.map_or(0.0, |v| Vec2::new(v.0.x, v.0.z).length());
         let (crouching, on_ground) = state.map_or((false, true), |s| (s.crouching, s.on_ground));
-        let set = a.set.clone();
-        let Some(s) = set.sequence(gait(speed, crouching, on_ground)).or_else(|| set.sequence("idle1")) else {
+        let anims = a.set.clone();
+        let Some(s) = anims.sequence(gait(speed, crouching, on_ground)).or_else(|| anims.sequence("idle1")) else {
             continue;
         };
         a.play(s, now);
         // Feet at the ground's speed: playback by the authored speed.
-        let authored = set.ground_speed(s, &a.params) * METERS_PER_UNIT;
+        let authored = anims.ground_speed(s, &a.params) * METERS_PER_UNIT;
         a.playback = if authored > 0.0 { (speed / authored).clamp(0.3, 2.5) } else { 1.0 };
+        // The aim's blends by the view's pitch.
+        if let (Some(i), Some(intent), Some(state)) = (anims.param(studio::PITCH_PARAM), intent, state) {
+            let look = eye_view(view, intent, state);
+            a.set_param(i, aim_param(look.pitch.to_degrees()));
+        }
         a.advance(dt, now);
-        if let Some(l) = set.sequence(aim(crouching)) {
-            if a.layers.first().copied().flatten().is_none_or(|x| x.sequence != l) {
-                a.layers = vec![Some(Layer { sequence: l, cycle: 0.0, weight: 1.0 })];
-            }
+        let set = inventory
+            .and_then(|i| i.active)
+            .and_then(|w| sets.get(w).ok())
+            .map_or(FALLBACK, |b| b.set.as_str());
+        // A gesture this frame starts from its first frame.
+        if let Some((_, what)) = did.iter().rev().find(|(o, _)| *o == e) {
+            let seq = find(&anims, what, set, crouching).or_else(|| find(&anims, "shoot", set, crouching).filter(|_| *what == "shoot2"));
+            gesture.playing = seq.map(|q| (q, 0.0));
+        } else if let Some((q, cycle)) = gesture.playing {
+            let c = cycle + dt * anims.cycle_rate(q, &a.params);
+            gesture.playing = (c < 1.0).then_some((q, c));
+        }
+        let mut layers = Vec::with_capacity(2);
+        if let Some(l) = find(&anims, "aim", set, crouching) {
+            let cycle = a.layers.first().copied().flatten().filter(|x| x.sequence == l).map_or(0.0, |x| x.cycle);
+            let cycle = (cycle + dt * anims.cycle_rate(l, &a.params)).fract();
+            layers.push(Some(Layer { sequence: l, cycle, weight: 1.0 }));
+        }
+        if let Some((q, cycle)) = gesture.playing {
+            layers.push(Some(Layer { sequence: q, cycle, weight: 1.0 }));
+        }
+        a.layers = layers;
+    }
+}
+
+/// Characters in this game's bodies hold their active weapon's held
+/// model (`map::Held`: its `p_` model in the right hand).
+#[allow(clippy::type_complexity)]
+pub fn hold_weapons(
+    characters: Query<(Entity, Option<&Inventory>, Option<&Held>, &BodyModel), With<Animator>>,
+    weapons: Query<&Weapon>,
+    models: Option<Res<CharacterModels>>,
+    mut commands: Commands,
+) {
+    let Some(models) = models else { return };
+    for (e, inventory, held, body) in &characters {
+        if !models.0.get(body.0).is_some_and(|m| m.game == Some(GAME)) {
+            continue;
+        }
+        let id = inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok()).map(|w| w.id.to_string());
+        if held.is_none_or(|h| h.0 != id) {
+            commands.entity(e).insert(Held(id));
         }
     }
 }
@@ -145,7 +286,7 @@ pub struct Cs16BodiesPlugin;
 
 impl Plugin for Cs16BodiesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, drive.in_set(crate::map::DriveAnimation));
+        app.add_systems(Update, (hold_weapons, drive.in_set(crate::map::DriveAnimation)));
     }
 }
 
@@ -162,5 +303,8 @@ mod tests {
         assert_eq!(gait(1.0, false, true), "walk");
         assert_eq!(gait(1.0, true, true), "crouchrun");
         assert_eq!(gait(0.0, false, false), "jump");
+        assert_eq!(upper("shoot", "ak47", false), "ref_shoot_ak47");
+        assert_eq!(upper("aim", "rifle", true), "crouch_aim_rifle");
+        assert_eq!(aim_param(120.0), -90.0);
     }
 }

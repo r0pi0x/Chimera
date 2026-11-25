@@ -65,3 +65,7 @@ icon = "d_knife"
 idle_after = 20.0
 idle_interval = 20.0
 idle_after_draw = true
+
+# The player model's sequences it plays (`ref_aim_knife` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "knife"

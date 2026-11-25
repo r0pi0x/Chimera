@@ -23,8 +23,8 @@ Force) is a small port on the same loader.
 |---|---|---|
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
-| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Left: the lightmap brightening against captures; the logic's sounds and debris |
-| M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Left: muzzle flash sprites and shells, the HE's and smoke's looks, the bodies' weapon sequences, measurements (weapons.md open questions) |
+| M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Polish (2026-11-25): the maps' sounds (doors, buttons, ambients, breakables: `content::sounds::add_map`), `env_sprite`/`env_glow` drawn and switched (`content::sprites`), light styles in the lightmap atlas (switchable 32+ and the animated presets, `content::lightmap`; converter version 3). Left: the lightmap brightening against captures; debris; sentences |
+| M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Left: shells, measurements (weapons.md open questions) |
 | M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Left: water volumes from GoldSrc maps, the ladder volumes' own rule, measurement in the game |
 | M3 party rungs | not started | §5 |
 
@@ -753,3 +753,39 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   26 of the 28 ladder volumes of de_nuke, cs_assault and de_train
   climbed to their tops from their feet (de_dust2 has no ladder; one
   each on de_nuke and cs_assault not reached from the four sides tried).
+
+### 2026-11-25: polish (bodies, looks, sounds, sprites, light styles)
+
+- **Bodies** (`games/cs16/src/game/bodies.rs`): over the gait, the held
+  weapon's set of the player model's own sequences: `ref_aim_<set>` /
+  `crouch_aim_<set>` on the 9 pitch blends (`body_pitch` = the view's
+  pitch down, GoldSrc's sign: the model's forearms point up at −90,
+  `heavy::bodies`),
+  a shot, swing or throw `ref_shoot_<set>` (the Elites `shoot`/`shoot2`
+  by the clip's parity), a reload `ref_reload_<set>`, each played once
+  over the aim; the body holds its active weapon's `p_` model
+  (`hold_weapons`, `map::Held`: no CS 1.6 body held one before). The
+  set is weapon data (`[hooks."cs16:body_anim"] set`),
+  ours by the sequences' names: no spec says (Known shortcut).
+- **Grenade looks** (`weapons::looks`): the HE plays
+  `sprites/zerogxplode.spr` once, the smoke puffs `sprites/gas_puff_01.spr`
+  every second 21 times; GoldSrc sprites as particle sheets
+  (`goldsrc_engine::content::sprites::particle_material`). Sizes, rates
+  and lives are ours (weapons.md open question 5).
+- **Dropped weapons**: a held model may carry a loose form
+  (`map::loose::loose_key`, Chimera), which loose and shown items take;
+  CS 1.6's is its `w_` model (`weapon_models::dropped`).
+- **Map sounds**: the conversion adds every wave the logic can play
+  (`World::sound_paths`: door, button, train, fan and break tables,
+  `ambient_generic`, `+use`) as entries by path; sentences (`!NAME`) are
+  not read (no spec; none in the stock maps).
+- **Sprites**: `env_sprite` and `env_glow` as `MapSprite`s (first frame,
+  `scale`, render keys), switched by the logic through `EntityPart`.
+- **Light styles**: bsp.md's layout (a block per style, back to back);
+  six stock maps carry styles beside 0 (cs_747 4/10/32, cs_estate,
+  cs_havana and cs_militia 32/33, de_survivor 32, de_torn 1), contrary to
+  bsp.md's "only style 0" (to correct in the spec). The atlas is the
+  start's sum and each style a `MapLightStyle` share; the logic's
+  switches reach `map::LightStyles` (not network clients yet).
+- Converter version 3; the cs16 sets republished.
+

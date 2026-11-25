@@ -5,7 +5,9 @@
 //! simulation's requests (a held model's key); the body is
 //! `map::loose::attach_loose`'s, the meshes these systems add, from the
 //! held models' whole meshes (`render::bodies::HeldAssets`) placed by the
-//! loose form's frame (`map::loose::LooseAssets`). A shown item that
+//! loose form's frame (`map::loose::LooseAssets`): a held model's own
+//! loose form where the kit has one (`map::loose::loose_key`: GoldSrc's
+//! `w_` model beside the `p_` in hand). A shown item that
 //! appears outside the playable area on a map with a 3D skybox is in the
 //! skybox (HL2's headcrab canister before it enters the world): drawn on
 //! the sky camera's layer, as particles out there are (`render::particles`).
@@ -44,7 +46,9 @@ pub fn draw_loose(
     for (e, item) in &items {
         // Until its held model is there (one added late:
         // `bodies::build_late_held`), it waits undrawn.
-        let (Some(a), Some(parts)) = (assets.0.get(&item.0), held.0.get(&item.0)) else {
+        // Its own loose form where the kit has one (`loose::loose_key`).
+        let key = assets.drawn_key(&item.0);
+        let (Some(a), Some(parts)) = (assets.0.get(key.as_ref()), held.0.get(key.as_ref())) else {
             continue;
         };
         // `try_`: an item can be gone by the time this applies (picked up,
@@ -113,7 +117,9 @@ pub fn attach_shown(
         // Until its held model is there it waits undrawn, as a loose
         // item does: a TF2 sticky fired before the late-built
         // `tf2:sticky` was ready stayed invisible for its whole life.
-        let (Some(a), Some(parts)) = (assets.0.get(&item.0), held.0.get(&item.0)) else {
+        // Its own loose form where the kit has one (`loose::loose_key`).
+        let key = assets.drawn_key(&item.0);
+        let (Some(a), Some(parts)) = (assets.0.get(key.as_ref()), held.0.get(key.as_ref())) else {
             if !held.0.contains_key(&item.0) {
                 missing.insert(item.0.clone());
             }

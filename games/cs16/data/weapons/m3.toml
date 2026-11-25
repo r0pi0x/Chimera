@@ -48,3 +48,7 @@ icon = "d_m3"
 [hooks."cs16:gun"]
 kick = { model = "whole", ground = [4.0, 6.0], air = [8.0, 11.0] }
 pellet_range = 3000.0
+
+# The player model's sequences it plays (`ref_aim_shotgun` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "shotgun"

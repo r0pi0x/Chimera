@@ -5,7 +5,9 @@
 //! a hand of the player skeleton; each dropped `w_` model parses; every
 //! sound the data and the view models name decodes. A kit with them all
 //! keeps the player bodies' hands and holds the muzzle flashes the view
-//! models' events name. Passes with a note without an install.
+//! models' events name, every dropped model as its held model's loose
+//! form (the AK-47 lying as `w_ak47`) and the grenades' look sprites as
+//! particle sheets. Passes with a note without an install.
 
 use chimera_world::map::MapData;
 use cs16::game::{bodies, weapons};
@@ -81,7 +83,22 @@ fn every_weapons_models_and_sounds_load() {
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     weapons::add_guns(&mount, &|_| true, &names, false, &mut map);
     assert_eq!(map.kit.view_models.len(), weapons::weapons().weapons.len(), "{:?}", map.warnings);
-    assert_eq!(map.kit.held.len(), weapons::weapons().weapons.len(), "{:?}", map.warnings);
+    // Each held model and its dropped `w_` model (its loose form).
+    assert_eq!(map.kit.held.len(), 2 * weapons::weapons().weapons.len(), "{:?}", map.warnings);
+    // A dropped AK-47 shows `w_ak47`, lying as the model lies.
+    let loose = chimera_world::map::loose::assets(&map).expect("loose forms");
+    let key = loose.drawn_key(weapons::AK47);
+    assert_eq!(key, chimera_world::map::loose::loose_key(weapons::AK47));
+    let w = map.kit.held.iter().find(|h| h.key == key).unwrap();
+    let skin = &map.textures[w.model.meshes[0].texture.unwrap()];
+    assert!(skin.name.contains("w_ak47"), "drawn with {}", skin.name);
+    let half = loose.form(weapons::AK47).unwrap().half;
+    assert!(half.y < half.x.max(half.z) / 2.0, "lying flat: {half}");
+    // The HE's explosion and the smoke's puffs as particle sheets.
+    for sprite in [weapons::looks::HE_SPRITE, weapons::looks::SMOKE_SPRITE] {
+        let m = map.particles.find(sprite).unwrap_or_else(|| panic!("no {sprite}"));
+        assert!(map.particles.materials[m].sequences[0].len() >= 2, "{sprite}: frames");
+    }
     assert!(map.sounds.entries.contains_key("weapons/ak47-1.wav;weapons/ak47-2.wav"));
     assert!(map.sounds.entries.contains_key("weapons/ak47_clipout.wav"));
     // The AK-47's muzzle flash (its shots' event code 22: the second

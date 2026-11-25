@@ -31,9 +31,8 @@
 //!   Source's movers.
 //! - Shots on the client test its own copies of the nodes (cosmetic: the
 //!   server's hits count); `core::Damageable` isn't replicated.
-//! - Light styles don't replicate: GoldSrc's converted lightmaps carry
-//!   style 0 only (`content::lightmap`), so nothing would change. Sprites
-//!   aren't drawn yet: their state reaches clients for when they are.
+//! - Light styles don't replicate: a client's switchable lights stay as
+//!   the map starts them (`content::lightmap`).
 
 use std::sync::Arc;
 

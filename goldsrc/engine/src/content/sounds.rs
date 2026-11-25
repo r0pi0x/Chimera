@@ -8,6 +8,15 @@
 //!
 //! Every entry plays at full volume and pitch, falling off as GoldSrc's
 //! normal attenuation (0.8: silent past 1250 units).
+//!
+//! A map's own sounds (`add_map`): the waves its entities may play
+//! (`logic::world::World::sound_paths`: doors, buttons, trains, fans,
+//! `ambient_generic`, breakables, `+use`), each an entry by its path, as
+//! the logic plays them.
+//!
+//! Known shortcuts:
+//! - A sentence (`!NAME`: `sound/sentences.txt`) is not read: no spec
+//!   covers that file, and the stock maps name none.
 
 use crate::{
     map::sound::{Interval, MapSoundEntry, MapSounds, SoundLevel, decode_clip},
@@ -56,4 +65,17 @@ pub fn add_entry(mount: &Mount, name: &str, sounds: &mut MapSounds) -> bool {
         },
     );
     true
+}
+
+/// The sounds a map's entities (its `logic` at spawn) may play into `sounds` (module doc); a wave
+/// not found is a warning.
+pub fn add_map(mount: &Mount, logic: &crate::logic::world::World, sounds: &mut MapSounds, warnings: &mut Vec<String>) {
+    for path in logic.sound_paths() {
+        if path.starts_with('!') {
+            continue;
+        }
+        if !add_entry(mount, &path, sounds) {
+            warnings.push(format!("sound {path}: not in the install"));
+        }
+    }
 }

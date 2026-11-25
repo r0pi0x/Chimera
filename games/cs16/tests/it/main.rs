@@ -1,5 +1,6 @@
 //! `cs16`'s integration tests, as one test binary (each file a module):
-//! what it tells the shell (`info`), a body animating (`bodies`),
+//! what it tells the shell (`info`), a body animating (`bodies`), the
+//! grenades' looks going off (`grenade_looks`),
 //! the skeleton on the headless harness (`skeleton`: `harness::Cs16Sim`,
 //! the greybox), its weapons' rules (`weapons`: specs/cs16/weapons.md's
 //! and damage.md's test cases), its movement from the spec's test cases
@@ -16,6 +17,7 @@
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod bodies;
+mod grenade_looks;
 mod info;
 mod movement;
 mod net_prediction;

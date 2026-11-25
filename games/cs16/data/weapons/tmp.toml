@@ -57,3 +57,7 @@ air = [1.1, 0.5, 0.35, 0.045, 4.5, 3.5, 6.0]
 moving = [0.8, 0.4, 0.2, 0.03, 3.0, 2.5, 7.0]
 ducked = [0.7, 0.35, 0.125, 0.025, 2.5, 2.0, 10.0]
 standing = [0.725, 0.375, 0.15, 0.025, 2.75, 2.25, 9.0]
+
+# The player model's sequences it plays (`ref_aim_carbine` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "carbine"

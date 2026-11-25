@@ -15,7 +15,10 @@
 //!   sequences (and their events);
 //! - `weapon_models`: a gun's view model (`v_*.mdl`, with the hands) and
 //!   held model (`p_*.mdl`, on the holder's hand by bone name);
-//! - `sounds`: waves under `sound/` as sound entries named by path.
+//! - `sounds`: waves under `sound/` as sound entries named by path, and
+//!   the ones a map's entities play;
+//! - `sprites`: the map's `env_sprite`s and `env_glow`s, and a sprite's
+//!   frames as a particle material's sheet.
 //!
 //! Space: GoldSrc's axes and unit are Source's (bsp.md, "Units and
 //! conventions"), so a point (x, y, z) in units is the engine's
@@ -29,6 +32,7 @@ pub mod lightmap;
 pub mod maps;
 pub mod sky;
 pub mod sounds;
+pub mod sprites;
 pub mod studio;
 pub mod textures;
 pub mod weapon_models;

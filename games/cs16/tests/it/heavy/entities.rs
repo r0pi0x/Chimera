@@ -1,6 +1,7 @@
 //! CS 1.6's maps running their entities (`goldsrc_engine::logic`,
 //! specs/goldsrc/entities.md's worked examples) on the user's install:
-//! cs_office's button opens `door1`, de_nuke's four glass doors slide
+//! cs_office's button opens `door1` with its move sound (an entry the
+//! map converted), de_nuke's four glass doors slide
 //! apart together, cs_militia's rotating door swings away from the player
 //! who walks into it, de_survivor's `CLIC` blinker flips its `+a` wall
 //! every half second, and de_dust2's crates break when their bomb target
@@ -74,6 +75,26 @@ fn look(sim: &mut Sim, p: Entity, from: Vec3, target: Vec3) {
     i.pitch = (d.z / d.length()).asin();
 }
 
+/// The sound entries started over `secs` seconds (one-shots and loops).
+fn sounds_over(sim: &mut Sim, secs: f64) -> Vec<String> {
+    use chimera_world::map::{PlaySound, SoundControl};
+    let mut plays = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut controls = sim.app.world().resource::<Messages<SoundControl>>().get_cursor_current();
+    let mut out = Vec::new();
+    let ticks = (secs * sim.tick_hz()).round() as u64;
+    for _ in 0..ticks {
+        sim.ticks(1);
+        let w = sim.app.world();
+        out.extend(plays.read(w.resource::<Messages<PlaySound>>()).map(|p| p.entry.clone()));
+        for c in controls.read(w.resource::<Messages<SoundControl>>()) {
+            if let SoundControl::Start(s) = c {
+                out.push(s.entry.clone());
+            }
+        }
+    }
+    out
+}
+
 #[test]
 fn cs_office_button_opens_door1() {
     let Some((mut sim, map)) = sim_of("cs_office") else { return };
@@ -103,10 +124,17 @@ fn cs_office_button_opens_door1() {
     assert_eq!(logic(&sim).world.ents[button].frame, 1, "pressed: the +a~sp_lock set shows");
     let n = node(&mut sim, button);
     assert_eq!(sim.app.world().get::<BrushTint>(n).map(|t| t.1), Some(1));
-    // 1 s later it fires door1, which rises 108 units in 2.7 s.
+    // 1 s later it fires door1, which rises 108 units in 2.7 s, playing
+    // its move sound (an entry of the map's sounds: `sounds::add_map`).
     sim.seconds(0.9);
     assert_eq!(pose(&sim, door).0, Vec3::ZERO, "not yet");
-    sim.seconds(0.2 + 2.7 + 0.1);
+    let heard = sounds_over(&mut sim, 0.2 + 2.7 + 0.1);
+    let door_sounds: Vec<&String> = heard.iter().filter(|e| e.starts_with("doors/")).collect();
+    assert!(!door_sounds.is_empty(), "the door played no sound: {heard:?}");
+    for e in door_sounds {
+        let entry = map.sounds.entry(e).unwrap_or_else(|| panic!("{e}: not in the map's sounds"));
+        assert!(!entry.waves.is_empty());
+    }
     assert!((pose(&sim, door).0 - Vec3::Z * 108.0).length() < 1e-3, "{:?}", pose(&sim, door));
     let n = node(&mut sim, door);
     let y = sim.app.world().get::<Transform>(n).unwrap().translation.y;

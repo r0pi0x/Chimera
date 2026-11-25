@@ -27,3 +27,7 @@ icon = "d_hegrenade"
 effect = "he"
 max = 1
 bounce_sound = "weapons/he_bounce-1.wav"
+
+# The player model's sequences it plays (`ref_aim_grenade` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "grenade"

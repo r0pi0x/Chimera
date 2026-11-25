@@ -65,3 +65,7 @@ air = [0.0, 1.3]
 moving = [[0.0, 0.0, 0.25]]
 ducked = [0.0, 0.125]
 still = [0.0, 0.15]
+
+# The player model's sequences it plays (`ref_aim_onehanded` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "onehanded"

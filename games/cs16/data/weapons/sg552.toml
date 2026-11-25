@@ -65,3 +65,7 @@ moving = [1.0, 0.45, 0.28, 0.04, 4.25, 2.5, 7.0]
 air = [1.25, 0.45, 0.22, 0.18, 6.0, 4.0, 5.0]
 ducked = [0.6, 0.35, 0.2, 0.0125, 3.7, 2.0, 10.0]
 standing = [0.625, 0.375, 0.25, 0.0125, 4.0, 2.25, 9.0]
+
+# The player model's sequences it plays (`ref_aim_rifle` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "rifle"

@@ -57,3 +57,7 @@ air = [1.8, 0.65, 0.45, 0.125, 5.0, 3.5, 8.0]
 moving = [1.1, 0.5, 0.3, 0.06, 4.0, 3.0, 8.0]
 ducked = [0.75, 0.325, 0.25, 0.025, 3.5, 2.5, 9.0]
 standing = [0.8, 0.35, 0.3, 0.03, 3.75, 3.0, 9.0]
+
+# The player model's sequences it plays (`ref_aim_m249` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "m249"

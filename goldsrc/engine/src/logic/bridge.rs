@@ -27,14 +27,15 @@
 //! - its effects: sounds (`map::PlaySound`, `map::SoundControl`), damage
 //!   (`core::MapDamage`; negative heals), explosions (`core::Explosion`,
 //!   magnitude × 2.5 units), switchable light styles (`map::LightStyles`
-//!   under the writer `goldsrc`).
+//!   under the writer `goldsrc`), the sprites' on and off
+//!   (`map::EntityPart`, `sync_parts`).
 //!
 //! Known shortcuts:
 //! - Clients run no GoldSrc logic: its nodes and sprites reach them
 //!   through `net` (the node placing here, `place_node`, shared).
-//! - Sounds are named by their path under `sound/`, and GoldSrc maps
-//!   carry no sound bank yet, so they are silent; a trigger's `message`
-//!   is logged, not shown; broken breakables throw no debris.
+//! - A trigger's `message` is logged, not shown; broken breakables throw
+//!   no debris. (Sounds are named by their path under `sound/`, the map's
+//!   entries: `content::sounds::add_map`.)
 
 use std::sync::Arc;
 
@@ -43,7 +44,7 @@ use bevy::{ecs::message::MessageCursor, prelude::*};
 
 use super::{
     FAMILY,
-    world::{Effect, Id, Player, Solid, UseType, Who, World as Logic},
+    world::{Effect, Id, Kind, Player, Solid, UseType, Who, World as Logic},
 };
 use crate::{
     core::{
@@ -51,7 +52,7 @@ use crate::{
         MapDamage, MovementState, MovingSolid, RoundRestarts, SimSet, Velocity,
     },
     map::{
-        BrushTint, LightStyles, LogicHidden, MapBrushEntity, MapEntities, MapEntity, PlaySound, RenderLook,
+        BrushTint, EntityPart, LightStyles, LogicHidden, MapBrushEntity, MapEntities, MapEntity, PlaySound, RenderLook,
         SoundControl, SoundKey, StartSound, VisClusters,
         entities::{FireEntityOutput, engine_to_entity, entity_rotation, entity_to_engine, logic_family, rotation_to_engine},
     },
@@ -328,8 +329,29 @@ fn step(
     world.insert_resource(l);
 }
 
-/// Place, show, hide and tint the mover nodes as the logic says.
+/// The map's sprites (`map::EntityPart`, `content::sprites`) on or off,
+/// or gone, as their entities are.
+fn sync_parts(world: &mut World, l: &GoldSrcLogic) {
+    let mut q = world.query::<&mut EntityPart>();
+    for mut part in q.iter_mut(world) {
+        let want = match l.world.ents.get(part.entity) {
+            Some(e) => match e.kind {
+                Kind::Sprite { on } => (on && !e.removed, !e.removed),
+                _ => (!e.removed, !e.removed),
+            },
+            None => (false, false),
+        };
+        if (part.on, part.exists) != want {
+            part.on = want.0;
+            part.exists = want.1;
+        }
+    }
+}
+
+/// Place, show, hide and tint the mover nodes as the logic says (and
+/// switch the sprites, `sync_parts`).
 fn sync_nodes(world: &mut World, l: &mut GoldSrcLogic) {
+    sync_parts(world, l);
     let scale = l.scale;
     for (k, &(id, node)) in l.nodes.iter().enumerate() {
         let e = &l.world.ents[id];

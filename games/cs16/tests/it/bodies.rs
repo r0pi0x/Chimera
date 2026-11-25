@@ -3,7 +3,10 @@
 //! player models' names and the pistol's aim) on the greybox stands on
 //! `idle1` with the aim layered over it, runs on `run` while moving with
 //! its cycle going round and its pose changing, and stands again when it
-//! stops. The real models' sequences are read in `heavy::bodies`.
+//! stops; holding the AK-47 (its held model, `map::Held`) it aims on
+//! `ref_aim_ak47`, and a shot plays
+//! `ref_shoot_ak47` over the aim to its end. The real models' sequences
+//! are read in `heavy::bodies`.
 
 use std::sync::Arc;
 
@@ -16,8 +19,9 @@ use chimera_world::{
         anim::{AnimSet, Animation, Animator, Sequence, Track},
     },
 };
+use chimera_sim::weapon::{Inventory, give};
 use cs16::{
-    game::{GAME, movement},
+    game::{GAME, TICK_INTERVAL, movement},
     harness::Cs16Sim,
 };
 
@@ -61,12 +65,16 @@ fn stand_in() -> AnimSet {
         animation("walk", 31, 0.4, 60.0),
         animation("run", 31, 0.8, 250.0),
         animation("ref_aim_onehanded", 2, 0.0, 0.0),
+        animation("ref_aim_ak47", 2, 0.0, 0.0),
+        animation("ref_shoot_ak47", 6, 0.3, 0.0),
     ];
     set.sequences = vec![
         sequence("idle1", 0, vec![1.0, 1.0]),
         sequence("walk", 1, vec![1.0, 1.0]),
         sequence("run", 2, vec![1.0, 1.0]),
         sequence("ref_aim_onehanded", 3, vec![0.0, 0.5]),
+        sequence("ref_aim_ak47", 4, vec![0.0, 0.5]),
+        Sequence { looping: false, ..sequence("ref_shoot_ak47", 5, vec![0.0, 0.5]) },
     ];
     for (i, s) in set.sequences.iter().enumerate() {
         set.names.insert(s.name.clone(), i);
@@ -74,8 +82,7 @@ fn stand_in() -> AnimSet {
     set
 }
 
-#[test]
-fn a_body_stands_runs_and_stands_again() {
+fn stand_in_sim() -> Sim {
     let body = MapCharacterModel {
         game: Some(GAME),
         team: None,
@@ -91,7 +98,19 @@ fn a_body_stands_runs_and_stands_again() {
     };
     let mut map = MapData::default();
     map.kit.characters.push(body);
-    let mut sim = Sim::new(Cs16Sim, (GreyboxMapPlugin, MapSimPlugin::new(map)));
+    Sim::new(Cs16Sim, (GreyboxMapPlugin, MapSimPlugin::new(map)))
+}
+
+/// The names of what `p`'s body plays: its main sequence and its layers.
+fn playing(sim: &Sim, p: Entity) -> (String, Vec<String>) {
+    let a = sim.app.world().get::<Animator>(p).expect("the body has an animator");
+    let name = |s: usize| a.set.sequences[s].name.clone();
+    (name(a.main.expect("something plays")), a.layers.iter().flatten().map(|l| name(l.sequence)).collect())
+}
+
+#[test]
+fn a_body_stands_runs_and_stands_again() {
+    let mut sim = stand_in_sim();
     let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
     sim.seconds(1.0);
     let read = |sim: &Sim| {
@@ -114,4 +133,26 @@ fn a_body_stands_runs_and_stands_again() {
     sim.intent(p).move_axis = Vec2::ZERO;
     sim.seconds(1.0);
     assert_eq!(read(&sim).0, "idle1");
+}
+
+#[test]
+fn a_body_plays_the_ak47s_shot() {
+    let mut sim = stand_in_sim();
+    sim.set_tick_interval(TICK_INTERVAL);
+    let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    sim.seconds(1.0);
+    let w = give(sim.app.world_mut(), p, "cs16:weapon_ak47").unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    sim.seconds(2.0);
+    assert_eq!(playing(&sim, p).1, ["ref_aim_ak47"]);
+    let held = sim.app.world().get::<chimera_world::map::Held>(p).and_then(|h| h.0.clone());
+    assert_eq!(held.as_deref(), Some("cs16:weapon_ak47"), "the body holds the AK's held model");
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+    sim.ticks(2);
+    assert_eq!(playing(&sim, p).1, ["ref_aim_ak47", "ref_shoot_ak47"], "the shot plays over the aim");
+    // 6 frames at 30 fps: done within a second.
+    sim.seconds(1.0);
+    assert_eq!(playing(&sim, p).1, ["ref_aim_ak47"]);
 }

@@ -61,3 +61,7 @@ moving = [[0.0, 0.0, 0.15]]
 ducked = [0.0, 0.035]
 still = [0.0, 0.055]
 unzoomed_scaled = 0.025
+
+# The player model's sequences it plays (`ref_aim_rifle` ...; bodies.rs).
+[hooks."cs16:body_anim"]
+set = "rifle"

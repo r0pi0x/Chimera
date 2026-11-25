@@ -9,7 +9,7 @@
 
 use bevy::prelude::*;
 use chimera_world::map::{MapData, anim::Animator};
-use cs16::game::{GAME, bodies};
+use cs16::game::{GAME, bodies, weapons};
 use goldsrc_engine::content::studio;
 
 use super::maps::mount;
@@ -26,9 +26,37 @@ fn the_eight_player_models_are_bodies() {
         assert!(!c.model.meshes.is_empty(), "{path}");
         assert!(c.hitboxes.len() >= 19 && c.hitboxes.len() == c.boxes.len(), "{path}: {} hitboxes", c.hitboxes.len());
         let set = c.animations.as_ref().expect("sequences");
-        for s in ["idle1", "walk", "run", "crouch_idle", "crouchrun", "jump", bodies::aim(false), bodies::aim(true)] {
+        for s in ["idle1", "walk", "run", "crouch_idle", "crouchrun", "jump"] {
             assert!(set.sequence(s).is_some(), "{path}: no {s}");
         }
+        // Every weapon's set: its aim and shot standing and ducked.
+        for w in &weapons::weapons().weapons {
+            let set_name = body_set(w);
+            for crouching in [false, true] {
+                for what in ["aim", "shoot"] {
+                    let s = bodies::upper(what, &set_name, crouching);
+                    assert!(set.sequence(&s).is_some(), "{path}: no {s} for {}", w.id);
+                }
+            }
+        }
+        // Looking up raises the hands (the pitch blends' direction).
+        let aim = set.sequence("ref_aim_ak47").unwrap();
+        let hand_height = |pitch: f32| {
+            let mut a = Animator::new(set.clone());
+            a.play(set.sequence("idle1").unwrap(), 0.0);
+            a.layers = vec![Some(chimera_world::map::anim::Layer { sequence: aim, cycle: 0.0, weight: 1.0 })];
+            let i = set.param(studio::PITCH_PARAM).unwrap();
+            a.set_param(i, bodies::aim_param(pitch));
+            let globals = chimera_world::map::anim::model_space(&a.pose(0.0), &set.parents);
+            let at = |n: &str| {
+                let i = set.bone_names.iter().position(|b| b == n).unwrap();
+                c.root.rotation * globals[i].1 * c.root.scale
+            };
+            // How steeply the right forearm points (the gun follows it).
+            (at("bip01 r hand") - at("bip01 r forearm")).normalize().y
+        };
+        let (up, down) = (hand_height(60.0), hand_height(-60.0));
+        assert!(up > down + 0.3, "{path}: the right forearm's rise {up} looking up, {down} looking down");
         // Posed in idle1: feet near 0, a player tall (metres).
         let mut a = Animator::new(set.clone());
         a.play(set.sequence("idle1").unwrap(), 0.0);
@@ -53,4 +81,11 @@ fn the_eight_player_models_are_bodies() {
     // The textures read too.
     let full = studio::character(&mount, GAME, bodies::CLASS_MODELS[7], true).unwrap();
     assert!(full.textures.iter().all(|t| t.rgba8.len() == (t.width * t.height * 4) as usize));
+}
+
+/// A weapon's body set as its data names it (`[hooks."cs16:body_anim"]`).
+fn body_set(w: &chimera_sim::weapon::data::WeaponData) -> String {
+    let hook = w.hooks.get(bodies::BODY_ANIM_HOOK).unwrap_or_else(|| panic!("{}: no body set", w.id));
+    let b: bodies::BodyAnim = hook.clone().try_into().unwrap();
+    b.set
 }

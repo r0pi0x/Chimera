@@ -12,7 +12,9 @@
 //! body; its contacts are reported (`CollisionEventsEnabled`, with its model's
 //! surface as `core::PropSurface`) for games' impact sounds and dust. The
 //! item components are requests for drawing too: `render::loose`
-//! adds the meshes (none headless).
+//! adds the meshes (none headless). A held model may have a loose form of
+//! its own (`loose_key`: GoldSrc's `w_` model beside its `p_`), which
+//! both kinds of item take (`LooseAssets::form`).
 
 use std::collections::HashMap;
 
@@ -38,6 +40,31 @@ const FRICTION: f32 = 0.5;
 
 #[derive(Resource, Default)]
 pub struct LooseAssets(pub HashMap<String, LooseAsset>);
+
+/// What a held model's own loose form is keyed by (`loose_key`): a game
+/// whose items lie and fly as another model than the one in hand
+/// (GoldSrc's `w_` beside its `p_`) adds that model to the kit's held
+/// models under the held key with this after it.
+pub const LOOSE_SUFFIX: &str = "@loose";
+
+/// The key of held model `key`'s own loose form (`LOOSE_SUFFIX`).
+pub fn loose_key(key: &str) -> String {
+    format!("{key}{LOOSE_SUFFIX}")
+}
+
+impl LooseAssets {
+    /// The key a loose or shown item named `key` is drawn by: its own
+    /// loose form's where the kit has one (`loose_key`), else `key`.
+    pub fn drawn_key<'a>(&self, key: &'a str) -> std::borrow::Cow<'a, str> {
+        let own = loose_key(key);
+        if self.0.contains_key(&own) { own.into() } else { key.into() }
+    }
+
+    /// The loose form an item named `key` takes (`drawn_key`'s).
+    pub fn form(&self, key: &str) -> Option<&LooseAsset> {
+        self.0.get(self.drawn_key(key).as_ref())
+    }
+}
 
 pub struct LooseAsset {
     /// From the held model's space (skeleton axes and units) to the item's
@@ -84,7 +111,7 @@ impl LooseAsset {
 /// a mover facing its flight with −Z (`weapon::projectile::facing`, a
 /// game's own) turns its model by this so it flies nose first.
 pub fn nose_turn(assets: Option<&LooseAssets>, key: &str) -> Quat {
-    assets.and_then(|a| a.0.get(key)).map_or(Quat::IDENTITY, LooseAsset::nose_turn)
+    assets.and_then(|a| a.form(key)).map_or(Quat::IDENTITY, LooseAsset::nose_turn)
 }
 
 /// Each held model's loose form, sized by the first character's scale
@@ -145,11 +172,11 @@ pub fn attach_loose(
 ) {
     let Some(assets) = assets else { return };
     for (e, item) in &items {
-        let half = assets.0.get(&item.0).map_or(Vec3::splat(0.1), |a| a.half);
+        let half = assets.form(&item.0).map_or(Vec3::splat(0.1), |a| a.half);
         let mut ent = commands.entity(e);
         // Its landings and knocks sound by its model's surface, and kick up
         // dust when hard (the game's impact sounds and effects listen).
-        if let Some(s) = assets.0.get(&item.0).and_then(|a| a.surface.clone()) {
+        if let Some(s) = assets.form(&item.0).and_then(|a| a.surface.clone()) {
             ent.try_insert(crate::core::PropSurface(s));
         }
         // `try_`: an item can be gone by the time this applies (picked up,

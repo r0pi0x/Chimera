@@ -18,11 +18,14 @@
 //!    is a placeholder and a warning `missing texture <name>`; each
 //!    animation set of two or more frames a `MapTextureAnim` at
 //!    `textures::FRAME_RATE`;
-//! 3. the faces as meshes with the lightmap atlas (`brushes`), surfaces
-//!    named from `sound/materials.txt`;
+//! 3. the faces as meshes with the lightmap atlas (`brushes`; each light
+//!    style beside 0 as the logic's spawn starts it, `style_start`),
+//!    surfaces named from `sound/materials.txt`;
 //! 4. the collision (`collision::add_world`);
-//! 5. the sky (`sky`, `skyname`, else `desert`);
-//! 6. the game's kit (`GoldSrcGame::kit`: its bodies).
+//! 5. the sky (`sky`, `skyname`, else `desert`) and the map's sprites
+//!    (`sprites::add_map`);
+//! 6. the sounds its entities play (`sounds::add_map`);
+//! 7. the game's kit (`GoldSrcGame::kit`: its bodies).
 //!
 //! The look: LDR, untonemapped, the lightmap as stored (`lightmap`'s
 //! shortcut). Every step walks the file in its own order, so a map
@@ -31,7 +34,7 @@
 
 use goldsrc_formats::{bsp::Bsp, materials::Materials};
 
-use super::{METERS_PER_UNIT, brushes, collision, entities, sky, textures};
+use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures};
 use crate::{
     core::Team,
     map::{
@@ -197,7 +200,11 @@ pub fn convert(
         .read("sound/materials.txt")
         .map(|b| Materials::parse(&String::from_utf8_lossy(&b)))
         .unwrap_or_default();
-    brushes::add_meshes(&bsp, &parts.drawn, &slots, &families, &materials, &mut data);
+    // How the light styles start: the logic's own spawn (switchable lights
+    // dark or lit, the presets' patterns).
+    let logic = crate::logic::world::World::new(&data.entities, 0);
+    let styles = |s: u8| style_start(&logic, s);
+    brushes::add_meshes(&bsp, &parts.drawn, &slots, &families, &materials, &styles, &mut data);
 
     report(0.6, "Collision");
     let counts = collision::add_world(&bsp, &mut data);
@@ -207,7 +214,29 @@ pub fn convert(
     let skyname = worldspawn.get("skyname").filter(|s| !s.trim().is_empty()).unwrap_or("desert");
     sky::add(mount, skyname.trim(), decode, &mut data);
 
+    sprites::add_map(mount, decode, &mut data);
+
+    report(0.82, "Sounds");
+    sounds::add_map(mount, &logic, std::sync::Arc::make_mut(&mut data.sounds), &mut data.warnings);
+
     report(0.85, "Kit");
     (game.kit)(mount, options.kit, decode, &mut data);
     Ok(data)
+}
+
+/// How light style `style` starts on a map whose logic is `logic`: a
+/// switchable light's (32 and up) on unless its pattern is dark; a preset
+/// (1-12) animated by its letters; others lit.
+pub fn style_start(logic: &crate::logic::world::World, style: u8) -> lightmap::StyleStart {
+    use crate::logic::tables;
+    match logic.styles.get(&style) {
+        Some(p) => lightmap::StyleStart { on: p != "a", pattern: Vec::new() },
+        None => match tables::preset_style(style).filter(|p| p.len() > 1) {
+            Some(p) => lightmap::StyleStart {
+                on: true,
+                pattern: p.bytes().map(tables::letter_brightness).collect(),
+            },
+            None => lightmap::StyleStart { on: true, pattern: Vec::new() },
+        },
+    }
 }
