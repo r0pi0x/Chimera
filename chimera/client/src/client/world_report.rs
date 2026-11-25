@@ -23,7 +23,11 @@
 //!   still coming (the stand-in gun showing), and the code-built maps'
 //!   kit's loads (`console::KitLoads`: loading now for how long, each
 //!   game's view models handed over ahead of it, the kit's own time), so
-//!   a gun slow to show names what it waited for.
+//!   a gun slow to show names what it waited for; and the local
+//!   player's body (`body_text`): its model, skin and body number, each
+//!   piece's part, texture and what is drawn (textured or not, its
+//!   texture's mean colour), so a black or missing piece names itself
+//!   (`report_body` on the console prints it).
 //! - `world.txt`'s UI part (`ui_text`): the cameras (order, on or off,
 //!   the default UI one), every UI root (its own components' names, its
 //!   nodes, its z, the camera it draws on and whether that camera is
@@ -49,6 +53,12 @@ impl Plugin for WorldReportPlugin {
         app.init_resource::<Baselines>().init_resource::<UiChurn>().add_systems(
             Last,
             (watch_map, take_baseline.run_if(|b: Res<Baselines>| b.pending.as_ref().is_some_and(|(_, at)| Instant::now() >= *at)), watch_play, watch_ui),
+        );
+        use crate::console::ConsoleAppExt;
+        app.console_command(
+            "report_body",
+            "report_body: print the bug report's body: block (your body's model, skin, body number and each piece's texture), as F10 sends it.",
+            |w, _| Ok(Some(body_text(w))),
         );
     }
 }
@@ -328,6 +338,122 @@ fn view_model_text(world: &World, key: Option<&str>) -> String {
         v.bones.len(),
         if untextured.is_empty() { "none".to_string() } else { untextured.join(", ") }
     )
+}
+
+/// `game.txt`'s `body:` block (module doc): the local player's body, so a
+/// report of a black or missing piece names which body and which pieces
+/// (report af42b6c4 said "the head is black" with nothing to tell which
+/// body or part): the character model it wears (index, name, game, team,
+/// class, a late one's), the skin family and body number asked and
+/// drawn, then each piece: its source name, material, body part and
+/// choice and whether the body number shows it, its texture (the
+/// model's index and, for a late body, the file; or none: flat colour),
+/// and what is drawn (the drawn material has a texture, its size and its
+/// mean colour where the image keeps its pixels).
+pub fn body_text(world: &mut World) -> String {
+    use crate::map::{BodyModel, BodyName, BodyNumber, BodySkin, CharacterModels, LateCharacterModels};
+    use chimera_present::render::{
+        bodies::CharacterBody,
+        prop_material::PropMaterial,
+    };
+    let Some(player) = world.query_filtered::<Entity, With<crate::core::LocalPlayer>>().iter(world).next() else {
+        return String::new();
+    };
+    let model = world.get::<BodyModel>(player).map(|b| b.0);
+    let skin = world.get::<BodySkin>(player).map(|s| s.0);
+    let number = world.get::<BodyNumber>(player).map(|n| n.0);
+    let name = world.get::<BodyName>(player).map(|n| n.0.clone()).filter(|n| !n.is_empty());
+    let body = world
+        .query::<(Entity, &CharacterBody, &ChildOf)>()
+        .iter(world)
+        .find(|(_, _, c)| c.parent() == player)
+        .map(|(e, b, _)| (e, (b.model, b.skin, b.body)));
+    let drawn = body.map(|b| b.1);
+    // The drawn parts' own materials, in the order the shown pieces were
+    // spawned (`render::bodies::attach_bodies`).
+    let drawn_parts: Vec<Handle<PropMaterial>> = body.map_or(Vec::new(), |(e, _)| {
+        let children: Vec<Entity> = world.get::<Children>(e).map_or(Vec::new(), |c| c.iter().collect());
+        children.into_iter().filter_map(|c| world.get::<MeshMaterial3d<PropMaterial>>(c).map(|m| m.0.clone())).collect()
+    });
+    let mut out = format!(
+        "body: model {}, name {}, skin {}, body number {}; drawn {}\n",
+        model.map_or("none".into(), |m| m.to_string()),
+        name.as_deref().unwrap_or("-"),
+        skin.map_or("-".into(), |s| s.to_string()),
+        number.map_or("-".into(), |n| n.to_string()),
+        drawn.map_or("none".into(), |(m, s, b)| format!("model {m}, skin {s}, body number {b}")),
+    );
+    let world: &World = world;
+    let Some(index) = drawn.map(|d| d.0).or(model) else { return out };
+    let Some(models) = world.get_resource::<CharacterModels>() else { return out };
+    let Some(m) = models.0.get(index) else {
+        out += &format!("body: model {index} not among the map's {}\n", models.0.len());
+        return out;
+    };
+    let late = m.name.as_deref().and_then(|n| world.get_resource::<LateCharacterModels>()?.get(n).cloned());
+    out += &format!(
+        "body: {} of {}, team {}, class {}, {} pieces, {} bones, parts {:?}, {} skins{}\n",
+        m.name.as_deref().unwrap_or("(by team)"),
+        m.game.unwrap_or("any game"),
+        m.team.map_or("-".into(), |t| t.0.to_string()),
+        m.class.map_or("-".into(), |c| c.to_string()),
+        m.model.meshes.len(),
+        m.bones.len(),
+        m.model.body_parts,
+        m.model.skins.len(),
+        if late.is_some() { ", loaded late" } else { "" },
+    );
+    let (skin_shown, body_shown) = drawn.map_or((skin.unwrap_or(0), number.unwrap_or(0)), |d| (d.1, d.2));
+    let materials = world.get_resource::<Assets<PropMaterial>>();
+    let mut next_drawn = drawn_parts.iter();
+    let images = world.get_resource::<Assets<Image>>();
+    let mut untextured: Vec<&str> = Vec::new();
+    for (i, mesh) in m.model.meshes.iter().enumerate() {
+        let look = m.model.skins.get(skin_shown.max(0) as usize).and_then(|s| s.get(i));
+        let texture = look.map_or(mesh.texture, |l| l.texture);
+        let material = look.map_or(mesh.material.as_str(), |l| l.material.as_str());
+        let shown = mesh.body.is_none_or(|(part, choice)| m.model.body_choice(body_shown, part as usize) == choice);
+        let part = mesh.body.map_or("always".into(), |(p, c)| format!("part {p} choice {c}{}", if shown { "" } else { ", hidden" }));
+        let file = texture.and_then(|t| late.as_ref().and_then(|(_, tex)| tex.get(t)).map(|x| format!(" {}", x.name)));
+        let tex = match texture {
+            Some(t) => format!("texture #{t}{}", file.unwrap_or_default()),
+            None => format!("no texture (flat {:?})", mesh.color),
+        };
+        // What is drawn: the shown piece's own material.
+        let handle = if shown && body.is_some() { next_drawn.next() } else { None };
+        let drawn_as = match (handle, materials) {
+            (None, _) if !shown => "not drawn".to_string(),
+            (Some(h), Some(mats)) => match mats.get(h).map(|mat| mat.base.clone()) {
+                Some(Some(img)) => match images.and_then(|im| im.get(&img)) {
+                    Some(image) => {
+                        let size = image.size();
+                        let mean = image.data.as_ref().filter(|d| !d.is_empty() && d.len() % 4 == 0).map(|d| {
+                            let n = (d.len() / 4) as u64;
+                            let sum = d.chunks_exact(4).fold([0u64; 3], |a, p| [a[0] + p[0] as u64, a[1] + p[1] as u64, a[2] + p[2] as u64]);
+                            format!(", mean {:?}", [sum[0] / n, sum[1] / n, sum[2] / n])
+                        });
+                        format!("drawn textured {}x{}{}", size.x, size.y, mean.unwrap_or_default())
+                    }
+                    None => "drawn textured (image not loaded)".into(),
+                }
+                .to_string()
+                    + &mats.get(h).map_or(String::new(), |mat| {
+                        let c = mat.params.base_color;
+                        format!(", colour [{:.2}, {:.2}, {:.2}], probe {:.0}", c.x, c.y, c.z, mat.params.probe)
+                    }),
+                Some(None) => "drawn untextured".into(),
+                None => "material missing".into(),
+            },
+            _ => "not built".into(),
+        };
+        if shown && (texture.is_none() || drawn_as == "drawn untextured") && !untextured.contains(&material) {
+            untextured.push(material);
+        }
+        let piece = m.model.mesh_names.get(i).filter(|n| !n.is_empty()).map_or(String::new(), |n| format!("{n}: "));
+        out += &format!("body piece {i}: {piece}{material}, {part}, {tex}, {drawn_as}\n");
+    }
+    out += &format!("body untextured (shown): {}\n", if untextured.is_empty() { "none".to_string() } else { untextured.join(", ") });
+    out
 }
 
 /// `game.txt`'s hand lines (module doc): the local player's weapon in
