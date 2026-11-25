@@ -20,9 +20,15 @@
 //! later. Nothing is fetched. `read_all` reads every file the HUD may use
 //! (the `players` set, `sets`).
 //!
+//! The two layouts (hud.md, "Units and conventions": 640 at screens 640 wide
+//! or more, else 320): `pictures(mount, resolution)` reads the entries of
+//! one of them, each from its own atlases (`640hud*`, `320hud*`) and pain
+//! sprite (`640_pain`, `320_pain`); the two are read apart, so a set that
+//! has only the 640 files still gives its 640 pictures.
+//!
 //! Known shortcuts:
-//! - Only the 640 entries are read: below 640 wide the 640 pictures are
-//!   drawn too (hud.md's 320 layout is not followed).
+//! - A 320 entry the install's list lacks (the list ends before its
+//!   count) is absent: the HUD then leaves that picture out.
 
 use std::collections::BTreeMap;
 
@@ -33,11 +39,23 @@ use crate::{map::hud::UiImage, mount::Mount};
 /// The shared HUD list.
 pub const HUD_LIST: &str = "sprites/hud.txt";
 
-/// The damage direction arcs (four frames: front, right, behind, left).
-pub const PAIN: &str = "sprites/640_pain.spr";
+/// The layouts, the first the default one (hud.md, "Units and
+/// conventions").
+pub const RESOLUTIONS: [u32; 2] = [640, 320];
 
-/// The layout read (hud.md, "Sprites (640 layout)").
-pub const RESOLUTION: u32 = 640;
+/// The layout at and above which the screen's width uses the 640 entries.
+pub const SWITCH_WIDTH: u32 = 640;
+
+/// The layout a screen `width` pixels wide uses.
+pub fn resolution_for(width: u32) -> u32 {
+    if width >= SWITCH_WIDTH { 640 } else { 320 }
+}
+
+/// The damage direction arcs of layout `resolution` (four frames: front,
+/// right, behind, left).
+pub fn pain_path(resolution: u32) -> String {
+    format!("sprites/{resolution}_pain.spr")
+}
 
 /// The shared entries read from `HUD_LIST`.
 pub const SHARED: &[&str] = &[
@@ -52,6 +70,14 @@ pub const SHARED: &[&str] = &[
     "number_8",
     "number_9",
     "divider",
+    "stopwatch",
+    "selection",
+    "bucket0",
+    "bucket1",
+    "bucket2",
+    "bucket3",
+    "bucket4",
+    "bucket5",
     "cross",
     "suit_empty",
     "suit_full",
@@ -120,12 +146,12 @@ fn here(mount: &Mount, path: &str) -> Option<Option<Vec<u8>>> {
     mount.held(path).then(|| mount.read(path).ok())
 }
 
-/// A sprite list's entries at `RESOLUTION` by name: (atlas, rectangle).
-pub fn list_entries(text: &str) -> BTreeMap<String, (String, [i32; 4])> {
+/// A sprite list's entries at `resolution` by name: (atlas, rectangle).
+pub fn list_entries(text: &str, resolution: u32) -> BTreeMap<String, (String, [i32; 4])> {
     parse_sprite_list(text)
         .unwrap_or_default()
         .into_iter()
-        .filter(|e| e.resolution == RESOLUTION)
+        .filter(|e| e.resolution == resolution)
         .map(|e| (e.name, (e.sprite, e.rect)))
         .collect()
 }
@@ -176,14 +202,14 @@ fn frames(mount: &Mount, path: &str) -> Option<Vec<UiImage>> {
     Some(s.all_frames().into_iter().map(|f| UiImage { width: f.width, height: f.height, rgba8: s.rgba(f) }).collect())
 }
 
-/// CS 1.6's HUD pictures from `mount` (module doc); None while a file it
-/// names isn't here yet.
-pub fn pictures(mount: &Mount) -> Option<Pictures> {
+/// CS 1.6's HUD pictures of layout `resolution` from `mount` (module
+/// doc); None while a file it names isn't here yet.
+pub fn pictures(mount: &Mount, resolution: u32) -> Option<Pictures> {
     let mut out = Pictures::default();
     let mut atlases = Atlases::default();
     let ids = weapon_ids();
     if let Some(text) = here(mount, HUD_LIST)? {
-        let entries = list_entries(&String::from_utf8_lossy(&text));
+        let entries = list_entries(&String::from_utf8_lossy(&text), resolution);
         for name in SHARED {
             if let Some((atlas, rect)) = entries.get(*name)
                 && let Some(p) = atlases.cut(mount, atlas, *rect)?
@@ -201,7 +227,7 @@ pub fn pictures(mount: &Mount) -> Option<Pictures> {
     }
     for id in &ids {
         let Some(text) = here(mount, &weapon_list(id))? else { continue };
-        let entries = list_entries(&String::from_utf8_lossy(&text));
+        let entries = list_entries(&String::from_utf8_lossy(&text), resolution);
         let mut cut = |name: &str| -> Option<Option<UiImage>> {
             match entries.get(name) {
                 Some((atlas, rect)) => atlases.cut(mount, atlas, *rect),
@@ -211,7 +237,7 @@ pub fn pictures(mount: &Mount) -> Option<Pictures> {
         let w = WeaponPictures { weapon: cut("weapon")?, weapon_s: cut("weapon_s")?, ammo: cut("ammo")? };
         out.weapons.insert(id.clone(), w);
     }
-    out.pain = frames(mount, PAIN)?;
+    out.pain = frames(mount, &pain_path(resolution))?;
     Some(out)
 }
 
@@ -224,13 +250,17 @@ pub fn read_all(mount: &Mount) {
     let mut atlases = std::collections::BTreeSet::new();
     for list in &lists {
         if let Ok(text) = mount.read(list) {
-            atlases.extend(list_entries(&String::from_utf8_lossy(&text)).into_values().map(|(a, _)| a.to_lowercase()));
+            for resolution in RESOLUTIONS {
+                atlases.extend(list_entries(&String::from_utf8_lossy(&text), resolution).into_values().map(|(a, _)| a.to_lowercase()));
+            }
         }
     }
     for atlas in atlases {
         let _ = mount.read(&format!("sprites/{atlas}.spr"));
     }
-    let _ = mount.read(PAIN);
+    for resolution in RESOLUTIONS {
+        let _ = mount.read(&pain_path(resolution));
+    }
 }
 
 #[cfg(test)]
@@ -248,9 +278,16 @@ mod tests {
     #[test]
     fn a_list_reads_its_640_entries() {
         let text = "4\nweapon 320 320hud1 0 0 80 20\nammo 320 640hud7 72 72 24 24\nweapon 640 640hud10 0 0 170 45\nammo 640 640hud7 72 72 24 24\n";
-        let e = list_entries(text);
+        let e = list_entries(text, 640);
+        assert_eq!(list_entries(text, 320)["weapon"], ("320hud1".to_string(), [0, 0, 80, 20]));
         assert_eq!(e["ammo"], ("640hud7".to_string(), [72, 72, 24, 24]));
         assert_eq!(e["weapon"], ("640hud10".to_string(), [0, 0, 170, 45]));
+    }
+
+    #[test]
+    fn the_screen_s_width_picks_the_layout() {
+        assert_eq!([resolution_for(1920), resolution_for(640), resolution_for(639), resolution_for(320)], [640, 640, 320, 320]);
+        assert_eq!(pain_path(320), "sprites/320_pain.spr");
     }
 
     #[test]

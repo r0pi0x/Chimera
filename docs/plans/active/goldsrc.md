@@ -26,7 +26,7 @@ Force) is a small port on the same loader.
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Polish (2026-11-25): the maps' sounds (doors, buttons, ambients, breakables: `content::sounds::add_map`), `env_sprite`/`env_glow` drawn and switched (`content::sprites`), light styles in the lightmap atlas (switchable 32+ and the animated presets, `content::lightmap`; converter version 3). Left: the lightmap brightening against captures; debris; sentences |
 | M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Left: shells, measurements (weapons.md open questions) |
 | M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Left: water volumes from GoldSrc maps, the ladder volumes' own rule, measurement in the game |
-| M3 party rungs | in progress | §5. The guns are rungs since M1. HUD (2026-11-25): `cs16_ui::hud` from specs/cs16/hud.md (health with the cross and bar, armour with the suit lit by armour, ammunition with its icon, fades, the damage arcs; the install's `640hud` sprites added at their pixel size), the `d_` kill icons and headshot mark in every app's kill feed, the HUD's sprites in `players` (Log). Left: CS 1.6's own dynamic crosshair (the shell's draws), the weapon menu, the round timer, the 320 layout |
+| M3 party rungs | in progress | §5. The guns are rungs since M1. HUD (2026-11-25): `cs16_ui::hud` from specs/cs16/hud.md (health with the cross and bar, armour with the suit lit by armour, ammunition with its icon, fades, the damage arcs; the install's `640hud` sprites added at their pixel size), the `d_` kill icons and headshot mark in every app's kill feed, the HUD's sprites in `players` (Log). Second part (2026-11-25, Log): CS 1.6's dynamic crosshair, the weapon menu (bucket list), the round timer, the 320 layout. Left: the spec's open numbers (hud.md questions 2-4), money, the 320/320hud files in the served `players` set (republish) |
 
 ## 1. Rules for this port
 
@@ -823,6 +823,25 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   CS 1.6's icons (tinted 255 80 0) and its headshot mark registered. The
   crosshair stays the shell's. Capture:
   `apps/ultimate_gun_game/scenes/cs16_hud.scene`.
+- **HUD, second part** (same files): the dynamic crosshair (four 1 pixel
+  lines added onto the frame in 50 250 50, `GameDraws::crosshair` on so
+  the shell's is off; the gap the held gun's `Hitscan` spread projected to
+  the screen plus a base gap, opening at once, closing with a 0.1 s time
+  constant; hidden dead and under a scope); the weapon selection (hud.md's
+  bucket list from the shell's `WeaponMenu`: slot numbers, boxes under
+  closed slots, the open slot's `weapon` pictures with the chosen one's
+  `weapon_s` and `selection`; `cs16:hud_fastswitch`, 1 by default, 0
+  makes the slot keys open it); the round timer (stopwatch, minutes, a
+  two square colon, seconds; the match's `round_ends`, warning colour
+  under 20 s, hidden with none or over 99:59); the 320 layout
+  (`pictures(mount, 320)`: that layout's own atlases and `320_pain`, chosen
+  by the window's width, digit and icon cells from the sprites' sizes).
+  The numbers hud.md leaves open are ours and named in `consts`
+  (crosshair lengths 5, 7, 9, base gap 4, close time; the colon's squares;
+  the selection's closed-slot start row). Capture:
+  `apps/ultimate_gun_game/scenes/cs16_hud2.scene` at 1920x1080, 640x480 and
+  320x240. The 320 files are not in the published `players` set yet: until
+  it is republished a set-fed client has the 640 layout only.
 - **Served**: `players` (both builds) now carries the lists, the atlases
   their 640 entries name and the pain sprite (`sets::load_players` reads
   them: 53 files, 0.3 MB stored more); manifests snapshotted first.

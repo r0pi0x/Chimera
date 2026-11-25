@@ -1,8 +1,9 @@
 //! Counter-Strike 1.6's front end on the client shell, its own crate above the
 //! game's simulation (`cs16`) so that the simulation and its tests never
 //! build the shell: its HUD while a CS 1.6 weapon is in hand (`hud`:
-//! specs/cs16/hud.md's health, armour, ammunition and damage arcs from the
-//! install's sprites; the shell's crosshair) and CS 1.6's kill icons in
+//! specs/cs16/hud.md's health, armour, ammunition, damage arcs, dynamic
+//! crosshair, weapon selection and round timer from the
+//! install's sprites, at the 640 or the 320 layout) and CS 1.6's kill icons in
 //! every app's kill feed (`hud::load_pictures`).
 
 pub mod hud;

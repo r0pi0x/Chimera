@@ -13,7 +13,7 @@ use super::maps::mount;
 #[test]
 fn every_weapons_hud_pictures_and_kill_icon_load() {
     let Some(mount) = mount() else { return };
-    let p = hud::pictures(&mount).expect("an install's files are all here");
+    let p = hud::pictures(&mount, 640).expect("an install's files are all here");
     let mut problems = Vec::new();
     for name in hud::SHARED {
         if !p.shared.contains_key(*name) {
@@ -23,6 +23,12 @@ fn every_weapons_hud_pictures_and_kill_icon_load() {
     let size = |i: &chimera_world::map::hud::UiImage| (i.width, i.height);
     assert_eq!(p.shared.get("number_0").map(size), Some((20, 25)));
     assert_eq!(p.shared.get("cross").map(size), Some((24, 24)));
+    // The round timer's and the weapon menu's pictures (hud.md, "Sprites").
+    assert_eq!(p.shared.get("stopwatch").map(size), Some((24, 24)));
+    assert_eq!(p.shared.get("selection").map(size), Some((170, 45)));
+    for b in ["bucket0", "bucket1", "bucket2", "bucket3", "bucket4", "bucket5"] {
+        assert_eq!(p.shared.get(b).map(size), Some((20, 20)), "{b}");
+    }
     for w in &weapons::weapons().weapons {
         match p.weapons.get(&w.id) {
             Some(pics) => {
@@ -49,4 +55,21 @@ fn every_weapons_hud_pictures_and_kill_icon_load() {
     let cross = &p.shared["cross"];
     assert!(cross.rgba8.chunks_exact(4).any(|px| px[0] > 100 && px[0] == px[1] && px[1] == px[2]));
     assert!(problems.is_empty(), "{problems:#?}");
+}
+
+/// The 320 layout's own pictures (hud.md: screens under 640 wide): the
+/// digits' and icons' cells, each weapon's menu pictures and the pain arcs
+/// from `320_pain.spr`.
+#[test]
+fn the_320_layout_has_its_own_pictures() {
+    let Some(mount) = mount() else { return };
+    let p = hud::pictures(&mount, 320).expect("an install's files are all here");
+    let size = |i: &chimera_world::map::hud::UiImage| (i.width, i.height);
+    assert_eq!(p.shared.get("number_0").map(size), Some((12, 16)));
+    assert_eq!(p.shared.get("cross").map(size), Some((16, 16)));
+    assert_eq!(p.shared.get("selection").map(size), Some((80, 20)));
+    assert_eq!(p.shared.get("bucket1").map(size), Some((12, 12)));
+    assert_eq!(p.weapons[weapons::AK47].weapon.as_ref().map(size), Some((80, 20)));
+    assert_eq!(p.pain.len(), 4);
+    assert_eq!(hud::resolution_for(639), 320);
 }
