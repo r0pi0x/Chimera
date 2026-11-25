@@ -3187,6 +3187,66 @@ spawn protection (`+ColliderDisabled+Dead`, `±God+Protected+
 SpawnProtected`), each made once per combination of the parts that still
 vary.
 
+## A session's archetypes: the weapons' markers (2026-11-25)
+
+The fast `session` tests' bounds had been raised three times in two days
+(pinned 970 to 1,000, every game 1,100 to 1,180). `census made_since 0`
+over the whole session named the makers: markers put on weapons after
+their build, one archetype for every kind of weapon given with them, and
+one character part that came and went. The cuts:
+
+- `minigame::LoadoutWeapon` (24 pinned, 40 with every game): a sparse
+  marker inserted on each rules weapon at a life's or a rung's giving,
+  read only by HL2:DM's `loadout_rounds` (`On<Add<..>>`). Now an entity
+  event triggered at the same point, after the weapon is built and in the
+  inventory, followed by the `world.flush()` the insert did, so the hook
+  runs where it ran and queued world work lands where it landed.
+- Combat Arms' `CaAmmoRaised` (24, 37): inserted (by command) on every
+  weapon a Combat Arms character first held, whatever its game. Now
+  `CaAmmoRaised(Option<u32>)`, a component `Weapon` requires
+  (`CaGearPlugin`), `None` until the raise, set in place.
+- DoD:S's turbo physics `NoShadow` (every game only): put on and taken
+  off a character with each movement and map rule. Now `NoShadow(bool)`
+  on every character from the spawn (`ShadowPlugin`), set by `attach`.
+- `minigame::passives::RungPassive`: in the weapon's spawn
+  (`weapon::give_with`), not put on after its build. The session's
+  ladders draw no passive here (0 archetypes hold it before and after),
+  so it saves one archetype per passive item kind in a real game,
+  unmeasured.
+
+The joiners' wait for the start's spawn (`runtime::take_in`, the 32 more
+of 2026-11-25) is no longer a net cause: with the two weapon markers gone,
+spawning them at the join again gives 911 pinned (20 fewer) but 1,105
+with every game (22 more); it changes which of the death, protection and
+movement combinations come first, not how many, so it stays.
+
+| fast `session` test, 8 matches (archetypes after eight, made after the fourth) | pinned | every game |
+|---|---|---|
+| before | 980 / 11 | 1,171 / 40 |
+| `LoadoutWeapon` an event | 952 | 1,118 |
+| and `CaAmmoRaised` from the build | 931 / 5 | 1,083 / 27 |
+| and `NoShadow` on every character | 931 / 5 | 1,044 / 23 |
+
+The ticks that made archetypes, over the 8 matches' rung swaps (2,808
+ticks, `Sim::work`, instructions in the ticks' systems):
+
+| | pinned: ticks, their instructions | all ticks | every game: ticks, their instructions | all ticks |
+|---|---|---|---|---|
+| before | 17, 150.9 M | 11,046.8 M | 50, 669.9 M | 14,611.6 M |
+| `LoadoutWeapon` an event | 14, 126.0 M | 11,036.6 M | 52, 654.6 M | 14,623.6 M |
+| and `CaAmmoRaised` from the build | 9, 82.9 M | 11,014.8 M | 37, 478.6 M | 14,460.4 M |
+| and `NoShadow` on every character | 9, 83.1 M | 11,016.0 M | 30, 354.0 M | 14,264.6 M |
+
+The pinned session plays the same as before, tick for tick, apart from
+entity ids (a trace of two matches' positions, velocities, health and
+magazines, ids aside, is equal; the event alone keeps even the
+`state_hash`). Tables no longer moved by the inserts change the order
+queries visit weapons and characters in, so the ids freed and reused
+differ, and with every game the bots' paths drift by float rounding from
+the first match (a different, equally valid playout). With CS 1.6's guns
+dealt into the ladders (the same day) every game's count is 1,051, 25
+after the fourth; the bounds are now 950 and 1,070.
+
 ## A session's memory (2026-11-09)
 
 What the section above left: Ultimate Gun Game's process memory rising over a

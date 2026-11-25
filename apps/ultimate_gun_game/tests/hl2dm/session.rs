@@ -134,8 +134,13 @@ fn steady(w: &Work) -> f64 {
 /// after eight, 11 after the fourth. 978 and 11 since a join as the
 /// match is about to start waits for the start's spawn (2026-11-25: the
 /// joiners stand unspawned for the ticks before it, 26 more in the first
-/// match, the same from there and flat from the sixth).
-const ARCHETYPES_PINNED: usize = 1_000;
+/// match, the same from there and flat from the sixth). 931 and 5 since
+/// the weapons' late markers went into their spawn or an event
+/// (2026-11-25: `minigame::LoadoutWeapon` an event, 28 fewer; Combat Arms'
+/// `CaAmmoRaised` on every weapon from its build, 21 fewer; docs/
+/// performance.md, "A session's archetypes: the weapons' markers"); the
+/// bound just above.
+const ARCHETYPES_PINNED: usize = 950;
 const LATER_PINNED: usize = 40;
 /// The same with every game's ladders (943 and 34 with five games; 1026
 /// and 16 with DoD:S the sixth, 2026-11-23: a game's guns and bodies
@@ -143,8 +148,12 @@ const LATER_PINNED: usize = 40;
 /// passives and utility items, 2026-11-24: their weapons' parts, none of
 /// them characters', flat from the sixth match; 1150 and 18 since a join
 /// as the match is about to start waits for the start's spawn, 2026-11-25:
-/// 32 more in the first match, flat from the sixth again).
-const ARCHETYPES_EVERY_GAME: usize = 1_180;
+/// 32 more in the first match, flat from the sixth again; 1044 and 23
+/// since the weapons' late markers went into their spawn or an event and
+/// DoD:S's `NoShadow` stays on every character, 2026-11-25: 53, 35 and
+/// 39 fewer, the joiners' wait no longer adding any; 1051 and 25 with
+/// CS 1.6's guns dealt too). The bound just above.
+const ARCHETYPES_EVERY_GAME: usize = 1_070;
 const LATER_EVERY_GAME: usize = 60;
 /// Characters' archetypes made after the fourth match (none now): a
 /// character's parts, kept on or moved together, visit a set that stops
