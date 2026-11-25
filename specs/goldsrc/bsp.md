@@ -676,7 +676,25 @@ engine), 25 `sky`, 9 with `!`.
 
 1. The lightmap brightening (the original's gamma and brightness
    settings and their defaults) for refcmp: measure from captures of the
-   client (not on this box).
+   client (not on this box). An implementation needs, for the software
+   and OpenGL renderers at the stock settings:
+   a. The function from a stored lightmap byte (0-255, after the style
+      scale) to the light that multiplies the texture: a table or a
+      formula, with the cvars it reads (`gamma`, `brightness`,
+      `lightgamma`, `texgamma`, `lambert`, any others) and their
+      defaults in CS 1.6.
+   b. Whether the brightening is applied once to the lightmap at upload
+      (per sample, before the bilinear blend) or to the drawn result
+      (after texture × light), and whether the texture's own colours
+      get a gamma correction too (`texgamma`).
+   c. Overbright: whether light above the stored 255 is reachable
+      (a factor such as 2 between the lightmap and the drawn colour),
+      and where the result is clamped.
+   d. Whether dark samples are lifted (a floor, or a curve steeper near
+      0): stock de_aztec's vine faces and cs_militia's interior are the
+      cases that draw nearly black with byte / 255 as linear light.
+   e. Whether the same curve applies to the light styles' sum (entities.md
+      question 11) and to studio models' lighting.
 2. The engine's hull choice thresholds for boxes other than the player's
    (8 and 36 units above) come from public engine write-ups; confirm by
    measurement before relying on them (CS 1.6's own player uses hulls 1
