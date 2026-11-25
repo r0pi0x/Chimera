@@ -1649,8 +1649,9 @@ load; work counts don't (performance.md, "Work counts"):
   start before its first frame (the start map, each part of the client
   app, each game's simulation in a party: `chimera_core::metrics::boot`)
   and after it when a host listens and each map settles (`listening`,
-  `a map settled`: a hosting run's start map loads after the first
-  frame, performance.md, "A join while the host starts";
+  `a map settled`: a hosting run's start map, and a dedicated server's,
+  loads after the first frame, performance.md, "A join while the host
+  starts";
   `CHIMERA_START_MAP_AT_ONCE=1` the old start); each line says the process's instructions and, in brackets, the
   starting thread's own: read that one, since an offscreen run's sound
   thread never rests, performance.md, "Start cost, third pass";

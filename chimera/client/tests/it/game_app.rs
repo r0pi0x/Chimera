@@ -218,6 +218,11 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
     assert_eq!(start(&BARE, "--map a_game:one +maxplayers 4 --screenshot x.png"), "a_game:one (one, 9 spawns)");
     assert_eq!(start(&BARE, "--map greybox +maxplayers 4"), "greybox");
 
+    // A run that joins loads the server's map, not the app's default
+    // first; its own `--map` it still loads.
+    assert_eq!(start(&DEFAULT_MAP, "+connect 127.0.0.1:27015"), "greybox");
+    assert_eq!(start(&DEFAULT_MAP, "+connect 127.0.0.1:27015 --map a_game:one"), "a_game:one (one, 9 spawns)");
+
     // A start of the app's own (a main menu over a background map) when
     // the command line doesn't play; the usual one when it does.
     static MENU: GameApp = GameApp {

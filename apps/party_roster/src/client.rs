@@ -330,12 +330,13 @@ mod tests {
         let join = super::with_defaults(join);
         assert!(super::joins_server(&join.console));
         assert_eq!(join.console, ["connect 127.0.0.1:28930"], "no local minigame or bots");
-        let installed = super::map_installed("cs_source:de_dust2");
-        assert_eq!(
-            join.map.as_deref(),
-            installed.then_some("cs_source:de_dust2"),
-            "the default map meanwhile, if its game is installed"
-        );
+        // No map of its own, installed or not: the server's comes straight
+        // after the greybox (`party_kit::start_at_menu`).
+        assert_eq!(join.map, None, "no default map before the server's");
+        let mut own = Args::default();
+        own.console.push("connect 127.0.0.1:28930".into());
+        own.map = Some("cs_source:cs_office".into());
+        assert_eq!(super::with_defaults(own).map.as_deref(), Some("cs_source:cs_office"), "its own --map stays");
         assert!(!super::joins_server(&super::with_defaults(Args::default()).console));
     }
 }

@@ -2949,6 +2949,49 @@ pub fn map_target(game: Option<&GameInfo>, name: &str) -> Option<(String, bool)>
     }
 }
 
+/// The `map` command. A hosting run's start map (`app::StartMapLater`,
+/// its `map` line) that can't be asked for (not in the install) ends the
+/// run with 1, as one that fails on its load (`finish_map_load`) and one
+/// loading before the app; before, its held lines waited for ever.
+pub fn map_command(w: &mut World, a: &[String]) -> Result<Option<String>, String> {
+    let r = load_named_map(w, a);
+    if let Err(e) = &r
+        && let Some(name) = a.first()
+        && w.get_resource::<super::app::StartMapLater>().is_some_and(|s| s.0 == *name)
+    {
+        eprintln!("error: --map {name}: {e}");
+        super::app::start_map_settled(w, false);
+    }
+    r
+}
+
+/// `map <name>`'s work.
+fn load_named_map(w: &mut World, a: &[String]) -> Result<Option<String>, String> {
+    let name = a.first().ok_or("map <name>")?.clone();
+    if w.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client) {
+        crate::net::disconnect(w, crate::net::client::BY_USER);
+    }
+    let game = crate::game_registry::default_game(w);
+    let Some((id, check)) = map_target(game, &name) else {
+        w.resource_mut::<Console>().submit("bot_kick");
+        let id = crate::net::normalize_map(&name);
+        load_code_map(w, &id);
+        super::front_end::entered_game(w);
+        super::net::listen_if_hosting(w);
+        super::front_end::start_game(w);
+        return Ok(Some(format!("loaded the {id}")));
+    };
+    let short = crate::net::maps::map_name(&id).to_string();
+    let names = map_names(w, game);
+    if check && !names.is_empty() && !names.iter().any(|m| *m == short) {
+        return Err(format!("no map \"{short}\" in the install"));
+    }
+    start_map_load(w, &id, None);
+    // A game of our own starts: we join it once it's loaded.
+    w.insert_resource(FreshGame);
+    Ok(Some(format!("loading {id}...")))
+}
+
 /// The player a command acts on (a network client's on its server).
 fn local_player(w: &mut World) -> Result<Entity, String> {
     crate::console::command_player(w)
@@ -3143,31 +3186,7 @@ pub fn client_commands(app: &mut App) {
         "map",
         "map <name>: load a map of the game (Tab lists the install's maps); map greybox: Chimera's test map; map range: its firing range. \
          Hosting, it takes the players along (as changelevel); on a client, it leaves the server first.",
-        |w, a| {
-            let name = a.first().ok_or("map <name>")?.clone();
-            if w.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client) {
-                crate::net::disconnect(w, crate::net::client::BY_USER);
-            }
-            let game = crate::game_registry::default_game(w);
-            let Some((id, check)) = map_target(game, &name) else {
-                w.resource_mut::<Console>().submit("bot_kick");
-                let id = crate::net::normalize_map(&name);
-                load_code_map(w, &id);
-                super::front_end::entered_game(w);
-                super::net::listen_if_hosting(w);
-                super::front_end::start_game(w);
-                return Ok(Some(format!("loaded the {id}")));
-            };
-            let short = crate::net::maps::map_name(&id).to_string();
-            let names = map_names(w, game);
-            if check && !names.is_empty() && !names.iter().any(|m| *m == short) {
-                return Err(format!("no map \"{short}\" in the install"));
-            }
-            start_map_load(w, &id, None);
-            // A game of our own starts: we join it once it's loaded.
-            w.insert_resource(FreshGame);
-            Ok(Some(format!("loading {id}...")))
-        },
+        map_command,
     )
     .console_command(
         "changelevel",
@@ -3634,6 +3653,73 @@ mod tests {
         assert!(!app.world().contains_resource::<MapListsAhead>(), "the read finished");
         assert_eq!(lists.names_by("ahead_game", || panic!("read on the frame")), Vec::<String>::new());
         assert!(lists.cycles.lock().unwrap().contains_key("ahead_game"));
+    }
+
+    /// A hosting run's start map loaded as a level change (`app::
+    /// StartMapLater`) that isn't in the install: its `map` line fails at
+    /// once (no load to fail later), and the run ends with 1 as when the
+    /// map failed before the app; the held lines never run. A `map` the
+    /// player types for another missing map ends nothing.
+    #[test]
+    fn a_start_map_not_in_the_install_ends_the_run_with_1() {
+        use crate::console::{ConsoleAppExt, ConsolePlugin};
+        use super::super::app::{HeldCommandLine, StartMapLater};
+        static GAME: GameInfo = GameInfo {
+            id: "start_game",
+            short_name: "SG",
+            name: "SG",
+            content_dir: "sg",
+            tick_interval: 0.015,
+            open: |_| Err(std::io::ErrorKind::NotFound.into()),
+            map_cycle: |_| Vec::new(),
+            map_names: |_| Vec::new(),
+            map_file: |n| Some(format!("maps/{n}.bsp")),
+            steam: None,
+            import_map: |_| Err("no".into()),
+            default_binds_cfg: "cfg/config_default.cfg",
+            default_binds: &[],
+            old_default_binds: &[],
+            movement_cvars: &[],
+            meters_per_unit: 0.0254,
+            console_namespaces: &[],
+        };
+        #[derive(Resource, Default)]
+        struct Marks(Vec<String>);
+        let app = || {
+            let mut app = App::new();
+            let mut games = Games::default();
+            games.register(&GAME);
+            app.add_plugins((MinimalPlugins, ConsolePlugin))
+                .insert_resource(games)
+                .init_resource::<MapLists>()
+                .init_resource::<Marks>()
+                .insert_resource(StartMapLater("start_game:nope".into()))
+                .insert_resource(HeldCommandLine(vec!["mark held".into()]));
+            app.console_command("map", "the client's", map_command);
+            app.console_command("mark", "a test's", |w, a| {
+                w.resource_mut::<Marks>().0.push(a.join(" "));
+                Ok(None)
+            });
+            // The install's maps (none named `nope`).
+            app.world().resource::<MapLists>().names_by("start_game", || vec!["here".into()]);
+            app
+        };
+        let exits = |app: &mut App| app.world_mut().resource_mut::<Messages<AppExit>>().drain().collect::<Vec<_>>();
+
+        let mut start = app();
+        start.world_mut().resource_mut::<Console>().submit("map start_game:nope");
+        start.update();
+        assert_eq!(exits(&mut start), [AppExit::from_code(1)], "the run ends with 1");
+        assert!(!start.world().contains_resource::<StartMapLater>());
+        start.update();
+        assert!(start.world().resource::<Marks>().0.is_empty(), "the held lines never run");
+
+        // Another missing map, typed: an error, nothing ended.
+        let mut typed = app();
+        typed.world_mut().resource_mut::<Console>().submit("map start_game:elsewhere");
+        typed.update();
+        assert!(exits(&mut typed).is_empty());
+        assert!(typed.world().contains_resource::<StartMapLater>(), "the start map still comes");
     }
 
     #[test]

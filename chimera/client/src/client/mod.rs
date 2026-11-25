@@ -571,6 +571,15 @@ impl Args {
         })
     }
 
+    /// Whether the command line joins a server (`+connect <address>`):
+    /// the run starts on no map of its own (not the app's `default_map`)
+    /// and loads the server's when it is told it.
+    pub fn connects(&self) -> bool {
+        self.console.iter().flat_map(|l| crate::console::parse(l)).any(|words| {
+            words.first().is_some_and(|w| w.eq_ignore_ascii_case("connect"))
+        })
+    }
+
     /// Whether the run looks at its start map from its first frames: a
     /// capture (`--screenshot`, `--scene`, `--views`, `--frames`,
     /// `--bench`), a placed player (`--spawn`, `--look`, `--movement`) or a
