@@ -109,7 +109,7 @@ fn on_a_css_map_they_shove_a_light_crate_and_stop_at_a_heavy_one() {
                 sim.app.world().get::<Shadowed>(p).unwrap().0.is_some(),
                 "{movement}: a shadow"
             );
-            assert!(sim.app.world().get::<NoShadow>(p).is_none(), "{movement}");
+            assert_eq!(sim.app.world().get::<NoShadow>(p), Some(&NoShadow(false)), "{movement}");
             let (crate_before, start) = (at(&sim, e), sim.position(p));
             walk(&mut sim, p, 3.0);
             let moved = (at(&sim, e) - crate_before).length() / U;
@@ -137,7 +137,7 @@ fn on_a_dods_map_they_follow_turbo_physics() {
             let p = body(&mut sim, movement);
             let e = prop(&mut sim, p, push, 20.0, 80.0);
             assert!(
-                sim.app.world().get::<NoShadow>(p).is_some(),
+                sim.app.world().get::<NoShadow>(p).is_some_and(|n| n.0),
                 "{movement}: turbo physics, no shadow"
             );
             assert_eq!(sim.app.world().get::<Shadowed>(p).unwrap().0, None, "{movement}");

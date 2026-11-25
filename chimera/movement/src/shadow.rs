@@ -13,7 +13,7 @@
 //! movement's, Combat Arms', Halo's; its body, `PhysicsTouch::body`, the
 //! box the shadow takes), but on a map whose rule is turbo physics
 //! (`prop_physics::PlayerProps::Turbo`: DoD:S's, specs/dods/physics_props.md
-//! 1): there it has none, wears `prop_physics::NoShadow`, shoves no
+//! 1): there it has none, its `prop_physics::NoShadow` is true, shoves no
 //! `prop_physics` and meets every one as a wall.
 //! A game that wants it (`ShadowKnockPlugin`, HL2:DM's; CS:S's keeps its
 //! measured contacts) has a prop running into a player from the side knock
@@ -93,8 +93,9 @@ impl Plugin for ShadowPlugin {
         use chimera_core::character::CharacterPartsExt;
         app.on_every_character::<Shadowed>()
             .on_every_character::<PhysicsTouch>()
-            // It only spawns and drops shadows (by commands) and puts
-            // `NoShadow` on or off; `drive` places each shadow every physics
+            .on_every_character::<NoShadow>()
+            // It only spawns and drops shadows (by commands) and sets
+            // `NoShadow`; `drive` places each shadow every physics
             // step: unordered against the games' systems on purpose (the
             // schedule ratchets).
             .add_systems(FixedUpdate, attach.before(crate::core::SimSet::Movement).ambiguous_with_all())
@@ -366,7 +367,7 @@ struct ShadowAim(Option<Vec3>);
 /// shadow or none: they came and went with the movement, each a new
 /// archetype for every combination of the character's other parts. On a map
 /// whose rule is turbo physics (`PlayerPropRules::for_character`) it has
-/// none: it wears `NoShadow` instead.
+/// none: its `NoShadow` (on every character, false) is true instead.
 #[allow(clippy::type_complexity)]
 fn attach(
     mut commands: Commands,
@@ -377,7 +378,7 @@ fn attach(
         &Shadowed,
         &PhysicsTouch,
         Has<QuakeMovement>,
-        Has<NoShadow>,
+        &NoShadow,
     )>,
     shadows: Query<(Entity, &PhysicsShadow)>,
     owners: Query<&Shadowed>,
@@ -406,12 +407,8 @@ fn attach(
         };
         let turbo = body.is_some()
             && PlayerPropRules::for_character(rules.as_deref(), map_game.as_deref(), slot.map(|s| s.0)) == PlayerProps::Turbo;
-        if turbo != unshadowed {
-            if turbo {
-                commands.entity(owner).insert(NoShadow);
-            } else {
-                commands.entity(owner).remove::<NoShadow>();
-            }
+        if turbo != unshadowed.0 {
+            commands.entity(owner).insert(NoShadow(turbo));
         }
         let body = body.filter(|_| !turbo);
         let body = match (shadowed.0, body) {

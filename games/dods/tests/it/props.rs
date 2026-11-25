@@ -110,7 +110,7 @@ fn a_prop_physics_is_a_wall_at_any_mass() {
     for mass in [1.0, 50.0, 400.0] {
         let mut sim = sim();
         let p = player(&mut sim);
-        assert!(sim.app.world().get::<NoShadow>(p).is_some(), "turbo physics: no shadow");
+        assert!(sim.app.world().get::<NoShadow>(p).is_some_and(|n| n.0), "turbo physics: no shadow");
         assert_eq!(sim.app.world().get::<Shadowed>(p).unwrap().0, None);
         let e = drum(&mut sim, p, Drum { push: PushAway::Collide, mass, asleep: false, debris: false }, 120.0);
         sim.seconds(0.5);

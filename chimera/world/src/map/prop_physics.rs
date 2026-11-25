@@ -14,7 +14,7 @@
 //! `Shadowed` on its character; `ShadowContacts` keeps a shadow's pairs to
 //! `prop_physics` bodies it can push (up to 350 kg) and keeps a shadowed
 //! character's own pairs only to `prop_physics` bodies too heavy to push, as
-//! a character without a shadow under turbo physics, `NoShadow`, does; the
+//! a character without a shadow under turbo physics, `NoShadow(true)`, does; the
 //! shadow is on `core::SHADOW_LAYER`, which no spatial query sees);
 //! `walked_through`: the props a player gets past (`player_passes`, by the
 //! map's game's rule, `PlayerProps`, registered in `PlayerPropRules`:
@@ -555,9 +555,12 @@ pub struct Shadowed(pub Option<Entity>);
 /// meeting props follows, `chimera_movement::props`): its movement meets
 /// every `prop_physics` as a wall, and its own collider touches the
 /// physics props a shadowed character's does (the heavy `prop_physics`
-/// ones), so walking never shoves one.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct NoShadow;
+/// ones), so walking never shoves one. On every character from its spawn
+/// (`chimera_movement::shadow::ShadowPlugin`), true under turbo physics:
+/// put on and taken off with each change of movement or map, it made one
+/// archetype for every combination of a character's other parts.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoShadow(pub bool);
 
 /// The shadow's mass, kg (spec 4.1 step 3).
 pub const SHADOW_MASS: f32 = 85.0;
@@ -572,7 +575,7 @@ pub const SHADOW_PUSH_MASS: f32 = 350.0;
 pub struct ShadowContacts<'w, 's> {
     shadows: Query<'w, 's, &'static PhysicsShadow>,
     shadowed: Query<'w, 's, &'static Shadowed>,
-    unshadowed: Query<'w, 's, (), With<NoShadow>>,
+    unshadowed: Query<'w, 's, &'static NoShadow>,
     of: Query<'w, 's, &'static ColliderOf>,
     props: Query<'w, 's, &'static PhysicsProp>,
 }
@@ -592,7 +595,7 @@ impl ShadowContacts<'_, '_> {
             }
         }
         for (me, other) in [(a, b), (b, a)] {
-            if (self.shadowed.get(me).is_ok_and(|s| s.0.is_some()) || self.unshadowed.contains(me))
+            if (self.shadowed.get(me).is_ok_and(|s| s.0.is_some()) || self.unshadowed.get(me).is_ok_and(|n| n.0))
                 && let Ok(p) = self.props.get(other)
             {
                 return Some(p.push == super::PushAway::Collide && !pushable(p));
