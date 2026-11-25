@@ -5,7 +5,9 @@
 //! the asset store alone fetches what loading it reads.
 //!
 //! - `players`: the eight class bodies (`load_players`: each model with
-//!   its external texture file);
+//!   its external texture file) and the HUD's sprites (`hud::read_all`:
+//!   `sprites/hud.txt`, the `weapon_*.txt` lists, the atlases their 640
+//!   entries name, the pain arcs);
 //! - `weapon/<id>` (`load_weapon`): a weapon's models as its data names
 //!   them (view, held, and the dropped `w_` beside the held, with their
 //!   `<name>t.mdl` texture and `<name>NN.mdl` sequence-group files) and
@@ -28,9 +30,11 @@ use crate::{
     mount::Mount,
 };
 
-/// Read the eight class bodies (`bodies::add_bodies`, textures decoded).
+/// Read the eight class bodies (`bodies::add_bodies`, textures decoded)
+/// and the HUD's sprites (`hud::read_all`).
 pub fn load_players(mount: &Mount) {
     super::bodies::add_bodies(mount, true, &mut MapData::default());
+    super::hud::read_all(mount);
 }
 
 /// Read weapon `id`'s files (module doc); false if the game has no such

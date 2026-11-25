@@ -171,7 +171,8 @@ pub struct SpriteListEntry {
 }
 
 /// `sprites/hud.txt` or `weapon_*.txt`: a count, then entries of name,
-/// resolution, sprite, x, y, width, height (whitespace-separated).
+/// resolution, sprite, x, y, width, height (whitespace-separated); the
+/// entries there when the text ends before the count's.
 pub fn parse_sprite_list(text: &str) -> Result<Vec<SpriteListEntry>> {
     let text: String = text
         .lines()
@@ -185,12 +186,15 @@ pub fn parse_sprite_list(text: &str) -> Result<Vec<SpriteListEntry>> {
         .ok_or_else(|| crate::Error("sprite list: no count".into()))?;
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
+        // A list may hold fewer entries than its count says (the
+        // install's `hud.txt`: 215 counted, 193 there): it ends there.
+        let Some(name) = words.next() else { break };
         let mut next = || {
             words
                 .next()
                 .ok_or_else(|| crate::Error("sprite list: entry cut short".into()))
         };
-        let name = next()?.to_string();
+        let name = name.to_string();
         let resolution = next()?
             .parse()
             .map_err(|_| crate::Error(format!("sprite list {name}: resolution")))?;

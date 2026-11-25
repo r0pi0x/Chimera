@@ -1,0 +1,24 @@
+# CS 1.6's HUD (specs/cs16/hud.md; cs16_ui::hud): an AK-47 in hand on
+# its own map, a little health lost and a few rounds fired, so health
+# with the cross, armour with the suit and the ammunition row show at
+# their pixel size; then the HE grenade's count.
+#   CHIMERA_CS16_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 \
+#       +sandbox cs16:de_dust2 --scene apps/ultimate_gun_game/scenes/cs16_hud.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+rung cs16:weapon_ak47
+wait 120
+hurtme chest 20
++attack
+wait 20
+-attack
+wait 10
+shot cs16_hud
+wait 400
+shot cs16_hud_dim
+rung cs16:weapon_hegrenade
+wait 120
+shot cs16_hud_he

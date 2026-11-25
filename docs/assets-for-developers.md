@@ -305,7 +305,7 @@ scripts are plain text: no key.
 
 CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the
 Half-Life Dedicated Server's build 15961496, published with `--build`):
-`players` (the eight class bodies) and `map/<name>` for the 25 stock
+`players` (the eight class bodies; from 2026-11-25 also the HUD's sprites: `hud.txt`, the `weapon_*.txt` lists, their `640hud` atlases and the pain arcs) and `map/<name>` for the 25 stock
 maps, with its guest dressing converted; `weapon/<id>` for each of its 28
 weapons from 2026-11-25 (M1: the `v_`, `p_` and `w_` models, every wave
 the data and the view model's events name, the muzzle flash sprites;

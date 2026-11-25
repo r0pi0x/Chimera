@@ -26,7 +26,7 @@ Force) is a small port on the same loader.
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Polish (2026-11-25): the maps' sounds (doors, buttons, ambients, breakables: `content::sounds::add_map`), `env_sprite`/`env_glow` drawn and switched (`content::sprites`), light styles in the lightmap atlas (switchable 32+ and the animated presets, `content::lightmap`; converter version 3). Left: the lightmap brightening against captures; debris; sentences |
 | M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Left: shells, measurements (weapons.md open questions) |
 | M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Left: water volumes from GoldSrc maps, the ladder volumes' own rule, measurement in the game |
-| M3 party rungs | not started | §5 |
+| M3 party rungs | in progress | §5. The guns are rungs since M1. HUD (2026-11-25): `cs16_ui::hud` from specs/cs16/hud.md (health with the cross and bar, armour with the suit lit by armour, ammunition with its icon, fades, the damage arcs; the install's `640hud` sprites added at their pixel size), the `d_` kill icons and headshot mark in every app's kill feed, the HUD's sprites in `players` (Log). Left: CS 1.6's own dynamic crosshair (the shell's draws), the weapon menu, the round timer, the 320 layout |
 
 ## 1. Rules for this port
 
@@ -425,6 +425,15 @@ an implementation session):
   volume is a solid ladder brush found by a 2-unit probe along the keys).
   Water: the up key's amount in Chimera's terms (jump?), and whether
   `func_water` volumes carry currents in the stock maps.
+- spr.md / hud.md (from `cs16::game::hud`, M3): the install's
+  `sprites/hud.txt` (client build 12934623 and HLDS 15961496 alike)
+  says 215 entries but holds 193; hud.md's "215 entries" and spr.md's
+  count rule should say a list may end early (our reader keeps the
+  entries there). hud.md: how many rows the suit's lit part shows for
+  armour that isn't a multiple of 100 / 24 (ours truncates 24 × armour /
+  100); whether a fall or other undirected damage lights the arcs (ours:
+  none); the kill feed's icon blending (ours blends the grey icons by
+  their brightness in 255 80 0, the app's feed has no additive draw).
 - movement.md: on a duck let go before it completes, the text puts the
   standing box 18 units up on the ground (the duck-tap hop: ours does);
   confirm it is the game's and not only the reference's.
@@ -792,3 +801,28 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   manifests snapshotted first): the maps' sets gained their sounds and
   sprites (1-14 files each), the HE's and smoke's their look sprites.
 
+### 2026-11-25: M3, the HUD
+
+- **Pictures** (`games/cs16/src/game/hud.rs`): `sprites/hud.txt`'s and
+  each weapon's `sprites/weapon_<id>.txt`'s 640 entries cut out of frame
+  0 of their atlases (`goldsrc_formats::spr`) as grey RGBA: the digits,
+  cross, suits, kill icons by weapon id (`d_<id>`, the HE's `d_grenade`;
+  the smoke grenade has none), `d_headshot`, `d_skull`, every weapon's
+  `weapon`, `weapon_s` and `ammo`, and `sprites/640_pain.spr`'s four
+  arcs; read only once their files are here (the asset store), never
+  fetched. `parse_sprite_list` keeps the entries of a list that ends
+  before its count (the install's `hud.txt`: 193 of 215).
+- **HUD** (`games/cs16/ui/src/hud.rs`): hud.md's layout as pure draws
+  (`draws`, unit tested on the spec's test cases), a pool of
+  `HudGlyphMaterial` nodes added onto the frame in the HUD colour, at
+  the window's physical pixels (no scaling); the fades (`Fades`: health
+  and armour dim 100 and 228 on a change over 5 s, health 255 at 15 or
+  less, the ammunition 200 on every change); the pain arcs from
+  `DamageTaken`. `GameParts::hud` is `cs16` and the `GameClient` adds the
+  HUD after the shell's (as DoD:S's); the kill feed is the app's with
+  CS 1.6's icons (tinted 255 80 0) and its headshot mark registered. The
+  crosshair stays the shell's. Capture:
+  `apps/ultimate_gun_game/scenes/cs16_hud.scene`.
+- **Served**: `players` (both builds) now carries the lists, the atlases
+  their 640 entries name and the pain sprite (`sets::load_players` reads
+  them: 53 files, 0.3 MB stored more); manifests snapshotted first.

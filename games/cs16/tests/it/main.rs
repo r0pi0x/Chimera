@@ -7,7 +7,7 @@
 //! and its golden run (`movement`), that movement predicted over `NetSim`
 //! (`net_prediction`), and, in `heavy`, the user's install (`movement`:
 //! hull-traced walks, stairs and ladders; `guns`: every weapon's models
-//! and sounds; `served`: CS 1.6
+//! and sounds; `hud`: every weapon's HUD pictures and kill icon; `served`: CS 1.6
 //! from the asset service alone, packed from it; `textures`: what texture
 //! names' prefixes and chrome draw as; `entities`: its maps' logic, from
 //! the entity spec's worked examples; `net_logic`: that logic on a
@@ -29,6 +29,7 @@ mod heavy {
     mod bodies;
     mod entities;
     mod guns;
+    mod hud;
     mod install;
     mod maps;
     mod movement;

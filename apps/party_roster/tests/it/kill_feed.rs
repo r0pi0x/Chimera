@@ -306,7 +306,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin, dods_ui::hud::DodsHudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm_ui::Hl2dmHudPlugin, halo_ce_ui::hud::HaloHudPlugin, tf2_ui::Tf2HudPlugin, dods_ui::hud::DodsHudPlugin, cs16_ui::hud::Cs16HudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::huds::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
@@ -353,9 +353,10 @@ fn mixed_with_halo_and_tf2() -> String {
     ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
     ladder.push(tf2::game::weapons::SCATTERGUN);
     ladder.push(dods::game::weapons::THOMPSON);
+    ladder.push(cs16::game::weapons::AK47);
     crate::play::ladder_text(&ladder, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
-        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"dods\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"dods\", \"cs16\", \"combat_arms\"]",
     )
 }
 

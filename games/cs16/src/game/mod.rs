@@ -13,6 +13,8 @@
 //!   traced on GoldSrc maps (`goldsrc_engine::hulls`);
 //! - `weapons`: the guns, knife and grenades as data (data/weapons/) with
 //!   the game's rules as hooks, their view and held models and sounds;
+//! - `hud`: the HUD's pictures from the install (the digits, icons,
+//!   weapons' pictures, kill icons and pain arcs; drawn by `cs16_ui::hud`);
 //! - `parts`: what the game lends other games' apps (`PARTS`);
 //! - `sets`: what each piece reads, for the asset service's sets
 //!   (`chimera_pack sets cs16`).
@@ -22,6 +24,7 @@
 //! `BUNDLE` is the game for a party app.
 
 pub mod bodies;
+pub mod hud;
 pub mod maps;
 pub mod mount;
 pub mod movement;

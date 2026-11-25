@@ -4,7 +4,7 @@
 //! knife and its movement. Not a scaffold since its guns landed (M1): its
 //! guns are dealt into the gun game's ladders and the sandbox, and a
 //! player holding one is this game's, wears its body and moves on its
-//! movement. Its HUD is the shell's minimal one until it has its own.
+//! movement. Its HUD is this game's id (`cs16_ui::hud`).
 //!
 //! No map is claimed (`PARTS.maps` is empty): its maps enter an app's
 //! automatic pool from the install or the asset store the machine has, as
@@ -51,7 +51,7 @@ pub static PARTS: GameParts = GameParts {
     knife: Some(w::KNIFE),
     movement: Some(super::movement::ID),
     characters: None,
-    hud: None,
+    hud: Some(super::GAME),
     maps: &[],
     announcer: None,
     match_won_sound: None,

@@ -175,4 +175,7 @@ fn a_hud_sprite_list_reads_its_rectangles() {
     assert_eq!(l.len(), 2);
     assert_eq!(l[1].sprite, "640hud7");
     assert_eq!(l[1].rect, [72, 72, 24, 24]);
+    // Fewer entries than counted (the install's hud.txt): those there.
+    assert_eq!(parse_sprite_list("3\nammo 640 640hud7 72 72 24 24\n").unwrap().len(), 1);
+    assert!(parse_sprite_list("1\nammo 640 640hud7 72\n").is_err());
 }

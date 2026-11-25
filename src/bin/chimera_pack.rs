@@ -47,7 +47,7 @@
 //! `special::object_files`), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models; DoD:S:
 //! its twelve class bodies with their shared animations; CS 1.6: its
-//! eight class bodies, `cs16::game::sets`, packed with `--pack` from the
+//! eight class bodies and its HUD's sprites, `cs16::game::sets`, packed with `--pack` from the
 //! pieces' reads into a manifest it may start; TF2: what
 //! every class's body reads and its HUD's look, with a set per class,
 //! `players/<class>`: its body, animations, textures, first-person
