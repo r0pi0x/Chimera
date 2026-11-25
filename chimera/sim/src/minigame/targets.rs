@@ -887,8 +887,9 @@ const TARGET_SPACING: f32 = 1.0;
 
 /// `find_spot`, moved aside along the line across `dir` (one spacing at a
 /// time, right then left, out to 8) while another target already stands
-/// there: several targets asked for at one distance stand side by side,
-/// not in one place (seven at once on a DoD:S map looked like three).
+/// there, then on rows nearer and farther (a spacing at a time, out to 4):
+/// several targets asked for at one distance stand side by side, not in
+/// one place (seven at once on a DoD:S map looked like three).
 fn free_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f32) -> Result<Vec3, String> {
     let taken: Vec<Vec3> = world.query::<&Target>().iter(world).map(|t| t.home).collect();
     let free = |p: Vec3| taken.iter().all(|h| h.with_y(0.0).distance(p.with_y(0.0)) >= TARGET_SPACING);
@@ -899,13 +900,25 @@ fn free_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f32) -> Resul
         return first;
     }
     let across = Vec3::new(-dir.z, 0.0, dir.x).normalize_or_zero();
-    for step in 1..=8 {
-        for side in [1.0, -1.0] {
-            let at = origin + dir * distance + across * (side * step as f32 * TARGET_SPACING);
-            if let Ok(p) = stand_below(world, Vec3::new(at.x, origin.y + 1.5, at.z), &format!("{distance} m ahead"))
-                && free(p)
-            {
-                return Ok(p);
+    // Side by side at the distance asked, then a row nearer or farther
+    // (one spacing at a time, out to 4) where that line has no room (a
+    // narrow passage: seven on dod_avalanche's lane stood two in one place).
+    for ahead in [0.0f32, -1.0, 1.0, -2.0, 2.0, -3.0, 3.0, -4.0, 4.0] {
+        let d = distance + ahead * TARGET_SPACING;
+        if d < TARGET_SPACING {
+            continue;
+        }
+        for step in 0..=8 {
+            for side in [1.0, -1.0] {
+                if step == 0 && (side < 0.0 || ahead == 0.0) {
+                    continue;
+                }
+                let at = origin + dir * d + across * (side * step as f32 * TARGET_SPACING);
+                if let Ok(p) = stand_below(world, Vec3::new(at.x, origin.y + 1.5, at.z), &format!("{distance} m ahead"))
+                    && free(p)
+                {
+                    return Ok(p);
+                }
             }
         }
     }
