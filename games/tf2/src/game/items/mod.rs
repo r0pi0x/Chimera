@@ -217,7 +217,7 @@ impl ItemsData {
 pub const PACK_PATH_V1: &str = "chimera/gen/tf2.items/v1/items.toml";
 
 /// An item weapon made from the pack.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ItemWeapon {
     /// Our id (`tf2:winger`).
     pub id: String,
@@ -235,7 +235,7 @@ pub struct ItemWeapon {
 }
 
 /// What an item weapon shows and plays (from its document).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ItemLooks {
     /// The class whose arms hold it (`tf2:gun`'s or `tf2:melee`'s `arms`).
     pub arms: String,

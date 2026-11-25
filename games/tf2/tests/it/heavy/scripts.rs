@@ -110,3 +110,28 @@ fn every_guns_numbers_come_from_its_script_and_agree_with_the_data() {
     let new: Vec<&String> = differ.iter().filter(|d| !known.contains(d)).collect();
     assert!(new.is_empty(), "the scripts differ from the data beyond the spec's known cases: {new:?} (all: {differ:?})");
 }
+
+/// On the install: the numbers the app starts with read back from the
+/// converted cache (`GunNumbers::from_scripts_kept`) are the numbers the
+/// mount gives (`from_mount`), on the miss that writes them and on the
+/// hit that opens no archive.
+#[test]
+fn the_numbers_kept_between_starts_are_the_mounts() {
+    use chimera_core::mount::assets::map_cache::{MapCache, Outcome};
+    use tf2::game::weapons::script_numbers::GunNumbers;
+    let Some((key, mount)) = key_and_mount() else { return };
+    let direct = GunNumbers::from_mount(Some(&mount), Some(&key));
+    let dir = std::env::temp_dir().join(format!("chimera-tf2-kept-numbers-heavy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cache = MapCache::at(&dir, 1 << 30);
+    let (first, o1) = GunNumbers::from_scripts_kept(Some(&cache));
+    let (second, o2) = GunNumbers::from_scripts_kept(Some(&cache));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(first, direct, "the numbers on the miss");
+    if o1 == Outcome::Off {
+        eprintln!("note: a script is missing here, so the numbers aren't kept");
+        return;
+    }
+    assert_eq!((o1, o2), (Outcome::Miss, Outcome::Hit));
+    assert_eq!(second, direct, "the numbers read back");
+}

@@ -4,7 +4,9 @@
 //! converter and its kit, the guest dressing with its bodies and view
 //! models, Source's content converters and formats; not the gameplay) and
 //! of the parsing crates' versions (`PARSERS`). Policy:
-//! docs/plans/active/converted-cache.md, "Converter versions".
+//! docs/plans/active/converted-cache.md, "Converter versions". Beside
+//! it, the version of the guns' numbers as read from the scripts
+//! (`NUMBERS`), which names nothing of the converted output.
 
 use std::path::Path;
 
@@ -38,6 +40,21 @@ const CONVERTING: &[&str] = &[
     "../../chimera/formats/src",
 ];
 
+/// What shapes the guns' numbers as read from the scripts (`game::weapons::
+/// script_numbers::NUMBERS_READER`: the mapping, the scripts' reading,
+/// the unlocks made from the item pack, the documents they start from):
+/// the version their entry in the converted cache is keyed by.
+const NUMBERS: &[&str] = &[
+    "src/game/weapons/script_numbers.rs",
+    "src/game/weapons/mod.rs",
+    "src/game/scripts.rs",
+    "src/game/ice.rs",
+    "src/game/items",
+    "data/weapons",
+    "data/items.toml",
+    "../../chimera/formats/src/keyvalues.rs",
+];
+
 /// The parsing crates whose versions count (`source_hash::lock_versions`).
 const PARSERS: &[&str] = &[
     "vtf", "vmdl", "vbsp", "vmt-parser", "image", "half", "lzma-rs", "bzip2", "glam", "symphonia*", "postcard",
@@ -45,12 +62,17 @@ const PARSERS: &[&str] = &[
 
 fn main() {
     let lock = Path::new("../../Cargo.lock");
-    for p in CONVERTING.iter().chain(&["../../Cargo.lock"]) {
+    for p in CONVERTING.iter().chain(NUMBERS).chain(&["../../Cargo.lock"]) {
         println!("cargo:rerun-if-changed={p}");
     }
     let dirs: Vec<&Path> = CONVERTING.iter().map(Path::new).collect();
     println!(
         "cargo:rustc-env=CHIMERA_CONVERTER_SOURCES={}",
         source_hash::converter(VERSION, &dirs, lock, PARSERS)
+    );
+    let dirs: Vec<&Path> = NUMBERS.iter().map(Path::new).collect();
+    println!(
+        "cargo:rustc-env=CHIMERA_TF2_NUMBER_SOURCES={}",
+        source_hash::converter(0, &dirs, lock, &["toml", "postcard"])
     );
 }

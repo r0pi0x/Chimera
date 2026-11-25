@@ -4,7 +4,9 @@
 //! converter and its kit, the guest dressing with its bodies and view
 //! models, Source's content converters and formats; not the gameplay) and
 //! of the parsing crates' versions (`PARSERS`). Policy:
-//! docs/plans/active/converted-cache.md, "Converter versions".
+//! docs/plans/active/converted-cache.md, "Converter versions". Beside
+//! it, the version of the weapons' numbers as read from the scripts
+//! (`NUMBERS`), which names nothing of the converted output.
 
 use std::path::Path;
 
@@ -37,6 +39,11 @@ const CONVERTING: &[&str] = &[
     "../../chimera/formats/src",
 ];
 
+/// What shapes the weapons' numbers as read from the scripts (`game::
+/// numbers::NUMBERS_READER`: the mapping and the documents it starts
+/// from): the version their entry in the converted cache is keyed by.
+const NUMBERS: &[&str] = &["src/game/numbers.rs", "src/game/weapons", "data/weapons", "../../chimera/formats/src/keyvalues.rs"];
+
 /// The parsing crates whose versions count (`source_hash::lock_versions`).
 const PARSERS: &[&str] = &[
     "vtf", "vmdl", "vbsp", "vmt-parser", "image", "half", "lzma-rs", "bzip2", "glam", "symphonia*", "postcard",
@@ -44,12 +51,17 @@ const PARSERS: &[&str] = &[
 
 fn main() {
     let lock = Path::new("../../Cargo.lock");
-    for p in CONVERTING.iter().chain(&["../../Cargo.lock"]) {
+    for p in CONVERTING.iter().chain(NUMBERS).chain(&["../../Cargo.lock"]) {
         println!("cargo:rerun-if-changed={p}");
     }
     let dirs: Vec<&Path> = CONVERTING.iter().map(Path::new).collect();
     println!(
         "cargo:rustc-env=CHIMERA_CONVERTER_SOURCES={}",
         source_hash::converter(VERSION, &dirs, lock, PARSERS)
+    );
+    let dirs: Vec<&Path> = NUMBERS.iter().map(Path::new).collect();
+    println!(
+        "cargo:rustc-env=CHIMERA_DODS_NUMBER_SOURCES={}",
+        source_hash::converter(0, &dirs, lock, &["toml", "postcard"])
     );
 }

@@ -44,6 +44,7 @@ pub mod hud;
 pub mod maps;
 pub mod mount;
 pub mod movement;
+pub mod numbers;
 pub mod parts;
 pub mod player_anim;
 pub mod stamina;
@@ -126,6 +127,7 @@ impl PluginGroup for DodsPlugins {
             .add(crate::game_registry::RegisterGame(&INFO))
             .add(movement::DodsMovementPlugin)
             .add(DodsViewPlugin)
+            .add(numbers::DodsNumbersPlugin)
             .add(weapons::DodsGunsPlugin)
             .add(bodies::DodsBodiesPlugin)
             .add(player_anim::DodsAnimPlugin)
@@ -197,7 +199,7 @@ pub fn party_sim(app: &mut bevy::app::App) {
     view::add_rules(app);
     parts::add_map_pool(app);
     if !app.is_plugin_added::<weapons::DodsGunsPlugin>() {
-        app.add_plugins((weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin, player_anim::DodsAnimPlugin));
+        app.add_plugins((numbers::DodsNumbersPlugin, weapons::DodsGunsPlugin, bodies::DodsBodiesPlugin, player_anim::DodsAnimPlugin));
         bodies::add_targets(app);
     }
 }
