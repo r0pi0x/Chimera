@@ -545,18 +545,24 @@ in each game's newest manifest, per guest, a client's entry and a
 dedicated server's (no textures): `_converted/guest/<game>/<converter>/
 <key>.map` with its recipe beside it (`<key>-recipe.txt`: the versions
 and every input record). No set holds them; a client fetches the recipe,
-checks it against its manifest, then the entry. Sizes stored (a client's entry): CS:S about
-62 MB, HL2:DM 53 MB, TF2 about 265 MB, Combat Arms tens of MB (`--list`
-prints them). It needs
-memory for the largest entry twice (TF2's, about 1.6 GB) and a few
-minutes per game (zstd level 19).
+checks it against its manifest, then the entry. Sizes stored (a client's
+entry and a server's, the republish of 2026-11-25 after the map format
+changed): CS:S 62 and 39 MB, HL2:DM 53 and 36, DoD:S 75 and 58, CS 1.6
+13 and 10, Combat Arms 57 and 36, TF2 562 and 350 MB (1.6 GB plain;
+`--list` prints them). Halo: CE has no guest dressing to convert, and
+each game's entries go in its newest manifest only (CS 1.6: 15961496,
+the build clients take). It needs memory for the largest entry twice
+(TF2's, about 1.6 GB) and a few minutes per game (zstd level 19; TF2
+about 11 minutes, the others 0.5-2).
 
 Undo: `rm -r $S/manifests && cp -a $B $S/manifests` (records are only
 added), or one version's entries: `chimera_pack convert all --store $S
 --drop <converter> --sign`, then `chimera_assets --store $S gc` (`--dry-run` first)
 frees their records. Keep the entries of every converter version a
 released client still uses (`--list` names them); drop a version once no
-release in use has it.
+release in use has it. (On 2026-11-25 every superseded version was
+dropped and collected, 2.0 GB: the served dressings came on 2026-11-18,
+after the last release, so no release takes any.)
 
 ## The asset service (each session)
 
