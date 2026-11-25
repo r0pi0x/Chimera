@@ -10,7 +10,9 @@
 //!   Its look (`map::BrushTint`: render colour, alpha, mode and the `+a`
 //!   frame) replicates beside it, as the bridge writes it. Each
 //!   `env_sprite`'s on/off goes as a `NetEntityPart` on an entity kept
-//!   for it.
+//!   for it. The light styles the logic changed (a switchable light's
+//!   pattern, `a` while dark) go as `NetLightStyles`; the presets 0-12
+//!   every client has from the map (`content::lightmap`).
 //! - **Client.** GoldSrc runs the players' movement first and the movers
 //!   after (specs/goldsrc/entities.md, "Per-tick order"), so in each
 //!   predicted and replayed tick the client places every node where the
@@ -31,8 +33,9 @@
 //!   Source's movers.
 //! - Shots on the client test its own copies of the nodes (cosmetic: the
 //!   server's hits count); `core::Damageable` isn't replicated.
-//! - Light styles don't replicate: a client's switchable lights stay as
-//!   the map starts them (`content::lightmap`).
+//! - A client plays the replicated light styles by its own clock, not the
+//!   server's: a flicker's phase differs between players (the original's
+//!   clients do the same, entities.md "light styles").
 
 use std::sync::Arc;
 
@@ -93,6 +96,7 @@ fn write(world: &mut World) {
                 world.despawn(e);
             }
         }
+        movers::write_light_styles(world, Vec::new());
         return;
     };
     let mut out: Vec<(Entity, NetMover)> = Vec::new();
@@ -140,6 +144,7 @@ fn write(world: &mut World) {
             },
         ));
     }
+    let styles: Vec<(u8, String)> = l.world.styles.iter().map(|(n, p)| (*n, p.clone())).collect();
     let source = l.source();
     let sprites: Vec<(usize, bool)> = l
         .world
@@ -152,6 +157,7 @@ fn write(world: &mut World) {
         })
         .collect();
     let exists: Vec<bool> = sprites.iter().map(|(i, _)| !l.world.ents[*i].removed).collect();
+    movers::write_light_styles(world, styles);
     for (node, m) in out {
         movers::write_mover(world, node, m);
     }

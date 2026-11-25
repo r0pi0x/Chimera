@@ -676,7 +676,7 @@ fails when this file is stale; never edit the generated lines).
 - `goldsrc/engine/src/content/brushes.rs`: - `{` textures are cut out at index 255 whatever the render mode (the original shows the hole only in render mode 4)
 - `goldsrc/engine/src/content/collision.rs`: - Brush entities add no clip pieces of their own (their hull 1 is not read)
 - `goldsrc/engine/src/content/entities.rs`: - Water volumes (`func_water`, `!` leaves) are drawn but not handed over as water
-- `goldsrc/engine/src/content/lightmap.rs`: - A switchable light's own `pattern` key is not played: the style is only on (its baked light) or off
+- `goldsrc/engine/src/content/lightmap.rs`: - A switchable light's own `pattern` key is not in the atlas: the style starts on (its baked light); the logic plays the pattern at run time...
 - `goldsrc/engine/src/content/sky.rs`: - A sky with a face missing is not drawn at all (the original draws that face black; none is missing in the install)
 - `goldsrc/engine/src/content/sounds.rs`: - A sentence (`!NAME`: `sound/sentences.txt`) is not read: no spec covers that file, and the stock maps name none
 - `goldsrc/engine/src/content/sprites.rs`: - A map sprite shows its first frame only (no `framerate` animation) and always faces the view (the upright, oriented and rolled types, spr.md...

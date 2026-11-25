@@ -868,6 +868,23 @@ pub struct MapLightStyle {
     pub rects: Vec<[u32; 4]>,
 }
 
+/// A light style pattern's brightness per step (Quake's letters: `a` dark,
+/// `m` as baked, `z` about twice that, linear in between; any case, other
+/// characters clamp), the form `MapLightStyle::pattern` and
+/// `LightStyles::patterns` hold. Source's and GoldSrc's maps share it.
+pub fn style_levels(letters: &str) -> Vec<f32> {
+    letters.bytes().map(|c| (c.to_ascii_lowercase().clamp(b'a', b'z') - b'a') as f32 / 12.0).collect()
+}
+
+/// A looping pattern's brightness `t` seconds in (`LIGHT_STYLE_STEPS` a
+/// second); 1 (as baked) for an empty one.
+pub fn pattern_level(pattern: &[f32], t: f32) -> f32 {
+    if pattern.is_empty() {
+        return 1.0;
+    }
+    pattern[(t.max(0.0) * LIGHT_STYLE_STEPS) as usize % pattern.len()]
+}
+
 /// Steps a second of animated light styles' patterns (Quake's and
 /// Source's light style rate: ten characters a second).
 pub const LIGHT_STYLE_STEPS: f32 = 10.0;
@@ -883,8 +900,7 @@ impl MapLightStyle {
         if self.pattern.is_empty() {
             return self.start();
         }
-        let step = (t.max(0.0) * LIGHT_STYLE_STEPS) as usize;
-        self.pattern[step % self.pattern.len()]
+        pattern_level(&self.pattern, t)
     }
 }
 

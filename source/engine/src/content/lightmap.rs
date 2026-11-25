@@ -228,11 +228,7 @@ pub fn style_pattern(style: u8, custom: Option<&str>) -> Vec<f32> {
         .filter(|p| !p.is_empty())
         .or_else(|| STYLE_PRESETS.get(style as usize).copied())
         .unwrap_or("m");
-    letters
-        .bytes()
-        .map(|c| c.to_ascii_lowercase().clamp(b'a', b'z'))
-        .map(|c| (c - b'a') as f32 / (b'm' - b'a') as f32)
-        .collect()
+    crate::map::style_levels(letters)
 }
 
 /// Lightmap sample coordinates (in luxels, sample centers at integers) of a

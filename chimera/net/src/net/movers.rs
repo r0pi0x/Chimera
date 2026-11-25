@@ -14,7 +14,10 @@
 //!   mode and texture frame) replicates beside it (the network's own
 //!   component). A switched part of the map (`map::EntityPart`: a sprite
 //!   on or off) goes as a `NetEntityPart` the logic writes on an entity of
-//!   its own (`write_part`).
+//!   its own (`write_part`). Light styles a logic plays (`map::LightStyles`:
+//!   each style's pattern letters) go as one `NetLightStyles` on an entity
+//!   of its own (`write_light_styles`); a client plays them by its own clock
+//!   (`copy_light_styles`, the writer `net` in `LightStyles`).
 //! - **Client.** Each predicted and replayed tick a logic's client part
 //!   steps every mover from its newest snapshot at or before the tick to
 //!   the tick (`stepped`, by `Stepper`: a pusher as both logics step one,
@@ -33,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{NetRole, SimClock},
-    map::{BrushTint, EntityPart, MapBrushEntity},
+    map::{BrushTint, EntityPart, LightStyles, MapBrushEntity, style_levels},
     net::{
         NetHooks,
         interp::{HearTicks, Snapshots, hold_heard, remove_snapshots, write_snapshot},
@@ -57,7 +60,9 @@ pub fn register(app: &mut App) {
         .ordered_with::<NetMover>(write_snapshot::<NetMover>, remove_snapshots::<NetMover>)
         .replicate::<NetEntityPart>()
         .ordered::<NetEntityPart>()
-        .add_systems(Update, (copy_tints, copy_parts).run_if(client()))
+        .replicate::<NetLightStyles>()
+        .ordered::<NetLightStyles>()
+        .add_systems(Update, (copy_tints, copy_parts, copy_light_styles).run_if(client()))
         .add_systems(PreUpdate, hold_heard::<NetMover>.after(HearTicks).run_if(client()));
     app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(stopped_serving);
 }
@@ -71,6 +76,10 @@ fn stopped_serving(world: &mut World) {
     let parts: Vec<Entity> = world.query_filtered::<Entity, With<NetEntityPart>>().iter(world).collect();
     for e in parts {
         world.entity_mut(e).remove::<NetEntityPart>();
+    }
+    let styles: Vec<Entity> = world.query_filtered::<Entity, With<NetLightStyles>>().iter(world).collect();
+    for e in styles {
+        world.entity_mut(e).remove::<NetLightStyles>();
     }
 }
 
@@ -128,6 +137,32 @@ pub struct NetEntityPart {
     pub entity: u32,
     pub on: bool,
     pub exists: bool,
+}
+
+/// The light styles a logic has changed from the map's own, each style's
+/// pattern letters now (`a` dark, `m` normal; one letter is steady), on an
+/// entity of its own (`write_light_styles`). A client plays them
+/// (`copy_light_styles`).
+#[derive(Component, Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetLightStyles {
+    pub styles: Vec<(u8, String)>,
+}
+
+/// The server: the logic's changed light styles, replicated from the first
+/// non-empty list on (only a change is sent).
+pub fn write_light_styles(world: &mut World, styles: Vec<(u8, String)>) {
+    let holder = world.query_filtered::<Entity, With<NetLightStyles>>().iter(world).next();
+    match holder {
+        Some(h) => {
+            if let Some(mut have) = world.entity_mut(h).get_mut::<NetLightStyles>() {
+                have.set_if_neq(NetLightStyles { styles });
+            }
+        }
+        None if !styles.is_empty() => {
+            world.spawn((Name::new("light styles"), Replicated, NetLightStyles { styles }));
+        }
+        None => {}
+    }
 }
 
 /// The server: `m` on mover node `node` (replicated from the first one on;
@@ -354,6 +389,30 @@ fn copy_parts(
         if !found && have != Some(&want) {
             commands.entity(holder).insert(want);
         }
+    }
+}
+
+/// A client: the server's light styles into `map::LightStyles` (writer
+/// `net`): lit unless the pattern is dark, and a pattern of several
+/// letters played.
+fn copy_light_styles(
+    changed: Query<(), Changed<NetLightStyles>>,
+    all: Query<&NetLightStyles>,
+    current: Option<Res<LightStyles>>,
+    mut commands: Commands,
+) {
+    if changed.is_empty() {
+        return;
+    }
+    let (mut on, mut played) = (Vec::new(), Vec::new());
+    for s in all.iter().flat_map(|n| &n.styles) {
+        on.push((s.0, s.1 != "a"));
+        if s.1.len() > 1 {
+            played.push((s.0, style_levels(&s.1)));
+        }
+    }
+    if let Some(next) = current.as_deref().cloned().unwrap_or_default().with_patterns("net", on, played) {
+        commands.insert_resource(next);
     }
 }
 

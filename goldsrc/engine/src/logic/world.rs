@@ -49,9 +49,9 @@
 //!   other bodies are not entities here (open question 3).
 //! - The trigger overlap is the player's box against the trigger's hull 0
 //!   regions (open question 10: the clip-hull test is not made).
-//! - Light styles: a switchable light is drawn on or off only (its
-//!   `pattern` key is not played, `content::lightmap`);
-//!   `tables::letter_brightness` is linear (open question 11).
+//! - Light styles: a switchable light's `pattern` key plays through
+//!   `map::LightStyles::patterns` (and on network clients, `net`), not
+//!   baked into the converted atlas; `tables::letter_brightness` is linear (open question 11).
 //! - Sprites keep their on/off state only: their frames don't animate
 //!   (`content::sprites` draws the first); `env_glow` and `cycler_sprite`
 //!   have no logic.

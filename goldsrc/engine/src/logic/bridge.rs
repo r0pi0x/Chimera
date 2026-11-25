@@ -27,7 +27,7 @@
 //! - its effects: sounds (`map::PlaySound`, `map::SoundControl`), damage
 //!   (`core::MapDamage`; negative heals), explosions (`core::Explosion`,
 //!   magnitude × 2.5 units), switchable light styles (`map::LightStyles`
-//!   under the writer `goldsrc`), the sprites' on and off
+//!   under the writer `goldsrc`, with the patterns of lights that play one), the sprites' on and off
 //!   (`map::EntityPart`, `sync_parts`).
 //!
 //! Known shortcuts:
@@ -52,7 +52,7 @@ use crate::{
         MapDamage, MovementState, MovingSolid, RoundRestarts, SimSet, Velocity,
     },
     map::{
-        BrushTint, EntityPart, LightStyles, LogicHidden, MapBrushEntity, MapEntities, MapEntity, PlaySound, RenderLook,
+        BrushTint, EntityPart, LightStyles, style_levels, LogicHidden, MapBrushEntity, MapEntities, MapEntity, PlaySound, RenderLook,
         SoundControl, SoundKey, StartSound, VisClusters,
         entities::{FireEntityOutput, engine_to_entity, entity_rotation, entity_to_engine, logic_family, rotation_to_engine},
     },
@@ -321,10 +321,13 @@ fn step(
     let effects = std::mem::take(&mut l.world.effects);
     apply_effects(world, &l, effects);
     // Switchable light styles (lit unless their pattern is dark).
+    // and the patterns they play (a light's own `pattern` key).
     let styles: Vec<(u8, bool)> = l.world.styles.iter().map(|(s, p)| (*s, p != "a")).collect();
-    let current = world.get_resource::<LightStyles>().map(|s| s.styles.clone());
-    if !styles.is_empty() && current.as_ref() != Some(&styles) {
-        world.insert_resource(LightStyles::of("goldsrc", styles));
+    let played: Vec<(u8, Vec<f32>)> =
+        l.world.styles.iter().filter(|(_, p)| p.len() > 1).map(|(s, p)| (*s, style_levels(p))).collect();
+    let next = world.get_resource::<LightStyles>().cloned().unwrap_or_default().with_patterns("goldsrc", styles, played);
+    if let Some(next) = next {
+        world.insert_resource(next);
     }
     world.insert_resource(l);
 }
