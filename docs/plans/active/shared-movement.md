@@ -23,7 +23,7 @@ names the seams, the specs give the numbers and rules.
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
 | S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases (aliases dropped 2026-11-24, last log entry): each in the log |
-| S7-S9 GoldSrc seams | S7, S8 done (2026-11-25) | clip hulls (S7) and command milliseconds (S8): in the log; edge friction |
+| S7-S9 GoldSrc seams | done (2026-11-25) | clip hulls (S7), command milliseconds (S8), edge friction (S9): each in the log |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
 ## 1. What is there (origin/main, 2026-11-24)
@@ -569,7 +569,25 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   step and the remainder in the state is the function's; a replay (the
   transform, the velocity and the movement's state put back, the ticks
   run again) reaches the next 16 ms step on the same tick at the same
-  bits, and with another remainder put back on another tick. Hashes
-  equal (the four games' golden runs are in the commit's fast tier). The
-  step: CS:S 71 720 (+2 of S7; +0.51 % of main before S7); the others
-  not measured apart for this step (S9's numbers hold both).
+  bits, and with another remainder put back on another tick. CS:S's
+  hash equal, its step 71 720 (+2 of S7; +0.51 % of main before S7); the
+  other three were run at S9, with both steps in (equal).
+- 2026-11-25, S9: edge friction, from specs/cs16/movement.md ("Ground
+  friction"). `QuakeConfig::edge_friction` (1 in `reference()` and every
+  Source game: no probe; the console variable `edgefriction` sets it):
+  above 1, the ground friction is multiplied by it while `Mover::at_edge`
+  holds: the current box, its centre put at the feet's height 16 units
+  ahead along the horizontal velocity, traced 34 units straight down,
+  meets nothing; a start in solid is a hit, so on a floor (the box starts
+  half in it) there is none, and only a column clear from half the box
+  over the feet to 34 units and half the box under them is an edge. The
+  probe is the movement's own sweep, so it is a hull trace where the
+  movement traces hulls. Test (`tests/it/edge.rs`, on the course's
+  80-unit block): a slide at 200 units/s loses twice the speed in a tick
+  with the body's centre 4 units past the edge, the usual inside the
+  block, at the 12-unit step's edge and with the factor at 1. Hashes
+  equal, the four games', with S8 in too. The step (of main before S7,
+  CS:S's measured, the others' last logged): CS:S 71 724 (+0.52 %),
+  HL2:DM 67 373 (+0.48 %), TF2 71 814 (+0.39 %), DoD:S 74 155 (+0.52 %):
+  S8 and S9 together cost under 40 instructions a tick. Next: the
+  hand-off (goldsrc.md M2: `goldsrc_engine::hulls`, `cs16:movement`).

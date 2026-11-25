@@ -272,6 +272,13 @@ pub struct QuakeConfig {
     /// 0.015 s); at 1/66 s the steps are 15 ms with a 16 ms one every 6 or
     /// 7. Off (Source's games): the tick's own time.
     pub command_msec: bool,
+    /// Edge friction (GoldSrc's `edgefriction`: 2): the ground friction
+    /// times this while the box's way ahead ends in a drop
+    /// (`Mover::at_edge`: a trace of the box from 16 units ahead along the
+    /// horizontal velocity, its centre at the feet's height, 34 units
+    /// straight down, meets nothing; starting in solid counts as a hit).
+    /// 1 (Source's games): none, and no probe.
+    pub edge_friction: f32,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -323,6 +330,7 @@ impl QuakeConfig {
             "sv_stepsize" => self.stepsize = num()?,
             "sv_maxvelocity" => self.maxvelocity = num()?,
             "sv_bounce" => self.bounce = num()?,
+            "edgefriction" => self.edge_friction = num()?,
             "sv_enablebunnyhopping" => self.enable_bunnyhopping = num()? != 0.0,
             "sv_autobunnyhopping" => self.auto_bunnyhopping = num()? != 0.0,
             "sv_footsteps" => self.footsteps = num()? != 0.0,
@@ -355,6 +363,7 @@ impl QuakeConfig {
             "sv_stepsize" => f(self.stepsize),
             "sv_maxvelocity" => f(self.maxvelocity),
             "sv_bounce" => f(self.bounce),
+            "edgefriction" => f(self.edge_friction),
             "sv_enablebunnyhopping" => b(self.enable_bunnyhopping),
             "sv_autobunnyhopping" => b(self.auto_bunnyhopping),
             "sv_footsteps" => b(self.footsteps),
@@ -521,6 +530,7 @@ impl QuakeConfig {
             velocity_modifier_recovery: 1.0 / 3.0,
             clip_hulls: false,
             command_msec: false,
+            edge_friction: 1.0,
         }
     }
 }

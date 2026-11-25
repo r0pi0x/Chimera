@@ -6,7 +6,7 @@ use bevy::prelude::*;
 
 use crate::{
     mover::{
-        BUMPS, GROUND_PROBE, MAX_CLIP_PLANES, Mover, SNAP_MIN, STAY_ON_GROUND_UP, STEP_EPSILON, UPWARD_AIR_FRICTION,
+        BUMPS, EDGE_PROBE_AHEAD, EDGE_PROBE_DOWN, GROUND_PROBE, MAX_CLIP_PLANES, Mover, SNAP_MIN, STAY_ON_GROUND_UP, STEP_EPSILON, UPWARD_AIR_FRICTION,
         WALKABLE_NORMAL_Z,
     },
     trace::HitSurface,
@@ -57,9 +57,32 @@ impl Mover<'_, '_, '_, '_> {
         // A push that took the footing (`core::ExternalPush`): sliding,
         // a share of the friction.
         let share = self.push.friction_share(self.v.truncate().length() * METERS_PER_UNIT);
-        let drop = control * self.cfg.friction * self.me.surface_friction * share * self.dt;
+        let mut friction = self.cfg.friction;
+        if self.cfg.edge_friction != 1.0 && self.at_edge() {
+            friction *= self.cfg.edge_friction;
+        }
+        let drop = control * friction * self.me.surface_friction * share * self.dt;
         let new_speed = (speed - drop).max(0.0);
         self.v *= new_speed / speed;
+    }
+
+    /// Edge friction's test (`QuakeConfig::edge_friction`): the box, its
+    /// centre put at the feet's height 16 units ahead along the horizontal
+    /// velocity, traced 34 units straight down, meets nothing (a start in
+    /// solid is a hit: on a floor the box starts half in it, so only a
+    /// column clear from half the box above the feet to 34 units and half
+    /// the box below them counts as a drop).
+    pub(crate) fn at_edge(&self) -> bool {
+        let flat = self.v.truncate();
+        let speed = flat.length();
+        if speed <= 0.0 {
+            return false;
+        }
+        let ahead = flat * (EDGE_PROBE_AHEAD / speed);
+        let (lo, hi) = self.trace.hull(self.me.ducked);
+        let start = Vec3::new(self.feet.x + ahead.x, self.feet.y + ahead.y, self.feet.z - (hi.z - lo.z) / 2.0);
+        let tr = self.trace.sweep(self.me.ducked, start, start - Vec3::Z * EDGE_PROBE_DOWN);
+        !tr.start_solid && !tr.hit()
     }
 
     #[inline]

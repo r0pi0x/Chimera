@@ -43,6 +43,12 @@ pub(crate) const GROUND_PROBE: f32 = 2.0;
 
 pub(crate) const LEAVE_GROUND_VZ: f32 = 140.0;
 
+/// Edge friction's probe (`QuakeConfig::edge_friction`): how far ahead
+/// along the horizontal velocity and how far down, units.
+pub(crate) const EDGE_PROBE_AHEAD: f32 = 16.0;
+
+pub(crate) const EDGE_PROBE_DOWN: f32 = 34.0;
+
 pub(crate) const UNGROUND_VZ: f32 = 250.0;
 
 pub(crate) const MAX_CLIP_PLANES: usize = 5;

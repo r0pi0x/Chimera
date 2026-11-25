@@ -6,10 +6,11 @@
 //! `course`: a small course of brushes high over the greybox, and the same
 //! solids as clip hulls (`course::BrushHulls`, a test's `ClipHulls`);
 //! `hulls`: the world traced through clip hulls; `msec`: commands of whole
-//! milliseconds and their carried remainder.
+//! milliseconds and their carried remainder; `edge`: edge friction.
 //! `cargo test -p chimera_movement --features dev --test it`; where tests
 //! go: docs/OBSERVABILITY.md, section 1.
 
 mod course;
+mod edge;
 mod hulls;
 mod msec;
