@@ -477,3 +477,39 @@ fn install_goal_text_has_no_raw_inserts() {
         assert!(text.contains(&goal.to_string()) && !text.contains('%'), "{key}: {text}");
     }
 }
+
+/// On the install: the UI data whose string table and art were read
+/// back from the converted cache (`install::load_kept`) is the UI data
+/// read (`install::load`): the same strings, names, layouts and every
+/// texture's size and pixels, on the miss that writes the entry and on
+/// the hit.
+#[test]
+fn install_ui_reads_back_from_the_cache_as_read() {
+    use chimera_core::mount::assets::map_cache::{MapCache, Outcome};
+    let Some(mount) = install() else { return };
+    let extra = vec![install::kill_icon("combat_arms:m4a1"), "ui_hud_weapon/icon/firemode_auto.dtx".to_string()];
+    let Some(direct) = install::load_kept(&mount, &extra, None, None).map(|(ui, _)| ui) else {
+        eprintln!("skipping: the install's layouts don't read (no V1 key)");
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("chimera-ca-kept-ui-heavy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cache = MapCache::at(&dir, 1 << 30);
+    for want in [Outcome::Miss, Outcome::Hit] {
+        let (ui, outcome) = install::load_kept(&mount, &extra, None, Some(&cache)).expect("the install's UI");
+        assert_eq!(outcome, want);
+        assert_eq!(ui.strings, direct.strings, "{want:?}: the strings");
+        assert_eq!((&ui.weapon_names, &ui.part_names), (&direct.weapon_names, &direct.part_names), "{want:?}: the names");
+        assert_eq!((&ui.hud, &ui.menu, &ui.options), (&direct.hud, &direct.menu, &direct.options), "{want:?}: the layouts");
+        let mut keys: Vec<&String> = ui.art.keys().collect();
+        let mut direct_keys: Vec<&String> = direct.art.keys().collect();
+        keys.sort();
+        direct_keys.sort();
+        assert_eq!(keys, direct_keys, "{want:?}: the textures");
+        assert!(keys.len() > 50, "{} textures", keys.len());
+        for k in keys {
+            assert!(ui.art[k].size == direct.art[k].size && ui.art[k].rgba == direct.art[k].rgba, "{want:?}: {k}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

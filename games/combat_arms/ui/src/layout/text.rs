@@ -251,7 +251,7 @@ impl Effect {
 
 /// A string table: values by lowercased key, and a key suffix code may
 /// set (the shop's rental view).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, Deserialize)]
 pub struct Strings {
     pub values: HashMap<String, String>,
     pub suffix: Option<String>,

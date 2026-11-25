@@ -868,3 +868,70 @@ fn t27_esc_menu_keys_and_buttons() {
         }
     }
 }
+
+/// The install's string table and art read back from the converted
+/// cache are what was read (`install::strings_and_art`): the first start
+/// reads the files and writes the entry, the second reads it back (the
+/// same strings, the same textures' sizes and pixels, a missing texture
+/// still missing); a file that changed, one that appeared and another
+/// list of textures are each read again.
+#[test]
+fn the_strings_and_art_read_back_from_the_cache_as_read() {
+    use chimera_core::mount::{LooseDir, Mount, assets::map_cache::{MapCache, Outcome}};
+    use combat_arms_ui::install;
+    let dir = std::env::temp_dir().join(format!("chimera-ca-kept-ui-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write = |rel: &str, bytes: &[u8]| {
+        let p = dir.join("files").join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, bytes).unwrap();
+    };
+    write("language_pack/language_eng.txt", b"Greeting = \"hello\"\r\nQuoted = \"say \"\"hi\"\"\"\r\nKeyed = \"#key#fallback\"\r\n");
+    // A 2x1 texture, 32-bit BGRA: one level.
+    let mut dtx = vec![0u8; lithtech_formats::dtx::HEADER_LEN];
+    dtx[4..6].copy_from_slice(&2u16.to_le_bytes());
+    dtx[6..8].copy_from_slice(&1u16.to_le_bytes());
+    dtx[8..12].copy_from_slice(&lithtech_formats::dtx::VERSION.to_le_bytes());
+    dtx[12..14].copy_from_slice(&1u16.to_le_bytes());
+    dtx[0x1A] = 3;
+    dtx.extend([1, 2, 3, 4, 5, 6, 7, 8]);
+    write("ui/a.dtx", &dtx);
+    let mount = || {
+        let mut m = Mount::default();
+        m.push(LooseDir::new(dir.join("files")));
+        m
+    };
+    let plain = install::decode(&mount(), "ui/a.dtx").expect("the made-up texture decodes");
+    assert_eq!((plain.size, plain.rgba.len()), (IVec2::new(2, 1), 8));
+    let cache = MapCache::at(dir.join("cache"), 1 << 30);
+    let keys = ["ui/a.dtx".to_string(), "ui/none.dtx".to_string()];
+    let read = |keys: &[String]| install::strings_and_art(&mount(), "ENG", keys, Some(&cache));
+    let (direct, direct_art, off) = install::strings_and_art(&mount(), "ENG", &keys, None);
+    assert_eq!(off, Outcome::Off);
+    let direct = direct.expect("the string table");
+    assert_eq!(direct.resolve("$Quoted"), "say \"hi\"");
+    assert_eq!(direct.resolve("keyed"), "fallback");
+    for (pass, want) in [Outcome::Miss, Outcome::Hit].into_iter().enumerate() {
+        let (strings, art, outcome) = read(&keys);
+        assert_eq!(outcome, want, "pass {pass}");
+        assert_eq!(strings.as_ref(), Some(&direct), "pass {pass}: the strings");
+        assert_eq!(art.keys().collect::<Vec<_>>(), ["ui/a.dtx"], "pass {pass}: the missing texture stays missing");
+        assert_eq!((art["ui/a.dtx"].size, &art["ui/a.dtx"].rgba), (direct_art["ui/a.dtx"].size, &direct_art["ui/a.dtx"].rgba), "pass {pass}");
+    }
+    // The table changed: read again, with the new text.
+    write("language_pack/language_eng.txt", b"Greeting = \"hi again\"\r\n");
+    let (strings, _, outcome) = read(&keys);
+    assert_eq!((outcome, strings.unwrap().resolve("greeting").as_str()), (Outcome::Miss, "hi again"));
+    // The texture that was missing appears: read again, with it.
+    write("ui/none.dtx", &dtx);
+    let (_, art, outcome) = read(&keys);
+    assert_eq!((outcome, art.len()), (Outcome::Miss, 2));
+    assert_eq!(read(&keys).2, Outcome::Hit);
+    // Another list of textures is another entry.
+    assert_eq!(read(&keys[..1]).2, Outcome::Miss);
+    // Another language with no table of its own falls back to ENG's, in
+    // its own entry.
+    let (strings, _, outcome) = install::strings_and_art(&mount(), "DEU", &keys, Some(&cache));
+    assert_eq!((outcome, strings.unwrap().resolve("greeting").as_str()), (Outcome::Miss, "hi again"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
