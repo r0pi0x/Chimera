@@ -72,13 +72,9 @@ and ammunition icons in the same line format.
 
 ## Open questions
 
-1. (Layout, colours and fades now in [hud.md](hud.md), partly "(ref.)".)
-   HUD layout (positions, colours, the health/armour/money/ammo
-   placement, fades) and the dynamic crosshair (gap growing with
-   movement, firing and the `cl_dynamiccrosshair` 1 default; colour
-   `cl_crosshair_color` "50 250 50", size "auto", translucent) live in
-   the client library: capture them once the client runs (it needs a
-   running Steam client and 32-bit libraries this box lacks).
+1. (Answered in [hud.md](hud.md): the HUD layout, colours, fades, the
+   dynamic crosshair, the round timer and the weapon menu; what is still
+   open about them is listed there.)
 2. View bob (`cl_bob`, `cl_bobcycle`, `cl_bobup`) and the client's own
    view-model punch: read the client's defaults and capture.
 3. Whether the client scales the punch differently for the view model
