@@ -24,7 +24,7 @@ use goldsrc_formats::bsp::{Bsp, hull::blocks};
 /// The install's mount, or None (with a note).
 pub fn mount() -> Option<chimera_core::mount::Mount> {
     let Some(install) = INFO.install() else {
-        eprintln!("no Counter-Strike 1.6 install ([games.cs16] path or CHIMERA_CS16_ROOT): skipped");
+        eprintln!("no Counter-Strike 1.6 install (~/games/cs16, Steam, config or CHIMERA_CS16_ROOT): skipped");
         return None;
     };
     Some(cs16::game::mount::open_install(&install).unwrap_or_else(|e| panic!("{}: {e}", install.display())))

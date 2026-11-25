@@ -12,7 +12,8 @@
 //! names' prefixes and chrome draw as; `entities`: its maps' logic, from
 //! the entity spec's worked examples; `net_logic`: that logic on a
 //! network client) (found through
-//! `[games.cs16] path` or `$CHIMERA_CS16_ROOT`), each test passing
+//! `~/games/cs16`, Steam, `[games.cs16] path` or `$CHIMERA_CS16_ROOT`:
+//! `mount::install`), each test passing
 //! with a note without one. `cargo test -p cs16 --features dev --test it`;
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
