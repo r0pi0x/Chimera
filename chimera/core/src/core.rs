@@ -3295,19 +3295,81 @@ impl MapBrush {
 
 /// A convex solid's corners: where three of its planes (`n . p <= d`)
 /// meet inside all the others (bevel planes add none; a corner may repeat).
+///
+/// Every triple of planes is tried, so the work grows with the cube of
+/// the plane count (a prop's collision piece of 337 planes: 6.3 million
+/// triples, for each of its 59 placements on tf2:cp_granary). What a
+/// triple costs is kept small without changing any result: the cross
+/// product of two planes' normals is taken once per pair, not per triple;
+/// and a candidate is tested first against the two planes that cut the
+/// pair's line shortest (`line_caps`: every candidate of the pair lies
+/// along that line, and all but the solid's own corners lie beyond one of
+/// the two), and only one that passes both against every plane in order,
+/// as before. The corners and their order are bit for bit what trying
+/// each triple against every plane gives
+/// (`brush_reference_tests::plane_corners_are_the_reference`): the two
+/// planes only say no early, to what the full test would refuse too.
 pub fn plane_corners(planes: &[(Vec3, f32)]) -> Vec<Vec3> {
+    // The vector arithmetic of the loop, written out as glam's `Vec3`
+    // does it (the same operations in the same order: the same bits) and
+    // always inlined: this crate builds at a low optimization level in
+    // development, where each `Vec3` operation was a call.
+    #[inline(always)]
+    fn dot(a: Vec3, b: Vec3) -> f32 {
+        (a.x * b.x) + (a.y * b.y) + (a.z * b.z)
+    }
+    #[inline(always)]
+    fn cross(a: Vec3, b: Vec3) -> Vec3 {
+        Vec3::new(a.y * b.z - b.y * a.z, a.z * b.x - b.z * a.x, a.x * b.y - b.x * a.y)
+    }
+    #[inline(always)]
+    fn inside(p: Vec3, (m, d): (Vec3, f32)) -> bool {
+        dot(m, p) <= d + 1e-3
+    }
     let n = planes.len();
+    // n_a x n_b for every a and b (row a, column b).
+    let crosses: Vec<Vec3> = if n <= CROSS_TABLE_MAX {
+        let mut t = vec![Vec3::ZERO; n * n];
+        for a in 0..n {
+            for b in 0..n {
+                t[a * n + b] = cross(planes[a].0, planes[b].0);
+            }
+        }
+        t
+    } else {
+        Vec::new()
+    };
     let mut corners: Vec<Vec3> = Vec::new();
     for i in 0..n {
+        let (n1, d1) = planes[i];
         for j in i + 1..n {
+            let (n2, d2) = planes[j];
+            let n1_n2 = cross(n1, n2);
+            // Few planes: the two cost more to find than they save.
+            let caps = if n >= CAPS_FROM { line_caps(planes, i, j, n1_n2) } else { None };
+            let (row_j, row_i): (&[Vec3], &[Vec3]) =
+                if crosses.is_empty() { (&[], &[]) } else { (&crosses[j * n..(j + 1) * n], &crosses[i * n..(i + 1) * n]) };
             for k in j + 1..n {
-                let ((n1, d1), (n2, d2), (n3, d3)) = (planes[i], planes[j], planes[k]);
-                let denom = n1.dot(n2.cross(n3));
+                let (n3, d3) = planes[k];
+                let n2_n3 = if row_j.is_empty() { cross(n2, n3) } else { row_j[k] };
+                let denom = dot(n1, n2_n3);
                 if denom.abs() < 1e-6 {
                     continue;
                 }
-                let p = (n2.cross(n3) * d1 + n3.cross(n1) * d2 + n1.cross(n2) * d3) / denom;
-                if planes.iter().all(|(m, d)| m.dot(p) <= d + 1e-3) {
+                // n3 x n1 itself (not the table's n1 x n3 negated: -0.0).
+                let n3_n1 = if row_i.is_empty() { cross(n3, n1) } else { crosses[k * n + i] };
+                let (a, b, c) = (n2_n3, n3_n1, n1_n2);
+                let p = Vec3::new(
+                    ((a.x * d1 + b.x * d2) + c.x * d3) / denom,
+                    ((a.y * d1 + b.y * d2) + c.y * d3) / denom,
+                    ((a.z * d1 + b.z * d2) + c.z * d3) / denom,
+                );
+                if let Some((a, b)) = caps
+                    && !(inside(p, planes[a]) && inside(p, planes[b]))
+                {
+                    continue;
+                }
+                if planes.iter().all(|plane| inside(p, *plane)) {
                     corners.push(p);
                 }
             }
@@ -3315,6 +3377,58 @@ pub fn plane_corners(planes: &[(Vec3, f32)]) -> Vec<Vec3> {
     }
     corners
 }
+
+/// The two planes that cut the line where planes `i` and `j` meet
+/// (direction `along`: their normals' cross product) shortest: the one
+/// that bounds it from below and the one from above (the same plane twice
+/// when one plane leaves none of the line inside). A point of the line
+/// outside the solid is outside one of them; an early no for
+/// `plane_corners`, never its answer. None when the two planes are
+/// (nearly) parallel: no line.
+fn line_caps(planes: &[(Vec3, f32)], i: usize, j: usize, along: Vec3) -> Option<(usize, usize)> {
+    let len2 = along.length_squared();
+    if len2 < 1e-10 {
+        return None;
+    }
+    let ((n1, d1), (n2, d2)) = (planes[i], planes[j]);
+    // A point on both planes.
+    let origin = (n2.cross(along) * d1 + along.cross(n1) * d2) / len2;
+    let (mut lo, mut hi) = (f32::MIN, f32::MAX);
+    let (mut below, mut above) = (i, i);
+    for (q, (m, d)) in planes.iter().enumerate() {
+        if q == i || q == j {
+            continue;
+        }
+        // Written out (always inline at this crate's development
+        // optimization level; any rounding here only orders the tests).
+        let slope = m.x * along.x + m.y * along.y + m.z * along.z;
+        let room = d - (m.x * origin.x + m.y * origin.y + m.z * origin.z);
+        if slope.abs() < 1e-7 {
+            // Along the line: all of it inside this plane, or none.
+            if room < -1e-2 {
+                return Some((q, q));
+            }
+        } else if slope > 0.0 {
+            let t = room / slope;
+            if t < hi {
+                (hi, above) = (t, q);
+            }
+        } else {
+            let t = room / slope;
+            if t > lo {
+                (lo, below) = (t, q);
+            }
+        }
+    }
+    Some((below, above))
+}
+
+/// From this many planes on `plane_corners` asks `line_caps` first.
+const CAPS_FROM: usize = 12;
+
+/// The most planes `plane_corners` keeps a table of normal cross products
+/// for (n x n vectors: 3 MB at 512).
+const CROSS_TABLE_MAX: usize = 512;
 
 impl MapBrush {
     /// A convex solid from its face planes (`n . p <= d`, normals
@@ -3328,6 +3442,14 @@ impl MapBrush {
         let n = planes.len();
         let corners = plane_corners(&planes);
         let on = |p: Vec3, (m, d): (Vec3, f32)| (m.dot(p) - d).abs() < 1e-3;
+        // Each face plane's corners (their indices, in the corners' order),
+        // once: an edge's ends are the corners two planes share, and
+        // asking every corner about every pair of planes was most of a
+        // many-sided solid's time after its corners.
+        let on_plane: Vec<Vec<u32>> = planes[..n]
+            .iter()
+            .map(|plane| (0..corners.len() as u32).filter(|c| on(corners[*c as usize], *plane)).collect())
+            .collect();
         let min = corners.iter().fold(Vec3::MAX, |a, c| a.min(*c));
         let max = corners.iter().fold(Vec3::MIN, |a, c| a.max(*c));
         let add = |planes: &mut Vec<(Vec3, f32)>, m: Vec3, d: f32| {
@@ -3341,11 +3463,22 @@ impl MapBrush {
         // Edges: two face planes that share at least two corners.
         for i in 0..n {
             for j in i + 1..n {
-                let ends: Vec<Vec3> = corners
-                    .iter()
-                    .copied()
-                    .filter(|p| on(*p, planes[i]) && on(*p, planes[j]))
-                    .collect();
+                // The corners on both planes, in the corners' order (both
+                // lists are in it).
+                let (of_i, of_j) = (&on_plane[i], &on_plane[j]);
+                let mut ends: Vec<Vec3> = Vec::new();
+                let (mut x, mut y) = (0, 0);
+                while x < of_i.len() && y < of_j.len() {
+                    match of_i[x].cmp(&of_j[y]) {
+                        std::cmp::Ordering::Less => x += 1,
+                        std::cmp::Ordering::Greater => y += 1,
+                        std::cmp::Ordering::Equal => {
+                            ends.push(corners[of_i[x] as usize]);
+                            x += 1;
+                            y += 1;
+                        }
+                    }
+                }
                 let (Some(a), Some(b)) = (ends.first(), ends.iter().find(|p| p.distance(ends[0]) > 1e-4)) else {
                     continue;
                 };
@@ -3925,5 +4058,144 @@ mod hitbox_bounds_tests {
         let s = Hitbox::sphere(Vec3::new(0.0, 1.0, 0.0), 0.2, BodyRegion::Chest);
         let from = Vec3::new(0.0, 1.0, -2.0);
         assert!((s.power_along(from, from + Vec3::Z * 5.0) - (4.0 - 0.04)).abs() < 1e-5);
+    }
+}
+
+#[cfg(test)]
+mod brush_reference_tests {
+    use super::*;
+
+    /// `plane_corners` as it was: each triple against every plane in order.
+    fn reference_corners(planes: &[(Vec3, f32)]) -> Vec<Vec3> {
+        let n = planes.len();
+        let mut corners: Vec<Vec3> = Vec::new();
+        for i in 0..n {
+            for j in i + 1..n {
+                for k in j + 1..n {
+                    let ((n1, d1), (n2, d2), (n3, d3)) = (planes[i], planes[j], planes[k]);
+                    let denom = n1.dot(n2.cross(n3));
+                    if denom.abs() < 1e-6 {
+                        continue;
+                    }
+                    let p = (n2.cross(n3) * d1 + n3.cross(n1) * d2 + n1.cross(n2) * d3) / denom;
+                    if planes.iter().all(|(m, d)| m.dot(p) <= d + 1e-3) {
+                        corners.push(p);
+                    }
+                }
+            }
+        }
+        corners
+    }
+
+    /// `MapBrush::from_planes` as it was: every corner asked about every
+    /// pair of planes.
+    fn reference_brush(mut planes: Vec<(Vec3, f32)>) -> MapBrush {
+        let n = planes.len();
+        let corners = reference_corners(&planes);
+        let on = |p: Vec3, (m, d): (Vec3, f32)| (m.dot(p) - d).abs() < 1e-3;
+        let min = corners.iter().fold(Vec3::MAX, |a, c| a.min(*c));
+        let max = corners.iter().fold(Vec3::MIN, |a, c| a.max(*c));
+        let add = |planes: &mut Vec<(Vec3, f32)>, m: Vec3, d: f32| {
+            if !planes.iter().any(|(q, e)| q.dot(m) > 0.9999 && (e - d).abs() < 1e-4) {
+                planes.push((m, d));
+            }
+        };
+        for (m, d) in MapBrush::from_box(min, max).planes {
+            add(&mut planes, m, d);
+        }
+        for i in 0..n {
+            for j in i + 1..n {
+                let ends: Vec<Vec3> =
+                    corners.iter().copied().filter(|p| on(*p, planes[i]) && on(*p, planes[j])).collect();
+                let (Some(a), Some(b)) = (ends.first(), ends.iter().find(|p| p.distance(ends[0]) > 1e-4)) else {
+                    continue;
+                };
+                let e = *b - *a;
+                for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+                    let Some(m) = e.cross(axis).try_normalize() else { continue };
+                    for m in [m, -m] {
+                        let d = m.dot(*a);
+                        if corners.iter().all(|c| m.dot(*c) <= d + 1e-3) {
+                            add(&mut planes, m, d);
+                        }
+                    }
+                }
+            }
+        }
+        MapBrush { planes, min, max, ladder: false, surface: None }
+    }
+
+    /// A many-sided convex solid: `n` planes touching a squashed sphere
+    /// at points spread over it, turned and moved as a placed prop's are
+    /// (`place_brush`), some of them doubled and some nearly parallel (a
+    /// collision piece's near-coplanar faces: ill-conditioned triples).
+    fn solid(n: usize, turn: Quat, at: Vec3) -> Vec<(Vec3, f32)> {
+        let mut planes: Vec<(Vec3, f32)> = (0..n)
+            .map(|i| {
+                let y = 1.0 - 2.0 * (i as f32 + 0.5) / n as f32;
+                let r = (1.0 - y * y).sqrt();
+                let a = i as f32 * 2.399_963;
+                let normal = Vec3::new(r * a.cos(), y, r * a.sin());
+                (normal, 20.0 + 6.0 * (i % 5) as f32)
+            })
+            .collect();
+        if n > 8 {
+            // A face twice, and one a hair off another.
+            planes.push(planes[3]);
+            let (m, d) = planes[5];
+            planes.push(((m + Vec3::new(1e-4, 0.0, 2e-4)).normalize(), d + 1e-4));
+        }
+        planes
+            .into_iter()
+            .map(|(m, d)| {
+                let m2 = turn * m;
+                (m2, d + m2.dot(at))
+            })
+            .collect()
+    }
+
+    fn bits(v: &[Vec3]) -> Vec<[u32; 3]> {
+        v.iter().map(|p| p.to_array().map(f32::to_bits)).collect()
+    }
+
+    fn plane_bits(v: &[(Vec3, f32)]) -> Vec<[u32; 4]> {
+        v.iter().map(|(m, d)| [m.x.to_bits(), m.y.to_bits(), m.z.to_bits(), d.to_bits()]).collect()
+    }
+
+    fn cases() -> Vec<Vec<(Vec3, f32)>> {
+        let turns = [Quat::IDENTITY, Quat::from_euler(EulerRot::YXZ, 0.7, -0.3, 1.9), Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)];
+        let places = [Vec3::ZERO, Vec3::new(1234.5, -87.25, 4096.0), Vec3::new(-0.03, 512.0, -7777.7)];
+        let mut out = vec![MapBrush::from_box(Vec3::new(-1.0, -2.0, -3.0), Vec3::new(4.0, 5.0, 6.0)).planes];
+        for n in [4, 7, 12, 33, 90] {
+            for (turn, at) in turns.iter().zip(places) {
+                out.push(solid(n, *turn, at));
+            }
+        }
+        out
+    }
+
+    /// The corners, bit for bit and in order, are what trying each triple
+    /// of planes against every plane gives.
+    #[test]
+    fn plane_corners_are_the_reference() {
+        for planes in cases() {
+            let (got, want) = (plane_corners(&planes), reference_corners(&planes));
+            assert!(!want.is_empty(), "{} planes: a solid", planes.len());
+            assert_eq!(bits(&got), bits(&want), "{} planes", planes.len());
+        }
+    }
+
+    /// A brush from planes (its bevel planes, their order, its bounds) is
+    /// bit for bit what asking every corner about every pair of planes
+    /// gives.
+    #[test]
+    fn a_brush_from_planes_is_the_reference() {
+        for planes in cases() {
+            let n = planes.len();
+            let (got, want) = (MapBrush::from_planes(planes.clone()), reference_brush(planes));
+            assert_eq!(plane_bits(&got.planes), plane_bits(&want.planes), "{n} planes");
+            assert_eq!(bits(&[got.min, got.max]), bits(&[want.min, want.max]), "{n} planes");
+            assert!(n == 6 || got.planes.len() > n, "{n} planes: bevels added");
+        }
     }
 }

@@ -426,4 +426,37 @@ mod tests {
         assert!(contact_pieces(&prism(4, 1.0, 1.0, true)).is_none());
         assert_eq!(contact_hulls(&prism(4, 1.0, 1.0, true)).len(), 1);
     }
+    /// A prop's 337-plane collision piece placed (tf2:cp_granary's, 59
+    /// times: 111-126 s of its spawn preparation in a development build)
+    /// makes its brush under a budget of instructions: 1,679 M measured
+    /// 2026-11-25 (chimera_core at its development optimization level),
+    /// 4,855 M before `plane_corners` tested a candidate first against
+    /// the two planes that cut its pair's line and the bevels listed each
+    /// plane's corners once (docs/performance.md, "A many-sided prop's
+    /// brushes"; the brush is the same bits: chimera_core's
+    /// `brush_reference_tests`).
+    #[test]
+    fn a_many_sided_pieces_brush_stays_under_its_budget() {
+        // 337 planes touching a squashed sphere at points spread over it.
+        let n = 337;
+        let planes: Vec<(Vec3, f32)> = (0..n)
+            .map(|i| {
+                let y = 1.0 - 2.0 * (i as f32 + 0.5) / n as f32;
+                let r = (1.0 - y * y).sqrt();
+                let a = i as f32 * 2.399_963;
+                (Vec3::new(r * a.cos(), y, r * a.sin()), 20.0 + 6.0 * (i % 5) as f32)
+            })
+            .collect();
+        let mut counter = chimera_core::metrics::InstructionCounter::current();
+        let from = counter.read();
+        let brush = place_brush(&planes, Vec3::new(1234.5, -87.25, 4096.0), Quat::from_rotation_y(0.7), None);
+        let work = from.zip(counter.read()).map(|(a, b)| b - a);
+        assert!(brush.planes.len() > n, "bevels added");
+        let Some(work) = work else {
+            eprintln!("no instruction counter here: the brush made, its cost not checked");
+            return;
+        };
+        eprintln!("a 337-plane piece's brush: {} M instructions ({} planes with its bevels)", work / 1_000_000, brush.planes.len());
+        assert!(work < 2_400_000_000, "{work} instructions for a 337-plane piece's brush: over 2,400 M (4,855 M before 2026-11-25)");
+    }
 }
