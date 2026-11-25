@@ -100,7 +100,12 @@ const BASE_IN_USE: u64 = 1950 << 20;
 /// back. Before the server dropped the sound samples it never plays
 /// (`map::sound::Silent`: the guests' clips were 125 MB for TF2, 43
 /// for DoD:S, 36 for HL2:DM, 35 for CS:S, 4 for CS 1.6, beside each map's
-/// own): 3.10-3.73 GB.
+/// own): 3.10-3.73 GB. Since the server keeps no render meshes of the kit
+/// (`map::undrawn::Undrawn`: the bodies', view models' and held models'
+/// vertex data, held three times over), read back with all six: 1.58 GB
+/// on the first map, 2.00-2.10 GB after (2.45 and 2.91-3.00 GB with
+/// them, `CHIMERA_SERVER_MESHES=1`); the bounds stay the converting
+/// case's.
 const GUEST_IN_USE: [(&str, u64); 4] = [("hl2dm", 320 << 20), ("tf2", 900 << 20), ("dods", 370 << 20), ("cs16", 100 << 20)];
 
 /// The limit with the guests installed here: the base and each installed
@@ -145,6 +150,10 @@ fn server() -> Option<Sim> {
     let context = chimera_world::map::LoadContext::default();
     if std::env::var("CHIMERA_SERVER_SOUNDS").as_deref() != Ok("1") {
         context.insert(chimera_world::map::sound::Silent);
+    }
+    // Nor render meshes of the kit (`CHIMERA_SERVER_MESHES=1` keeps them).
+    if std::env::var("CHIMERA_SERVER_MESHES").as_deref() != Ok("1") {
+        context.insert(chimera_world::map::undrawn::Undrawn);
     }
     let start = match StartMap::load_in(&SERVER, &options, context) {
         Ok(s) => s,
@@ -243,10 +252,14 @@ fn map_changes_keep_no_memory() {
             let regions = memory::Regions::read().unwrap();
             let held = regions.heap.total() + regions.anon.total();
             let entities = sim.app.world().entities().count_spawned() as usize;
+            // The state's hash: the same session whatever the server keeps
+            // of what it never reads (`CHIMERA_SERVER_MESHES=1`,
+            // `CHIMERA_SERVER_SOUNDS=1`: compare two runs' rows).
             eprintln!(
-                "lap {lap} {map:24} in use {:>5} MB, heap and anonymous {:>5} MB (resident or swapped), {entities:5} entities",
+                "lap {lap} {map:24} in use {:>5} MB, heap and anonymous {:>5} MB (resident or swapped), {entities:5} entities, state {:016x}",
                 in_use >> 20,
-                held >> 20
+                held >> 20,
+                sim.state_hash()
             );
             // Where the load went, by game (`map::load_report`; bytes told
             // apart with `CHIMERA_LOAD_SERIAL=1`).
@@ -265,7 +278,8 @@ fn map_changes_keep_no_memory() {
             r.in_use < limit,
             "{} MB in use on {} (lap {}): more than {} MB (the base and the guests installed: {guests:?}). Does the \
              server keep textures' texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`), sound samples \
-             (`map::sound::Silent`) or Combat Arms' view models (`world::dress_with`)? The rows above say what \
+             (`map::sound::Silent`), the kit's render meshes (`map::undrawn::Undrawn`) or Combat Arms' view models \
+             (`world::dress_with`)? The rows above say what \
              each game's dressing took (`CHIMERA_LOAD_SERIAL=1` for bytes per game).",
             r.in_use >> 20,
             r.map,

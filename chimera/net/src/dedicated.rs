@@ -65,6 +65,9 @@
 //! - No sound samples (`map::sound::Silent` in the binary's load context,
 //!   `run`): the maps' and the guests' clips keep their place, rate and
 //!   loop point only.
+//! - No render meshes of the kit (`map::undrawn::Undrawn`, the same way):
+//!   the bodies', view models' and held models' vertex data is dropped,
+//!   what the simulation reads of them kept.
 //! - What only some servers have, `ServerHooks` (all off in
 //!   `ServerHooks::NONE`): several games' maps (`maps`: a loader of whole
 //!   ids, the game a bare name is); the map cycle (`map_cycle`:
@@ -1031,6 +1034,8 @@ pub fn run(server: &'static GameServer) {
     // The server plays nothing: its loads keep no sound samples.
     let context = map::LoadContext::default();
     context.insert(map::sound::Silent);
+    // It draws nothing: they keep no render meshes of the kit.
+    context.insert(map::undrawn::Undrawn);
     let start = StartMap::load_in(server, &options, context).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         std::process::exit(1);

@@ -345,6 +345,11 @@ pub fn kept_with(
     if options.context.get::<super::sound::Silent>().is_some() {
         super::sound::silence(&mut scratch.sounds);
     }
+    // One that draws nothing keeps no render meshes either (so each
+    // map's copy of them is nothing).
+    if options.context.get::<super::undrawn::Undrawn>().is_some() {
+        super::undrawn::strip(&mut scratch);
+    }
     let how = if outcome == Outcome::Hit {
         entry.disk_reads.fetch_add(1, Ordering::Relaxed);
         "read from disk"

@@ -611,6 +611,10 @@ impl MapSources {
         if options.context.get::<super::sound::Silent>().is_some() {
             super::sound::silence(&mut map.sounds);
         }
+        // An app that draws nothing keeps no render meshes of the kit.
+        if options.context.get::<super::undrawn::Undrawn>().is_some() {
+            super::undrawn::strip(&mut map);
+        }
         super::load_report::log_since(&options.context, mark, id);
         Ok(map)
     }
