@@ -40,7 +40,13 @@ impl std::fmt::Write for HashWriter {
 /// texture (texels included), the triangle count.
 fn summary(map: &MapData) -> (Option<[u8; 32]>, usize, usize, usize, u64) {
     let mut h = HashWriter(DefaultHasher::new());
-    write!(h, "{:?}{:?}", map.meshes, map.textures).unwrap();
+    write!(h, "{:?}", map.meshes).unwrap();
+    // A map read back from the converted cache keeps its textures as
+    // blocks: compared as the texels they decode to (`MapTexture::decoded`,
+    // what a conversion gives).
+    for t in &map.textures {
+        write!(h, "{:?}", t.decoded()).unwrap();
+    }
     (map.file_hash, map.triangle_count(), map.meshes.len(), map.textures.len(), h.0.finish())
 }
 

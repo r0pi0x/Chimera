@@ -42,7 +42,13 @@ impl std::fmt::Write for HashWriter {
 /// included), the triangle count, the kit's characters.
 fn summary(map: &MapData) -> (usize, usize, usize, usize, u64) {
     let mut h = HashWriter(DefaultHasher::new());
-    write!(h, "{:?}{:?}", map.meshes, map.textures).unwrap();
+    write!(h, "{:?}", map.meshes).unwrap();
+    // A map read back from the converted cache keeps its textures as
+    // blocks: compared as the texels they decode to (`MapTexture::decoded`,
+    // what a conversion gives).
+    for t in &map.textures {
+        write!(h, "{:?}", t.decoded()).unwrap();
+    }
     (
         map.triangle_count(),
         map.meshes.len(),
