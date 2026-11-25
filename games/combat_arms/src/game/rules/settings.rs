@@ -301,7 +301,7 @@ pub(super) fn plugin(app: &mut App) {
     app.init_resource::<CaRuleSettings>();
     // The single-player host's server file (missions.md, The server file):
     // the phase lengths, over ours (the same values in the stock copy).
-    if let Some(server) = super::super::data::CaData::of(app).missions().and_then(|i| i.server.clone()) {
+    if let Some(server) = super::super::data::CaData::of(app).server_file() {
         let mut s = app.world_mut().resource_mut::<CaRuleSettings>();
         s.object_start = server.object_start as f32;
         s.object_end = server.object_end as f32;

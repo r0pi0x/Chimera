@@ -1020,13 +1020,19 @@ pub struct InstallMissions {
     pub server: Option<ServerFile>,
 }
 
+/// The single-player host's server file alone, through `read` (the
+/// rules' settings read it at start: `CaData::server_file`).
+pub fn read_server_file(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Option<ServerFile> {
+    read(SERVER_CFG)
+        .and_then(|b| Document::parse(&b).ok())
+        .and_then(|d| ServerFile::read(&d).map_err(|e| warn!("{e}")).ok())
+}
+
 /// Read the install's missions through `read`.
 pub fn read_install(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> InstallMissions {
     let index = MissionIndex::build(read);
     let vip = read(VTDM_FILE).and_then(|b| Document::parse(&b).ok()).map(|d| VipData::read(&d));
-    let server = read(SERVER_CFG)
-        .and_then(|b| Document::parse(&b).ok())
-        .and_then(|d| ServerFile::read(&d).map_err(|e| warn!("{e}")).ok());
+    let server = read_server_file(read);
     if index.paths.is_empty() {
         info!("Combat Arms: no mission data read (GMS.rez needs the V1 key): our modes' numbers stand");
     } else {

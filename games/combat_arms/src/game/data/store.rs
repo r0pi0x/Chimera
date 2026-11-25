@@ -23,7 +23,9 @@
 //! it in its resource or its map loads' context (`map::LoadContext`,
 //! `install_for`), so its loads never reach for a process-wide memo. Its
 //! parts read from the install fill on first use: the attribute files
-//! (`ATTRIBUTES.rez` takes seconds to read and decrypt), the mounted
+//! (`ATTRIBUTES.rez` takes seconds to read and decrypt: their records
+//! are read back from the converted cache when they were read before,
+//! `data::attributes_kept`), the mounted
 //! archives (`mount`, themselves shared the same way) and what the game
 //! works out from them once per install (`memo`: the converted character
 //! models, the view models loaded on demand, the parsed effect file, the
@@ -104,6 +106,7 @@ pub struct CaDataInner {
     gear: OnceLock<GearData>,
     characters: OnceLock<CharacterData>,
     missions: OnceLock<Option<InstallMissions>>,
+    server_file: OnceLock<Option<super::super::missions::ServerFile>>,
     builtin_ids: OnceLock<BTreeSet<String>>,
     /// `install_weapon`'s index: each id to its record's place in the
     /// install's weapons file (`install_weapons_by_id`), made on first use.
@@ -135,6 +138,7 @@ impl CaData {
             gear: OnceLock::new(),
             characters: OnceLock::new(),
             missions: OnceLock::new(),
+            server_file: OnceLock::new(),
             builtin_ids: OnceLock::new(),
             install_index: OnceLock::new(),
         }
@@ -420,6 +424,27 @@ impl CaDataInner {
                 Some(super::super::missions::read_install(&|p| mount.read(p).ok()))
             })
             .as_ref()
+    }
+
+    /// The install's server file (missions.md, The server file) without
+    /// the missions: the rules' settings read its phase lengths at start,
+    /// and the mission index (every mission file of every map, 0.65 G
+    /// instructions) waits for the first match that looks a mission up
+    /// (`missions`; docs/performance.md, "Start cost, third pass"). The
+    /// missions' own copy once they are read.
+    pub fn server_file(&self) -> Option<super::super::missions::ServerFile> {
+        if let Some(read) = self.missions.get() {
+            return read.as_ref().and_then(|m| m.server.clone());
+        }
+        self.server_file
+            .get_or_init(|| {
+                if self.builtin_only {
+                    return None;
+                }
+                let mount = self.mount()?;
+                super::super::missions::read_server_file(&|p| mount.read(p).ok())
+            })
+            .clone()
     }
 
     /// The IDs of our own weapon documents (the weapons a player is
