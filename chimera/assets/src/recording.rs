@@ -2,7 +2,10 @@
 //! `Recorder` each file read from it, once per game and path per process,
 //! with its size and SHA-256, and apart from those each file a load only
 //! checks for (`contains`, found), which it never reads: on a served
-//! mount a read would download the file. With `CHIMERA_VFS_LOG=<file>`
+//! mount a read would download the file. A file whose fingerprint a load
+//! asks for (a converted-map cache hit checking its inputs) is recorded as
+//! read: what the cached conversion read, so a warm cache records the
+//! same set as a cold one. With `CHIMERA_VFS_LOG=<file>`
 //! every game mount does this (Chimera's `mount::served`) and the
 //! recorder appends one line per file to that file: a read is
 //! `<game>\t<path>\t<size>\t<sha256>`, a check `<game>\t<path>\tcheck`.
@@ -163,8 +166,23 @@ impl FileSource for Recording {
         has
     }
 
+    /// A file whose fingerprint is asked for is an input of something
+    /// read back instead of made (a converted-map cache entry checks its
+    /// inputs' fingerprints, `map_cache`): recorded as the read it stands
+    /// for, so a load recorded with a warm cache records what one recorded
+    /// cold reads (a set made from it holds the conversion's files). Read
+    /// only when the layer holds the file here (`held`); one it would
+    /// download is recorded as a check.
     fn fingerprint(&self, path: &str) -> Option<String> {
-        self.inner.fingerprint(path)
+        let fingerprint = self.inner.fingerprint(path)?;
+        if !self.recorder.has(&self.game, path) {
+            if !self.inner.held(path) {
+                self.recorder.check(&self.game, path);
+            } else if let Some(Ok(bytes)) = self.inner.read(path) {
+                self.recorder.record(&self.game, path, &bytes);
+            }
+        }
+        Some(fingerprint)
     }
 
     fn held(&self, path: &str) -> bool {
@@ -262,5 +280,53 @@ mod tests {
         assert_eq!(read_log(&log).unwrap().len(), 1, "checks never reach a set");
         assert_eq!(recorder.checks().len(), 2);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A layer with fingerprints of its own (an archive's), holding
+    /// `held.txt` here and `remote.txt` only on demand.
+    struct Fingerprinted(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl FileSource for Fingerprinted {
+        fn name(&self) -> String {
+            "fingerprinted".into()
+        }
+
+        fn entries(&self) -> Vec<Entry> {
+            Vec::new()
+        }
+
+        fn read(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Some(Ok(path.as_bytes().to_vec()))
+        }
+
+        fn contains(&self, _path: &str) -> bool {
+            true
+        }
+
+        fn fingerprint(&self, path: &str) -> Option<String> {
+            Some(format!("fp {path}"))
+        }
+
+        fn held(&self, path: &str) -> bool {
+            path != "remote.txt"
+        }
+    }
+
+    /// A fingerprint stands for a read (a converted-map cache hit checks
+    /// its inputs so, never reading them): the file is recorded as read
+    /// once, so a load recorded with a warm cache lists the files a cold
+    /// one reads; a file the layer would download is a check.
+    #[test]
+    fn a_fingerprinted_file_is_recorded_as_read() {
+        let recorder = Recorder::in_memory();
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let layer = Recording::new(Box::new(Fingerprinted(count.clone())), "g", recorder.clone());
+        assert_eq!(layer.fingerprint("held.txt").as_deref(), Some("fp held.txt"));
+        assert_eq!(layer.fingerprint("held.txt").as_deref(), Some("fp held.txt"));
+        assert_eq!(layer.fingerprint("remote.txt").as_deref(), Some("fp remote.txt"));
+        assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1, "read once, the remote one never");
+        assert_eq!(recorder.lines().iter().map(|l| l.path.as_str()).collect::<Vec<_>>(), ["held.txt"]);
+        assert_eq!(recorder.checks(), [("g".to_string(), "remote.txt".to_string())]);
     }
 }
