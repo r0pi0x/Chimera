@@ -38,8 +38,10 @@
 //! (`HeldCommandLine`, `start_map_settled`), so a client joining during a
 //! host's start is answered and follows the map in
 //! (`CHIMERA_START_MAP_AT_ONCE=1`: the old start, the map loaded before
-//! the app). The dedicated server still loads its start map before it
-//! listens (`chimera_net::dedicated`).
+//! the app). The dedicated server starts the same way
+//! (`chimera_net::dedicated::StartLevel`). A run that joins (`Args::
+//! connects`) starts on no map of its own (its `--map` alone, never the
+//! app's `default_map`): the server's loads behind the loading screen.
 //! `--offscreen` and the window are `default_plugins`'s, for every app,
 //! and with `--offscreen` and `--dump` the sound recorded into the dump
 //! directory's `audio.wav` instead of played (`audio::record`).
@@ -273,7 +275,10 @@ impl StartMap {
             .as_deref()
             .and_then(chimera_world::greybox::code_map)
             .is_some_and(|m| m != chimera_world::greybox::GREYBOX);
-        let Some(id) = args.game_map().or(game.hooks.default_map).filter(|_| !code) else {
+        // A joiner (`+connect`) loads the server's map, not the app's
+        // default first: its own `--map` alone.
+        let default = game.hooks.default_map.filter(|_| !args.connects());
+        let Some(id) = args.game_map().or(default).filter(|_| !code) else {
             return Ok(Self::Greybox);
         };
         // At the HDR level the console will start with (mat_hdr_level);

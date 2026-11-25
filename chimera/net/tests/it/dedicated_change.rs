@@ -16,6 +16,7 @@ use std::time::Duration;
 use avian3d::prelude::{Collider, Position, RigidBody};
 use bevy::{ecs::message::MessageCursor, prelude::*, time::TimeUpdateStrategy};
 use chimera_core::{
+    console::ConsoleAppExt,
     core::{LocalPlayer, MapLoads, SimClock},
     game_registry::GameInfo,
     gameplay::{GameplayAppExt, NewGame},
@@ -159,12 +160,26 @@ static SERVER: GameServer = GameServer {
     hooks: ServerHooks {
         maps: Some(ServerMaps {
             bare: "test",
-            load: |id, _| if id == "test:steps" { Ok(map()) } else { Err(format!("no map {id}")) },
+            load: |id, _| match id {
+                "test:steps" => Ok(map()),
+                // The same map once the test lets it come (`GATE`).
+                "test:gated" => {
+                    while !GATE.load(std::sync::atomic::Ordering::Acquire) {
+                        std::thread::yield_now();
+                    }
+                    Ok(map())
+                }
+                _ => Err(format!("no map {id}")),
+            },
             help: "greybox, test:steps",
         }),
         ..ServerHooks::NONE
     },
 };
+
+/// `test:gated` loads once this is set (the start's test: the server's
+/// first frames run before its map is in).
+static GATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn frame(sim: &mut Sim) {
     sim.app
@@ -455,4 +470,89 @@ fn nothing_of_the_match_ticks_while_a_changelevels_map_settles() {
     assert!(tick(&p.server) > stood, "ticks run once it has settled");
     assert!(p.server.app.world().resource::<MatchTicks>().0 > ran);
     p.until("the client joins on the new map", |p| p.joined("test:steps"));
+}
+
+/// What a test's `mark` command was given, in order.
+#[derive(Resource, Default)]
+struct Marks(Vec<String>);
+
+/// A server binary's start (`StartMap::choose_in`, `run`) on `map`, with a
+/// `mark` line after the settings.
+fn starting_server(map: &str) -> Sim {
+    let args = ["+ip", "127.0.0.1", "-port", "0", "+maxplayers", "4", "+map", map, "+mark", "after"].map(String::from);
+    let Ok(Parsed::Run(options)) = SERVER.parse(args) else { panic!("options") };
+    let start = StartMap::choose_in(&SERVER, &options, Default::default()).expect("a start");
+    assert!(matches!(start, StartMap::Later { .. }), "a map of the install comes in as a level change");
+    Sim::with((), |app| {
+        app.add_plugins(ServerPlugin::new(&SERVER, start, &options))
+            .insert_resource(StepAFrame)
+            .init_resource::<Marks>();
+        app.console_command("mark", "a test's", |w, a| {
+            w.resource_mut::<Marks>().0.push(a.join(" "));
+            Ok(None)
+        });
+    })
+}
+
+/// A dedicated server listens before its start map is in: the map comes
+/// in as a `changelevel` (`dedicated::StartLevel`), the command line's
+/// settings run first (`maxplayers`), its other lines once the map has
+/// settled, and a client that connects at once is answered and follows the
+/// server into the map.
+#[test]
+fn a_server_listens_before_its_start_map_and_a_client_joining_meanwhile_follows_it_in() {
+    let mut server = starting_server("test:gated");
+    frame(&mut server);
+    let w = server.app.world();
+    assert_eq!(w.resource::<chimera_net::net::NetSettings>().maxplayers, 4, "the settings ran");
+    assert!(w.resource::<Marks>().0.is_empty(), "the other lines wait for the map");
+    assert_eq!(w.resource::<LoadedMapName>().0, "test:gated", "its change is under way");
+    assert_eq!(parts(&mut server).0, 0, "no part of the map yet");
+    let addr = dedicated::listen(server.app.world_mut()).expect("it listens before its map is in");
+    let mut client = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins((NetPlugin, GreyboxMapPlugin))
+            .insert_resource(Loadout { movement: placeholder::ID })
+            .init_resource::<Asked>()
+            .add_systems(Update, client_loads);
+    });
+    frame(&mut client);
+    let to = std::net::SocketAddr::from(([127, 0, 0, 1], addr.port()));
+    net::client::connect(client.app.world_mut(), to).expect("connect");
+    let mut p = Pair { server, client };
+    // Answered while the map loads: the client is a player before it is in.
+    p.until("the server answers the client", |p| !net::server::players(p.server.app.world_mut()).is_empty());
+    assert!(p.server.app.world().contains_resource::<dedicated::StartLevel>(), "still loading its start map");
+    GATE.store(true, std::sync::atomic::Ordering::Release);
+    // The client may join on the map's name before the server's map is
+    // in (it follows the change, `net::maps`); then the server settles.
+    p.until("the client joins on the start map, the server's settled", |p| {
+        p.joined("test:gated") && !p.server.app.world().contains_resource::<dedicated::StartLevel>()
+    });
+    // The held lines run on the console's next turn (the frame after).
+    p.step();
+    let w = p.server.app.world();
+    assert_eq!(loads(&p.server), 1, "one new game, on the map");
+    assert!(!dedicated::level_coming_in(w), "it settled");
+    assert!(!w.contains_resource::<dedicated::StartLevel>());
+    assert_eq!(w.resource::<Marks>().0, ["after"], "the held line ran once it had settled");
+    assert_eq!(p.client.app.world().resource::<Asked>().0.last().map(String::as_str), Some("test:gated"));
+    assert!(p.server.app.should_exit().is_none());
+}
+
+/// A start map that doesn't load ends the server with 1, as one loaded
+/// before the server did (`run`); its held lines never run.
+#[test]
+fn a_start_map_that_doesnt_load_ends_the_server_with_1() {
+    let mut server = starting_server("test:nope");
+    let mut exit = None;
+    for _ in 0..500 {
+        exit = server.app.should_exit();
+        if exit.is_some() {
+            break;
+        }
+        server.app.update();
+        chimera_world::harness::let_tasks_run();
+    }
+    assert_eq!(exit, Some(AppExit::from_code(1)));
+    assert!(server.app.world().resource::<Marks>().0.is_empty(), "the held lines never ran");
 }

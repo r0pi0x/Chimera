@@ -5503,11 +5503,63 @@ combat_arms:warehouse`):
 
 The answer comes after under half the main thread's work, and the match
 is up after less: the start map's spawn is a step a frame instead of the
-first frame's whole. Left: the dedicated server still loads its start map
-before it listens ("the start map is spawned whole before the server
-listens", `dedicated`'s known shortcuts); a joiner with its game
-installed still loads its own default map before it connects
-(`party_kit::with_defaults_for`).
+first frame's whole.
+
+**The dedicated server's start map too (2026-11-25).** Every dedicated
+server (`chimera_net::dedicated::run`, so CS:S's, Combat Arms', HL2:DM's,
+the party apps' and the rest) loaded its start map, and spawned it whole
+in its first frame, before it listened. Now `StartMap::choose_in` gives
+`StartMap::Later` for a map of the installs: the server comes up on the
+greybox, the command line's settings run (`sets_only_cvars`: `hostport`,
+`maxplayers`), it listens on its first frame, and the map comes in as a
+`changelevel` (`StartLevel`: loaded on a task, a step a frame, settled
+with its match held); a client that connects meanwhile follows it in, and
+the command line's other lines (the minigame's, `bot_add`) run once it has
+settled. A start map that doesn't load still ends the process with 1.
+`CHIMERA_START_MAP_AT_ONCE=1` is the old start (a code-built map always
+loads at once). Ultimate Gun Game's server, `-port 0 +maxplayers 4 +map
+combat_arms:warehouse`, six games, dev build, two runs each (the boot
+log summed from the process's start, G instructions):
+
+| | at once (before) | as a level change |
+|---|---|---|
+| to listening, main thread | 21.3 | 27.0 |
+| to listening, every thread | 56.8 | 27.1-27.2 |
+| to the map settled, main thread | 23.3-23.4 | 33.4-33.7 |
+| to the map settled, every thread | 64.2-65.6 | 51.1-51.6 |
+
+The process listens after half the work it did, but the main thread's
+own count grows: the start map's load ran on the task pool before the app
+was built and read Combat Arms' install data into the load context, which
+the party's simulation then found there (its "before the guests'
+simulations" stage: 12.4 G of the main thread's before, 19.6 G now, as it
+reads that data itself); and the map's spawn and settle are now the main
+thread's, a step a frame (6.3-6.9 G from listening to settled, was 2.0 G
+for the settle alone). Left: reading that data on a task while the app
+builds.
+
+**A joiner goes straight to the server's map (2026-11-25).** A run that
+joins (`+connect`; `Args::connects`) no longer loads a map of its own
+first: not the app's `default_map` (`StartMap::of`) nor, in a party
+app, the minigame's first map when its game is installed
+(`party_kit::with_defaults_for`); it waits on the greybox and loads the
+server's behind the loading screen. Its own `--map` still loads.
+
+**A start map that isn't in the install (2026-11-25).** A hosting run's
+`map` line for its start map failed before any load when the install
+lacks the map ("no map ... in the install"), so `finish_map_load` never
+saw it and the held lines waited for ever; now the `map` command ends the
+run with 1 then too (`console::map_command`), as the start did when the
+map loaded before the app.
+
+Tests: chimera_net's `dedicated_change` (a server listens before its start
+map and a client connecting at once follows it in, the held line run
+once; a start map that doesn't load ends it with 1), chimera_client's
+`game_app` (a joiner's start) and `console` (the missing start map),
+party_roster's joiner test, and `heavy::server_start_join`
+(ultimate_gun_game's `base`: the UGG server in the test's process on
+warehouse, its client binary knocking from before the server's start,
+joined while the map came in and in play there; 50 s).
 
 ### The first view's bodies
 

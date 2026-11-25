@@ -37,6 +37,16 @@
 //!   the server's first frames, its bots standing and its players
 //!   spawning at the map's spawn points until theirs are made.
 //!   Clients load the map from their own install by name.
+//! - The start map of the install comes in as a `changelevel`
+//!   (`StartMap::Later`, `StartLevel`): the server comes up on the
+//!   greybox, the command line's settings run (`sets_only_cvars`: the
+//!   port, the player count), it listens on its first frame and loads the
+//!   map on a task; a client that connects meanwhile follows it in
+//!   (`net::maps`), and the command line's other lines (`+minigame`'s
+//!   line, `bot_add`, ...) run once it has settled. A start map that
+//!   doesn't load ends the process with 1. `CHIMERA_START_MAP_AT_ONCE=1`
+//!   (and a code-built map, always) loads it before the server is built,
+//!   as before (docs/performance.md, "A join while the host starts").
 //! - Players join with the game's app (`+connect <ip>:<port>`); a server
 //!   takes eight unless told otherwise (`maxplayers`; `ServerHooks::
 //!   maxplayers`).
@@ -98,9 +108,10 @@
 //! player's install); without `greybox_tick`, changing to the greybox
 //! keeps the game's tick (the greybox has no tick of its own); a
 //! minigame's map pool isn't rotated by the server (a map change keeps
-//! the minigame, its match starts over); the start map is spawned whole
-//! before the server listens, and a change's settling is out of time
-//! after `SETTLE_MAX_SECS` of wall time (its floods go on in play).
+//! the minigame, its match starts over); a change's settling is out of
+//! time after `SETTLE_MAX_SECS` of wall time (its floods go on in play);
+//! the listen banner of a server whose start map is still coming in names
+//! no minigame yet (its line is held until the map has settled).
 
 use std::{
     io::BufRead,
@@ -414,9 +425,33 @@ pub enum StartMap {
         data: MapData,
         context: map::LoadContext,
     },
+    /// A map of the install loaded after the server is up, as a
+    /// `changelevel` (`StartLevel`): the server comes up on the greybox and
+    /// listens at once, the map loads on a task and comes in over frames,
+    /// and a client that joins meanwhile follows it in (`net::maps`).
+    /// `context`: as `Loaded`'s, the server app's from then on.
+    Later { id: String, context: map::LoadContext },
+}
+
+/// `CHIMERA_START_MAP_AT_ONCE=1`: the start map loads and spawns before
+/// the server listens (the old start, for measuring against; the client
+/// app's switch too, `chimera_client::client::app::start_map_at_once`).
+pub fn start_map_at_once() -> bool {
+    chimera_core::env::var("CHIMERA_START_MAP_AT_ONCE").is_ok_and(|v| v == "1")
 }
 
 impl StartMap {
+    /// The binary's start (`run`): a map of the install as a level change
+    /// (`Later`: the server listens first); a code-built map, or any with
+    /// `CHIMERA_START_MAP_AT_ONCE=1`, loaded now (`load_in`).
+    pub fn choose_in(server: &GameServer, options: &Options, context: map::LoadContext) -> Result<Self, String> {
+        let id = server.map_id(&options.map);
+        if net::is_code_map(&id) || start_map_at_once() {
+            return Self::load_in(server, options, context);
+        }
+        Ok(Self::Later { id, context })
+    }
+
     /// `options.map`, loaded as `server`'s game loads it.
     pub fn load(server: &GameServer, options: &Options) -> Result<Self, String> {
         Self::load_in(server, options, map::LoadContext::default())
@@ -478,7 +513,7 @@ impl Plugin for ServerPlugin {
         let start = self.map.lock().unwrap().take();
         // Big blocks go back to the system when freed (a map change's).
         chimera_core::metrics::memory::big_blocks_mapped();
-        if let Some(StartMap::Loaded { context, .. }) = &start {
+        if let Some(StartMap::Loaded { context, .. } | StartMap::Later { context, .. }) = &start {
             app.insert_resource(context.clone());
         }
         let server = self.server;
@@ -507,6 +542,14 @@ impl Plugin for ServerPlugin {
             Some(StartMap::Loaded { id, data, .. }) => {
                 app.add_plugins(MapSimPlugin::new(data))
                     .insert_resource(LoadedMapName(id));
+            }
+            // On the greybox until the start map comes in as a level change
+            // (`StartLevel`); the command line's lines are split at startup.
+            Some(StartMap::Later { id, .. }) => {
+                app.insert_resource(greybox::CodeMap(greybox::GREYBOX))
+                    .add_plugins((GreyboxMapPlugin, MapSimPlugin::empty()))
+                    .insert_resource(StartLevel { id, held: self.console.clone(), begun: false })
+                    .add_systems(Startup, split_start_lines);
             }
             // The map systems too: `changelevel` loads one later.
             _ => {
@@ -561,7 +604,7 @@ impl Plugin for ServerPlugin {
             ..default()
         })
         .add_plugins(ServerHealthPlugin)
-        .add_systems(Update, finish_level_change)
+        .add_systems(Update, (begin_start_level, finish_level_change).chain())
         // glibc's free pages back a while after each map change.
         .add_systems(Update, chimera_core::metrics::memory::release_after_change::<map::MapFile>)
         .console_command(
@@ -589,9 +632,86 @@ impl Plugin for ServerPlugin {
         )
         .console_command("quit", "Stop the server.", quit)
         .console_command("exit", "Stop the server.", quit);
+        // A start map as a level change: the lines wait for `split_start_lines`.
+        if app.world().contains_resource::<StartLevel>() {
+            return;
+        }
         let mut console = app.world_mut().resource_mut::<Console>();
         for line in &self.console {
             console.submit(line.clone());
+        }
+    }
+}
+
+/// The start map coming in as a level change (`StartMap::Later`): its id,
+/// the command line's lines held until it has settled (every line but
+/// the settings, `split_start_lines`), and whether its `changelevel` has
+/// begun (`begin_start_level`, the first frame). Before, the start map
+/// was loaded and spawned whole before the server listened (a client
+/// joining a starting server got no answer for that long;
+/// docs/performance.md, "A join while the host starts").
+#[derive(Resource, Debug)]
+pub struct StartLevel {
+    pub id: String,
+    pub held: Vec<String>,
+    begun: bool,
+}
+
+/// Whether a console line only sets cvars (`maxplayers 4`, `hostport
+/// 0; sv_cheats 1`): such lines run before the start map, the rest after.
+pub fn sets_only_cvars(console: &Console, line: &str) -> bool {
+    let commands = console::parse(line);
+    !commands.is_empty() && commands.iter().all(|words| words.len() > 1 && console.cvar(&words[0]).is_some())
+}
+
+/// At startup (every plugin's cvars registered): the command line's
+/// settings run on the first frame (the port, the player count), the
+/// other lines wait for the start map (`StartLevel::held`).
+fn split_start_lines(world: &mut World) {
+    let Some(mut start) = world.remove_resource::<StartLevel>() else { return };
+    let mut console = world.resource_mut::<Console>();
+    let mut held = Vec::new();
+    for line in std::mem::take(&mut start.held) {
+        if sets_only_cvars(&console, &line) {
+            console.submit(line);
+        } else {
+            held.push(line);
+        }
+    }
+    start.held = held;
+    world.insert_resource(start);
+}
+
+/// The first frame, after the command line's settings ran: the start
+/// map's `changelevel` (the server listens in this frame too, `run`'s
+/// `start_serving`). A start map that can't be asked for ends the run.
+fn begin_start_level(world: &mut World) {
+    let Some(mut start) = world.get_resource_mut::<StartLevel>().filter(|s| !s.begun) else { return };
+    start.begun = true;
+    let id = start.id.clone();
+    if let Err(e) = change_level(world, &id) {
+        start_level_failed(world, &id, &e);
+    }
+}
+
+/// The start map didn't load: the run ends with 1 (as when it loaded
+/// before the server, `run`), its held lines never run.
+fn start_level_failed(world: &mut World, id: &str, e: &str) {
+    world.remove_resource::<StartLevel>();
+    eprintln!("error: +map {id}: {e}");
+    world.resource_mut::<Console>().print(Level::Error, format!("+map {id}: {e}"));
+    world.write_message(AppExit::from_code(1));
+}
+
+/// A map settled (or came in, `CHIMERA_SPAWN_AT_ONCE=1`): the boot log's
+/// stage, and the start map's held lines, once.
+fn level_in(world: &mut World) {
+    chimera_core::metrics::boot::stage("a map settled");
+    if world.get_resource::<StartLevel>().is_some_and(|s| s.begun) {
+        let start = world.remove_resource::<StartLevel>().unwrap();
+        let mut console = world.resource_mut::<Console>();
+        for line in start.held {
+            console.submit(line);
         }
     }
 }
@@ -901,6 +1021,11 @@ fn finish_level_change(world: &mut World) {
             // next.
         }
         Err(e) => {
+            // The start map: the run ends.
+            if world.get_resource::<StartLevel>().is_some_and(|s| s.begun && s.id == id) {
+                start_level_failed(world, &id, &e);
+                return;
+            }
             // Back to the map that plays: clients never left it.
             let server = world.resource::<Serving>().0;
             let back = world
@@ -932,6 +1057,7 @@ fn spawn_level_steps(world: &mut World, budget: Duration) {
     world.resource_mut::<Console>().info(summary);
     if at_once() {
         world.remove_resource::<map::LocalMapLoad>();
+        level_in(world);
         return;
     }
     let tick = world.get_resource::<core::SimClock>().map_or(0, |c| c.tick);
@@ -976,6 +1102,7 @@ fn settle_level(world: &mut World) {
     world.remove_resource::<LevelSettle>();
     world.remove_resource::<map::MapSettling>();
     world.remove_resource::<map::LocalMapLoad>();
+    level_in(world);
 }
 
 /// Frames a second at most: a packet waits at most a frame (3.3 ms).
@@ -1036,7 +1163,7 @@ pub fn run(server: &'static GameServer) {
     context.insert(map::sound::Silent);
     // It draws nothing: they keep no render meshes of the kit.
     context.insert(map::undrawn::Undrawn);
-    let start = StartMap::load_in(server, &options, context).unwrap_or_else(|e| {
+    let start = StartMap::choose_in(server, &options, context).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         std::process::exit(1);
     });
@@ -1097,7 +1224,7 @@ pub fn run(server: &'static GameServer) {
         bevy::app::TerminalCtrlCHandlerPlugin,
         chimera_core::shutdown::ShutdownPlugin,
     ))
-        .add_systems(Update, (read_stdin, start_serving, print_console).chain());
+        .add_systems(Update, (read_stdin, start_serving, print_console).chain().after(begin_start_level));
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {

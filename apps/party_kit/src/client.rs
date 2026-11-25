@@ -315,8 +315,8 @@ pub fn sim(party: &'static Party, app: &mut App, _: &Args) {
 /// command line plays (the usual start map).
 pub fn start_at_menu(_: &'static GameApp, args: &Args) -> Option<StartMap> {
     if !crate::main_menu::starts_at_menu(args) {
-        // A joiner with no map of its own (`with_defaults_for`: the default
-        // map's game isn't installed) waits on the greybox.
+        // A joiner with no map of its own (`with_defaults_for`: none
+        // unless `--map`) waits on the greybox.
         let no_map = args.game_map().is_none() && joins_server(&args.console);
         return no_map.then_some(StartMap::Greybox);
     }
@@ -355,11 +355,13 @@ pub fn joins_server(console: &[String]) -> bool {
 /// and without `--map` that minigame's first map (`first_map`);
 /// `DEFAULT_BOTS` bots unless it sets `MaxPlayer`. A joiner (`+connect`)
 /// gets neither the minigame nor the bots: the server plays its minigame
-/// (`minigame_net`) and fills its own slots; the map is the default's,
-/// loaded at once, until the server says its own (none, the greybox,
-/// without its game's install).
+/// (`minigame_net`) and fills its own slots; nor the default map: it
+/// waits on the greybox (`start_at_menu`) and goes straight to the
+/// server's map, behind the loading screen (before, a joiner with the
+/// default map's game installed loaded and spawned that map first, then
+/// the server's).
 pub fn with_defaults_for(
-    party: &Party,
+    _party: &Party,
     mut args: Args,
     minigame: &str,
     bots: u32,
@@ -377,11 +379,8 @@ pub fn with_defaults_for(
             minigame.to_string()
         }
     };
-    if args.map.is_none() {
-        // A joiner without the map's game installed waits on the greybox
-        // (`start_at_menu`): the server's offer brings the files
-        // (`net::assets`).
-        args.map = first_map(&minigame).ok().filter(|m| !joining || map_installed(party, m));
+    if args.map.is_none() && !joining {
+        args.map = first_map(&minigame).ok();
     }
     args
 }

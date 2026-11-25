@@ -33,4 +33,5 @@ mod heavy {
     mod nav_in_play;
     mod report_frame;
     mod rung_frames;
+    mod server_start_join;
 }
