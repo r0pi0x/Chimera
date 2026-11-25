@@ -121,16 +121,22 @@ pub struct Texture {
 }
 
 impl Texture {
-    /// As RGBA8: index 255 transparent when masked (flag 64).
+    /// As RGBA8: index 255 transparent when masked (flag 64), its colour
+    /// filled from the opaque texels (`holes::fill`).
     pub fn rgba(&self) -> Vec<u8> {
         let masked = self.flags & 64 != 0;
-        self.pixels
+        let mut out: Vec<u8> = self
+            .pixels
             .iter()
             .flat_map(|&i| {
                 let c = self.palette[i as usize];
                 [c[0], c[1], c[2], if masked && i == 255 { 0 } else { 255 }]
             })
-            .collect()
+            .collect();
+        if masked {
+            crate::holes::fill(&mut out, self.width as usize, self.height as usize);
+        }
+        out
     }
 }
 
