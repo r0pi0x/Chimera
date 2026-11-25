@@ -32,9 +32,9 @@ fn the_game_registers_and_is_the_gameplay_at_its_tick() {
 #[test]
 fn it_lends_its_guns_and_movement() {
     assert_eq!(PARTS.game, GAME);
-    // A scaffold: its stand-ins are reported but dealt into no ladder
-    // until its first real gun (`scaffold: false` then).
-    assert!(PARTS.lends_guns_and_movement() && PARTS.scaffold && !PARTS.playable());
+    // Its guns landed (M1): no longer a scaffold, dealt into ladders.
+    assert!(PARTS.lends_guns_and_movement() && !PARTS.scaffold && PARTS.playable());
+    assert_eq!(PARTS.knife, Some(weapons::KNIFE));
     // The party's roster (apps/party_roster) reads both of every guest.
     assert!(BUNDLE.guest.is_some() && !BUNDLE.kept.is_empty(), "a guest dressing and a kept prefix");
     assert_eq!(PARTS.movement, Some(movement::ID));

@@ -750,15 +750,8 @@ const SHOTS_RESET: f64 = 0.5;
 
 /// Punch decay per second: |p| -= (10 + 0.5 |p|) degrees/s (M3), over
 /// all three angles together (M18: a head flinch's (-12, 0, 9) is
-/// (-11.79, 0, 8.8425) a tick later).
-pub fn decay_punch(p: Vec3, dt: f32) -> Vec3 {
-    let len = p.length().to_degrees();
-    if len <= 0.0 {
-        return Vec3::ZERO;
-    }
-    let next = (len - (10.0 + 0.5 * len) * dt).max(0.0);
-    p * (next / len)
-}
+/// (-11.79, 0, 8.8425) a tick later): Chimera's shared rule.
+pub use crate::weapon::decay_punch;
 
 /// Before the weapon frame: punch decays, the penalty recovers, and the
 /// active weapon's spread is set from the penalty and the movement term.

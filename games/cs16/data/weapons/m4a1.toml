@@ -1,0 +1,73 @@
+# M4A1 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_m4a1"
+base = "cs16:gun"
+class = "rifle"
+slot = 0
+draw = 0.75
+max_speed = 230.0
+weight = 25
+
+[buy]
+price = 3100
+team = 2
+
+[trigger]
+automatic = true
+cycle = 0.0875
+
+[magazine]
+clip = 30
+ammo = "cs16:556nato"
+reload = 3.05
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 32.0
+falloff = 0.97
+armor_ratio = 1.4
+
+[penetration]
+objects = 2
+
+# Attack2 screws the silencer on (mode 1) or off: no shot for 2 s.
+[alt]
+kind = "silencer"
+time = 2.0
+
+[sounds]
+fire = "weapons/m4a1_unsil-1.wav;weapons/m4a1_unsil-2.wav"
+fire_alt = "weapons/m4a1-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_m4a1.mdl"
+view = "models/v_m4a1.mdl"
+
+[hud]
+name = "M4A1"
+icon = "d_m4a1"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 220.0, power = 3.0, offset = 0.3, cap = 1.0 }
+kick = { model = "table", order = "rifle" }
+alt_damage = { amount = 33.0, falloff = 0.95 }
+
+[hooks."cs16:gun".spread]
+air = [0.035, 0.4]
+moving = [[140.0, 0.035, 0.07]]
+still = [0.0, 0.02]
+
+# In mode 1 (silenced).
+[hooks."cs16:gun".alt_spread]
+air = [0.035, 0.4]
+moving = [[140.0, 0.035, 0.07]]
+still = [0.0, 0.025]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+moving = [1.0, 0.45, 0.28, 0.045, 3.75, 3.0, 7.0]
+air = [1.2, 0.5, 0.23, 0.15, 5.5, 3.5, 6.0]
+ducked = [0.6, 0.3, 0.2, 0.0125, 3.25, 2.0, 7.0]
+standing = [0.65, 0.35, 0.25, 0.015, 3.5, 2.25, 7.0]

@@ -1,0 +1,73 @@
+# Glock 18 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_glock18"
+base = "cs16:gun"
+class = "pistol"
+slot = 1
+draw = 0.75
+max_speed = 250.0
+weight = 5
+
+[buy]
+price = 400
+
+[trigger]
+automatic = false
+cycle = 0.15
+
+[magazine]
+clip = 20
+ammo = "cs16:9mm"
+reload = 2.2
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 25.0
+falloff = 0.75
+armor_ratio = 1.05
+
+[penetration]
+objects = 1
+
+# Burst mode (1): three rounds, the follow-ups on the next two commands
+# (one a 0.01 s command each: `interval` under one), a burst every 0.5 s.
+[alt]
+kind = "burst"
+interval = 0.005
+refire = 0.5
+count = 3
+step = 0.3
+texts = ["Switched to semi-automatic", "Switched to Burst-Fire mode"]
+
+[sounds]
+fire = "weapons/glock18-1.wav;weapons/glock18-2.wav"
+empty = "weapons/dryfire_pistol.wav"
+
+[models]
+world = "models/p_glock18.mdl"
+view = "models/v_glock18.mdl"
+
+[hud]
+name = "Glock 18"
+icon = "d_glock18"
+
+[hooks."cs16:gun"]
+accuracy = { model = "time", start = 0.9, period = 0.325, rate = 0.275, low = 0.6 }
+# The burst's two follow-ups: a fixed spread, their own damage, no kick.
+follow_ups = { spread = 0.05, amount = 25.0, falloff = 0.9 }
+# Held in burst mode, a burst every 0.5 s (no fresh press needed).
+held_bursts = true
+
+[hooks."cs16:gun".spread]
+air = [0.0, 1.0]
+moving = [[0.0, 0.0, 0.165]]
+ducked = [0.0, 0.075]
+still = [0.0, 0.1]
+
+# In mode 1 (burst).
+[hooks."cs16:gun".alt_spread]
+air = [0.0, 1.2]
+moving = [[0.0, 0.0, 0.185]]
+ducked = [0.0, 0.095]
+still = [0.0, 0.3]

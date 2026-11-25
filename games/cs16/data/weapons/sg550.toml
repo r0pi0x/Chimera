@@ -1,0 +1,63 @@
+# SG 550 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_sg550"
+base = "cs16:gun"
+class = "marksman"
+slot = 0
+draw = 0.75
+max_speed = 210.0
+weight = 20
+
+[buy]
+price = 4200
+team = 2
+
+[trigger]
+automatic = true
+cycle = 0.25
+
+[magazine]
+clip = 30
+ammo = "cs16:556nato"
+reload = 3.35
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 70.0
+falloff = 0.98
+armor_ratio = 1.45
+
+[penetration]
+objects = 2
+
+[alt]
+kind = "scope"
+fov = [40.0, 15.0]
+max_speed = 150.0
+overlay = true
+step = 0.3
+sound = "weapons/zoom.wav"
+
+[sounds]
+fire = "weapons/sg550-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_sg550.mdl"
+view = "models/v_sg550.mdl"
+
+[hud]
+name = "SG 550"
+icon = "d_sg550"
+
+[hooks."cs16:gun"]
+accuracy = { model = "since", base = 0.65, rate = 0.35, cap = 0.98, before = false, start = 0.0 }
+kick = { model = "random", up = [0.75, 1.25], lift = 0.25, side = 0.75 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 0.45]
+moving = [[0.0, 0.15, 0.0]]
+ducked = [0.0, 0.04]
+still = [0.0, 0.05]
+unzoomed = 0.025

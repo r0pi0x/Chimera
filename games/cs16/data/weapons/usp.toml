@@ -1,0 +1,67 @@
+# USP (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_usp"
+base = "cs16:gun"
+class = "pistol"
+slot = 1
+draw = 0.75
+max_speed = 250.0
+weight = 5
+
+[buy]
+price = 500
+
+[trigger]
+automatic = false
+cycle = 0.15
+
+[magazine]
+clip = 12
+ammo = "cs16:45acp"
+reload = 2.7
+
+[hitscan]
+range = 4096.0
+
+[damage]
+amount = 34.0
+falloff = 0.79
+armor_ratio = 1.0
+
+[penetration]
+objects = 1
+
+# Attack2 screws the silencer on (mode 1) or off: no shot for 3 s.
+[alt]
+kind = "silencer"
+time = 3.0
+
+[sounds]
+fire = "weapons/usp_unsil-1.wav"
+fire_alt = "weapons/usp1.wav;weapons/usp2.wav"
+empty = "weapons/dryfire_pistol.wav"
+
+[models]
+world = "models/p_usp.mdl"
+view = "models/v_usp.mdl"
+
+[hud]
+name = "USP"
+icon = "d_usp"
+
+[hooks."cs16:gun"]
+accuracy = { model = "time", start = 0.92, period = 0.3, rate = 0.275, low = 0.6 }
+kick = { model = "up", pitch = 2.0 }
+alt_damage = { amount = 30.0, falloff = 0.79 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 1.2]
+moving = [[0.0, 0.0, 0.225]]
+ducked = [0.0, 0.08]
+still = [0.0, 0.1]
+
+# In mode 1 (silenced).
+[hooks."cs16:gun".alt_spread]
+air = [0.0, 1.3]
+moving = [[0.0, 0.0, 0.25]]
+ducked = [0.0, 0.125]
+still = [0.0, 0.15]

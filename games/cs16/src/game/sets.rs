@@ -6,10 +6,11 @@
 //!
 //! - `players`: the eight class bodies (`load_players`: each model with
 //!   its external texture file);
-//! - `weapon/<id>` (`load_weapon`): a gun's models as its data names them
-//!   (view, world, with their `<name>t.mdl` texture and `<name>NN.mdl`
-//!   sequence-group files) and its sounds (`sound/<entry>`); the stand-in
-//!   names none, so it has no set until the game's own guns land (M1);
+//! - `weapon/<id>` (`load_weapon`): a weapon's models as its data names
+//!   them (view, held, and the dropped `w_` beside the held, with their
+//!   `<name>t.mdl` texture and `<name>NN.mdl` sequence-group files) and
+//!   its sounds (`weapons::data_sounds`: each entry's waves under
+//!   `sound/`, and the view model's sound events);
 //! - `map/<name>` (`load_map`): the map converted as another game's
 //!   gameplay loads it (its world, the WADs its `wad` key names, its sky,
 //!   `sound/materials.txt`; the bodies it reads are `players`').
@@ -30,17 +31,27 @@ pub fn load_players(mount: &Mount) {
     super::bodies::add_bodies(mount, true, &mut MapData::default());
 }
 
-/// Read gun `id`'s files (module doc); false if the game has no such gun.
+/// Read weapon `id`'s files (module doc); false if the game has no such
+/// weapon.
 pub fn load_weapon(mount: &Mount, id: &str) -> bool {
-    let Some(w) = super::weapons::weapons().weapons.into_iter().find(|w| w.id == id) else {
+    let Some(w) = super::weapons::data(id) else {
         return false;
     };
-    for model in [&w.models.view, &w.models.world, &w.models.world_alt].into_iter().flatten() {
+    let dropped = super::weapons::dropped_model(&w);
+    for model in [w.models.view.as_ref(), w.models.world.as_ref(), w.models.world_alt.as_ref(), dropped.as_ref()].into_iter().flatten() {
         read_model(mount, model);
     }
-    for entry in w.sounds.iter().flat_map(|s| s.entries()) {
-        let path = if entry.starts_with("sound/") { entry.to_string() } else { format!("sound/{entry}") };
-        let _ = mount.read(&path);
+    // The data's sounds and the view model's sound events, as the kit
+    // reads them (`weapons::add_guns`).
+    let mut entries = super::weapons::data_sounds(&w);
+    if let Some(view) = &w.models.view
+        && let Ok((_, _, waves)) = goldsrc_engine::content::weapon_models::view_model(mount, view, id, false)
+    {
+        entries.extend(waves);
+    }
+    let mut table = Default::default();
+    for entry in entries {
+        goldsrc_engine::content::sounds::add_entry(mount, &entry, &mut table);
     }
     true
 }

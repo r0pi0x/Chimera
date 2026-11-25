@@ -305,8 +305,8 @@ fn games() -> [Game; 7] {
         },
         // Counter-Strike 1.6: its loose folders (`cstrike`, then `valve`,
         // liblist.gam's chain); its sets: `players` (the eight class
-        // bodies), `weapon/<id>` once its guns have files and `map/<name>`
-        // (`cs16::game::sets`). The client's app, 10 (the dedicated
+        // bodies), `weapon/<id>` (every weapon: the guns, knife and
+        // grenades) and `map/<name>` (`cs16::game::sets`). The client's app, 10 (the dedicated
         // server's, HLDS app 90, when packed from it: pass --build). Packed
         // from its pieces' reads (`sets cs16 --pack`), not whole: the
         // install's `valve/` is mostly Half-Life's campaign.
@@ -1015,7 +1015,8 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
         }
         "cs16" => {
             use cs16::game::{sets, weapons};
-            for id in weapons::GUNS {
+            for w in &weapons::weapons().weapons {
+                let id = w.id.as_str();
                 take();
                 sets::load_weapon(&tapped, id);
                 let id = id.rsplit(':').next().unwrap_or(id).trim_start_matches("weapon_");

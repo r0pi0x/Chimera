@@ -2,7 +2,7 @@
 //! conversion (`goldsrc_engine::content::maps`) with CS 1.6's data
 //! (`CS16`): its id, its converter's version (`CONVERTER`, this crate's
 //! build.rs), its spawn points, its gravity and its kit (the player
-//! bodies, `bodies::add_bodies`). The maps listed are the game folder's
+//! bodies, `bodies::add_bodies`; the weapons, `weapons::add_guns`). The maps listed are the game folder's
 //! (`map_names`: `maps/*.bsp` served by the layer that serves de_dust2,
 //! so Half-Life's own maps in `valve/` stay out of pools and pickers; any
 //! map of the chain still loads by id).
@@ -58,10 +58,16 @@ pub static WORDS: MapWords = MapWords {
     surfaces: Some(chimera_core::game_data::GameData::from_text("")),
 };
 
-/// Its kit on its own maps: the player bodies.
+/// Its kit on its own maps: the player bodies and the weapons the load
+/// wants (`weapons::add_guns`).
 fn own_kit(mount: &Mount, kit: KitLoad, decode: bool, data: &mut MapData) {
     if kit.bodies() {
         super::bodies::add_bodies(mount, decode, data);
+    }
+    if kit.any_models() {
+        let names = super::weapons::skeleton_names(data);
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        super::weapons::add_guns(mount, &|id| kit.wants(id), &names, decode, data);
     }
 }
 

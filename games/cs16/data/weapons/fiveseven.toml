@@ -1,0 +1,54 @@
+# Five-SeveN (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_fiveseven"
+base = "cs16:gun"
+class = "pistol"
+slot = 1
+draw = 0.75
+max_speed = 250.0
+weight = 5
+
+[buy]
+price = 750
+team = 2
+
+[trigger]
+automatic = false
+cycle = 0.15
+
+[magazine]
+clip = 20
+ammo = "cs16:57mm"
+reload = 2.7
+
+[hitscan]
+range = 4096.0
+
+[damage]
+amount = 20.0
+falloff = 0.885
+armor_ratio = 1.5
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/fiveseven-1.wav"
+empty = "weapons/dryfire_pistol.wav"
+
+[models]
+world = "models/p_fiveseven.mdl"
+view = "models/v_fiveseven.mdl"
+
+[hud]
+name = "Five-SeveN"
+icon = "d_fiveseven"
+
+[hooks."cs16:gun"]
+accuracy = { model = "time", start = 0.92, period = 0.275, rate = 0.25, low = 0.725 }
+kick = { model = "up", pitch = 2.0 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 1.5]
+moving = [[0.0, 0.0, 0.255]]
+ducked = [0.0, 0.075]
+still = [0.0, 0.15]

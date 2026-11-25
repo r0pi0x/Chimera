@@ -1,0 +1,50 @@
+# M3 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_m3"
+base = "cs16:gun"
+class = "shotgun"
+slot = 0
+draw = 0.75
+max_speed = 230.0
+weight = 20
+
+[buy]
+price = 1700
+
+[trigger]
+automatic = false
+cycle = 0.875
+
+[magazine]
+clip = 8
+ammo = "cs16:buckshot"
+reload = 0.45
+shells = { start = 0.55, insert = 0.45 }
+
+[hitscan]
+range = 3000.0
+pellets = 9
+spread = { cone = 0.0675 }
+
+[damage]
+amount = 20.0
+falloff = 1.0
+armor_ratio = 1.0
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/m3-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_m3.mdl"
+view = "models/v_m3.mdl"
+
+[hud]
+name = "M3"
+icon = "d_m3"
+
+[hooks."cs16:gun"]
+kick = { model = "whole", ground = [4.0, 6.0], air = [8.0, 11.0] }
+pellet_range = 3000.0

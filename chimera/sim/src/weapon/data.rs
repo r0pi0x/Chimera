@@ -502,6 +502,9 @@ pub struct AimData {
     pub delay: Option<f32>,
     #[serde(default)]
     pub refire: Option<f32>,
+    /// `Backstab::Aim::level`: the aim levelled (no pitch).
+    #[serde(default)]
+    pub level: bool,
 }
 
 /// `Backstab::Behind`.
@@ -1396,6 +1399,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                     dot: a.aim_dot,
                     damage: a.damage * dmg,
                     slow: a.delay.zip(a.refire),
+                    level: a.level,
                 },
             }),
             delay: s.delay,

@@ -1,0 +1,75 @@
+# CS 1.6's ammo types (specs/cs16/weapons.md, "Ammunition"; damage.md,
+# "Wall penetration"): the bullet type's penetration power and maximum
+# distance (units), the reserve cap and the clip bought (rounds, price).
+units = { length = 0.0254 }
+
+[ammo."cs16:9mm"]
+power = 21.0
+max_distance = 800.0
+max = 120
+box_price = 20
+box_rounds = 30
+
+[ammo."cs16:45acp"]
+power = 15.0
+max_distance = 500.0
+max = 100
+box_price = 25
+box_rounds = 12
+
+[ammo."cs16:357sig"]
+power = 25.0
+max_distance = 800.0
+max = 52
+box_price = 50
+box_rounds = 13
+
+[ammo."cs16:50ae"]
+power = 30.0
+max_distance = 1000.0
+max = 35
+box_price = 40
+box_rounds = 7
+
+[ammo."cs16:57mm"]
+power = 30.0
+max_distance = 2000.0
+max = 100
+box_price = 50
+box_rounds = 50
+
+# Pellets pass nothing (weapons.md, "Shotguns").
+[ammo."cs16:buckshot"]
+power = 0.0
+max_distance = 0.0
+max = 32
+box_price = 65
+box_rounds = 8
+
+[ammo."cs16:556nato"]
+power = 35.0
+max_distance = 4000.0
+max = 90
+box_price = 60
+box_rounds = 30
+
+[ammo."cs16:556natobox"]
+power = 35.0
+max_distance = 4000.0
+max = 200
+box_price = 60
+box_rounds = 30
+
+[ammo."cs16:762nato"]
+power = 39.0
+max_distance = 5000.0
+max = 90
+box_price = 80
+box_rounds = 30
+
+[ammo."cs16:338magnum"]
+power = 45.0
+max_distance = 8000.0
+max = 30
+box_price = 125
+box_rounds = 10

@@ -84,6 +84,10 @@ pub fn guest_mount() -> Result<std::sync::Arc<Mount>, String> {
 /// CS 1.6's bodies on another game's map (`lean`: textures' sizes only).
 pub fn dress_guest_in(mount: &Mount, map: &mut MapData, lean: bool) {
     add_bodies(mount, !lean, map);
+    let names = super::weapons::skeleton_names(map);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let kit = crate::map::KitLoad::Players(super::BUNDLE.kept);
+    super::weapons::add_guns(mount, &|id| kit.wants(id), &names, !lean, map);
 }
 
 /// The gait a body plays for `speed` (m/s), its stance and whether it is

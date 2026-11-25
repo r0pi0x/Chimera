@@ -1,0 +1,63 @@
+# AWP (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_awp"
+base = "cs16:gun"
+class = "sniper"
+slot = 0
+draw = 1.45
+max_speed = 210.0
+weight = 30
+
+[buy]
+price = 4750
+
+[trigger]
+automatic = false
+cycle = 1.45
+
+[magazine]
+clip = 10
+ammo = "cs16:338magnum"
+reload = 2.5
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 115.0
+falloff = 0.99
+armor_ratio = 1.95
+
+[penetration]
+objects = 3
+
+[alt]
+kind = "scope"
+fov = [40.0, 10.0]
+max_speed = 150.0
+unzoom_after_shot = true
+overlay = true
+step = 0.3
+sound = "weapons/zoom.wav"
+
+[sounds]
+fire = "weapons/awp1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_awp.mdl"
+view = "models/v_awp.mdl"
+
+[hud]
+name = "AWP"
+icon = "d_awp"
+
+[hooks."cs16:gun"]
+accuracy = { model = "fixed" }
+kick = { model = "up", pitch = 2.0 }
+
+[hooks."cs16:gun".spread]
+air = [0.85, 0.0]
+moving = [[140.0, 0.25, 0.0], [10.0, 0.1, 0.0]]
+ducked = [0.0, 0.0]
+still = [0.001, 0.0]
+unzoomed = 0.08

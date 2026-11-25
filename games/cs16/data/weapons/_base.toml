@@ -1,9 +1,7 @@
-# What every Counter-Strike 1.6 weapon shares (the format: docs/weapon-data.md): the
-# game's length unit in metres and its damage unit as a share of 100 hit
-# points. Stand-ins made by tools/new-game: use the spec's units.
+# What every Counter-Strike 1.6 weapon shares (the format: docs/weapon-data.md):
+# GoldSrc's length unit, the inch, in metres, and damage in hit points of 100.
+# The numbers are specs/cs16/weapons.md's and damage.md's, in our own words;
+# nothing is read from the game's code.
 id = "cs16:base"
 abstract = true
-units = { length = 1.0, damage = 0.01 }
-
-[ammo."cs16:standin"]
-max = 60
+units = { length = 0.0254, damage = 0.01 }

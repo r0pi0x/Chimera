@@ -1,0 +1,60 @@
+# How CS 1.6's bullets pass surfaces (specs/cs16/damage.md, "Wall
+# penetration"): GoldSrc's power rule (`chimera_sim::weapon::
+# PowerPenetration`; the format: docs/weapon-data.md, "Penetration by
+# power"). Each bullet type's power and distance are its ammo's (ammo.toml).
+units = { length = 0.0254 }
+# The damage factor until a material sets one.
+start_factor = 0.5
+# The range left after a wall, as a factor.
+wall_distance = 0.5
+
+# After a player, or the last hit: the power, damage factor and range factor.
+[character]
+power = 42.0
+factor = 0.75
+distance = 0.75
+
+# By `sound/materials.txt`'s letter; `names`: the surface kinds a GoldSrc
+# map gives its faces (goldsrc_engine::content::brushes::surface_kind).
+# No `factor`: the factor stays. Anything else (dirt, glass, snow, slosh,
+# flesh, unknown) leaves power and factor as they are.
+[[material]]
+class = "M"
+names = ["metal"]
+power = 0.15
+factor = 0.2
+
+[[material]]
+class = "C"
+names = ["concrete"]
+power = 0.25
+
+[[material]]
+class = "G"
+names = ["metalgrate"]
+power = 0.5
+factor = 0.4
+
+[[material]]
+class = "V"
+names = ["metalvent"]
+power = 0.5
+factor = 0.45
+
+[[material]]
+class = "T"
+names = ["tile"]
+power = 0.65
+factor = 0.3
+
+[[material]]
+class = "P"
+names = ["computer"]
+power = 0.4
+factor = 0.45
+
+[[material]]
+class = "W"
+names = ["wood"]
+power = 1.0
+factor = 0.6

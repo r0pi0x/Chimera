@@ -1,0 +1,63 @@
+# Scout (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_scout"
+base = "cs16:gun"
+class = "sniper"
+slot = 0
+draw = 1.25
+max_speed = 260.0
+weight = 30
+
+[buy]
+price = 2750
+
+[trigger]
+automatic = false
+cycle = 1.25
+
+[magazine]
+clip = 10
+ammo = "cs16:762nato"
+reload = 2.0
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 75.0
+falloff = 0.98
+armor_ratio = 1.7
+
+[penetration]
+objects = 3
+
+[alt]
+kind = "scope"
+fov = [40.0, 15.0]
+max_speed = 220.0
+unzoom_after_shot = true
+overlay = true
+step = 0.3
+sound = "weapons/zoom.wav"
+
+[sounds]
+fire = "weapons/scout_fire-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_scout.mdl"
+view = "models/v_scout.mdl"
+
+[hud]
+name = "Scout"
+icon = "d_scout"
+
+[hooks."cs16:gun"]
+accuracy = { model = "fixed" }
+kick = { model = "up", pitch = 2.0 }
+
+[hooks."cs16:gun".spread]
+air = [0.2, 0.0]
+moving = [[170.0, 0.075, 0.0]]
+ducked = [0.0, 0.0]
+still = [0.007, 0.0]
+unzoomed = 0.025

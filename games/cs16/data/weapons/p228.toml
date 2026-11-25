@@ -1,0 +1,53 @@
+# P228 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_p228"
+base = "cs16:gun"
+class = "pistol"
+slot = 1
+draw = 0.75
+max_speed = 250.0
+weight = 5
+
+[buy]
+price = 600
+
+[trigger]
+automatic = false
+cycle = 0.15
+
+[magazine]
+clip = 13
+ammo = "cs16:357sig"
+reload = 2.7
+
+[hitscan]
+range = 4096.0
+
+[damage]
+amount = 32.0
+falloff = 0.8
+armor_ratio = 1.25
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/p228-1.wav"
+empty = "weapons/dryfire_pistol.wav"
+
+[models]
+world = "models/p_p228.mdl"
+view = "models/v_p228.mdl"
+
+[hud]
+name = "P228"
+icon = "d_p228"
+
+[hooks."cs16:gun"]
+accuracy = { model = "time", start = 0.9, period = 0.325, rate = 0.3, low = 0.6 }
+kick = { model = "up", pitch = 2.0 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 1.5]
+moving = [[0.0, 0.0, 0.255]]
+ducked = [0.0, 0.075]
+still = [0.0, 0.15]

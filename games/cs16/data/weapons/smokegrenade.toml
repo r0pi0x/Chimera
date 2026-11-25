@@ -1,0 +1,28 @@
+# Smoke grenade (specs/cs16/weapons.md, "Grenades"; the `cs16:grenade` hook:
+# games/cs16/src/game/weapons/grenades.rs).
+id = "cs16:weapon_smokegrenade"
+base = "cs16:base"
+slot = 3
+draw = 0.75
+max_speed = 250.0
+weight = 1
+death_drop = 1
+kept_on_drop = true
+
+[buy]
+price = 300
+
+[sounds]
+
+[models]
+world = "models/p_smokegrenade.mdl"
+view = "models/v_smokegrenade.mdl"
+
+[hud]
+name = "Smoke grenade"
+icon = "d_smokegrenade"
+
+[hooks."cs16:grenade"]
+effect = "smoke"
+max = 1
+bounce_sound = "weapons/grenade_hit2.wav"

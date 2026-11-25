@@ -1,0 +1,53 @@
+# Desert Eagle (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_deagle"
+base = "cs16:gun"
+class = "heavy_pistol"
+slot = 1
+draw = 0.75
+max_speed = 250.0
+weight = 7
+
+[buy]
+price = 650
+
+[trigger]
+automatic = false
+cycle = 0.225
+
+[magazine]
+clip = 7
+ammo = "cs16:50ae"
+reload = 2.2
+
+[hitscan]
+range = 4096.0
+
+[damage]
+amount = 54.0
+falloff = 0.81
+armor_ratio = 1.5
+
+[penetration]
+objects = 2
+
+[sounds]
+fire = "weapons/deagle-1.wav;weapons/deagle-2.wav"
+empty = "weapons/dryfire_pistol.wav"
+
+[models]
+world = "models/p_deagle.mdl"
+view = "models/v_deagle.mdl"
+
+[hud]
+name = "Desert Eagle"
+icon = "d_deagle"
+
+[hooks."cs16:gun"]
+accuracy = { model = "time", start = 0.9, period = 0.4, rate = 0.35, low = 0.55 }
+kick = { model = "up", pitch = 2.0 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 1.5]
+moving = [[0.0, 0.0, 0.25]]
+ducked = [0.0, 0.115]
+still = [0.0, 0.13]

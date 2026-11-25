@@ -1,0 +1,29 @@
+# What every CS 1.6 gun shares (specs/cs16/weapons.md, damage.md). Each gun's
+# file gives its row of the spec's tables and its `cs16:gun` hook (its
+# accuracy, spread by state, kick, modes: games/cs16/src/game/weapons/gun.rs).
+id = "cs16:gun"
+base = "cs16:base"
+abstract = true
+
+[trigger]
+# Timers are set (not added) and counted down per command, so a cycle
+# rounds up to whole commands (weapons.md, "Common rules").
+timing = "set"
+
+[hitscan]
+pellets = 1
+# Shots go along the view angles plus the punch (weapons.md, "Recoil").
+punch_scale = 1.0
+
+[damage]
+# damage x range modifier^(distance / 500), whole points (damage.md, "Range falloff").
+falloff_step = 500.0
+# The hit zones (damage.md, "Hit zones").
+hitgroups = { head = 4.0, chest = 1.0, stomach = 1.25, arm = 1.0, leg = 0.75 }
+impulse = 0.0
+quantum = 1.0
+
+[anim]
+# Ours: the view model idles 2 s after an attack, then every 20 s.
+idle_after = 2.0
+idle_interval = 20.0

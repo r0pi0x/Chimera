@@ -1,9 +1,10 @@
 //! What Counter-Strike 1.6 lends other games' apps (`chimera_core::game_parts`):
-//! its stand-in gun and its movement. A scaffold (`scaffold: true`): reported,
-//! but its gun is in no gun game ladder nor the sandbox until its first real
-//! gun lands; then `scaffold: false` makes it `playable`, and a player
-//! holding its gun is this game's, wears its body and moves on its movement. Its HUD is
-//! the shell's minimal one until it has its own.
+//! its guns by class (`weapons`: the 24 guns and the HE grenade; the
+//! flashbang and smoke grenade hurt nobody, so no ladder deals them), its
+//! knife and its movement. Not a scaffold since its guns landed (M1): its
+//! guns are dealt into the gun game's ladders and the sandbox, and a
+//! player holding one is this game's, wears its body and moves on its
+//! movement. Its HUD is the shell's minimal one until it has its own.
 //!
 //! No map is claimed (`PARTS.maps` is empty): its maps enter an app's
 //! automatic pool from the install or the asset store the machine has, as
@@ -15,11 +16,39 @@
 use chimera_core::game_data::GameData;
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 
+use super::weapons as w;
+
 /// The game's parts.
 pub static PARTS: GameParts = GameParts {
     game: super::GAME,
-    guns: &[GunPart { id: super::weapons::STANDIN, class: GunClass::Pistol }],
-    knife: None,
+    guns: &[
+        gun(w::GLOCK, GunClass::Pistol),
+        gun(w::USP, GunClass::Pistol),
+        gun(w::P228, GunClass::Pistol),
+        gun(w::DEAGLE, GunClass::HeavyPistol),
+        gun(w::ELITE, GunClass::Pistol),
+        gun(w::FIVESEVEN, GunClass::Pistol),
+        gun(w::M3, GunClass::Shotgun),
+        gun(w::XM1014, GunClass::Shotgun),
+        gun(w::MAC10, GunClass::Smg),
+        gun(w::TMP, GunClass::Smg),
+        gun(w::MP5, GunClass::Smg),
+        gun(w::UMP45, GunClass::Smg),
+        gun(w::P90, GunClass::Smg),
+        gun(w::GALIL, GunClass::Rifle),
+        gun(w::FAMAS, GunClass::Rifle),
+        gun(w::AK47, GunClass::Rifle),
+        gun(w::M4A1, GunClass::Rifle),
+        gun(w::SG552, GunClass::Rifle),
+        gun(w::AUG, GunClass::Rifle),
+        gun(w::M249, GunClass::Heavy),
+        gun(w::SCOUT, GunClass::Sniper),
+        gun(w::AWP, GunClass::Sniper),
+        gun(w::SG550, GunClass::Marksman),
+        gun(w::G3SG1, GunClass::Marksman),
+        gun(w::HEGRENADE, GunClass::Grenade),
+    ],
+    knife: Some(w::KNIFE),
     movement: Some(super::movement::ID),
     characters: None,
     hud: None,
@@ -29,10 +58,12 @@ pub static PARTS: GameParts = GameParts {
     match_lost_sound: None,
     music: false,
     cues: None,
-    // Made by tools/new-game: out of ladders and the sandbox until its
-    // first real gun lands (then `false`).
-    scaffold: true,
+    scaffold: false,
 };
+
+const fn gun(id: &'static str, class: GunClass) -> GunPart {
+    GunPart { id, class }
+}
 
 /// Its map pool's rules (data/map_pool.toml; `chimera_sim::minigame::map_fit`).
 pub const POOL_RULES: GameData = chimera_core::game_data!("data/map_pool.toml");

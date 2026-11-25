@@ -1,0 +1,28 @@
+# Flashbang (specs/cs16/weapons.md, "Grenades"; the `cs16:grenade` hook:
+# games/cs16/src/game/weapons/grenades.rs).
+id = "cs16:weapon_flashbang"
+base = "cs16:base"
+slot = 3
+draw = 0.75
+max_speed = 250.0
+weight = 2
+death_drop = 2
+kept_on_drop = true
+
+[buy]
+price = 200
+
+[sounds]
+
+[models]
+world = "models/p_flashbang.mdl"
+view = "models/v_flashbang.mdl"
+
+[hud]
+name = "Flashbang"
+icon = "d_flashbang"
+
+[hooks."cs16:grenade"]
+effect = "flash"
+max = 2
+bounce_sound = "weapons/grenade_hit1.wav"

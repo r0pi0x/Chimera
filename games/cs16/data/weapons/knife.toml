@@ -1,0 +1,67 @@
+# Knife (specs/cs16/weapons.md, "Knife"): slash 48 units then a ducked-size
+# box, always 15 (the "faster first slash" quirk never applies); stab 32
+# units, 65, x 3 from behind (the attacker's level view and the victim's
+# level facing within acos 0.8). Bullet-type hits: hit zones, armour
+# (ratio 1.7) and team rules apply.
+id = "cs16:weapon_knife"
+base = "cs16:base"
+slot = 2
+draw = 0.75
+max_speed = 250.0
+weight = 0
+undroppable = true
+
+[melee.primary]
+range = 48.0
+hull = 16.0
+facing_cos = -1.0
+refine = true
+refine_box = [[-16.0, -16.0, -18.0], [16.0, 16.0, 18.0]]
+damage = 15.0
+hitgroup_scale = { head = 4.0, chest = 1.0, stomach = 1.25, arm = 1.0, leg = 0.75 }
+hit_refire = 0.4
+miss_refire = 0.35
+miss_refire_other = 0.5
+force = 0.0
+kind = "bullet"
+armor_ratio = 1.7
+quantum = 1.0
+sound_hit = "weapons/knife_hit1.wav;weapons/knife_hit2.wav;weapons/knife_hit3.wav;weapons/knife_hit4.wav"
+sound_hit_world = "weapons/knife_hitwall1.wav"
+sound_miss = "weapons/knife_slash1.wav;weapons/knife_slash2.wav"
+
+[melee.secondary]
+range = 32.0
+hull = 16.0
+facing_cos = -1.0
+refine = true
+refine_box = [[-16.0, -16.0, -18.0], [16.0, 16.0, 18.0]]
+damage = 65.0
+backstab = { aim_dot = 0.8, damage = 195.0, level = true }
+hitgroup_scale = { head = 4.0, chest = 1.0, stomach = 1.25, arm = 1.0, leg = 0.75 }
+hit_refire = 1.1
+miss_refire = 1.0
+miss_refire_other = 1.0
+force = 0.0
+kind = "bullet"
+armor_ratio = 1.7
+quantum = 1.0
+sound_hit = "weapons/knife_stab.wav"
+sound_hit_world = "weapons/knife_hitwall1.wav"
+sound_miss = "weapons/knife_slash1.wav;weapons/knife_slash2.wav"
+
+[sounds]
+deploy = "weapons/knife_deploy1.wav"
+
+[models]
+world = "models/p_knife.mdl"
+view = "models/v_knife.mdl"
+
+[hud]
+name = "Knife"
+icon = "d_knife"
+
+[anim]
+idle_after = 20.0
+idle_interval = 20.0
+idle_after_draw = true

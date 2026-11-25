@@ -1,0 +1,59 @@
+# TMP (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_tmp"
+base = "cs16:gun"
+class = "smg"
+slot = 0
+draw = 0.75
+max_speed = 250.0
+weight = 25
+
+[buy]
+price = 1250
+team = 2
+
+[trigger]
+automatic = true
+cycle = 0.07
+
+[magazine]
+clip = 30
+ammo = "cs16:9mm"
+reload = 2.12
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 20.0
+falloff = 0.85
+armor_ratio = 1.0
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/tmp-1.wav;weapons/tmp-2.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_tmp.mdl"
+view = "models/v_tmp.mdl"
+
+[hud]
+name = "TMP"
+icon = "d_tmp"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 200.0, power = 3.0, offset = 0.55, cap = 1.4 }
+kick = { model = "table", order = "smg" }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 0.25]
+still = [0.0, 0.03]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+air = [1.1, 0.5, 0.35, 0.045, 4.5, 3.5, 6.0]
+moving = [0.8, 0.4, 0.2, 0.03, 3.0, 2.5, 7.0]
+ducked = [0.7, 0.35, 0.125, 0.025, 2.5, 2.0, 10.0]
+standing = [0.725, 0.375, 0.15, 0.025, 2.75, 2.25, 9.0]

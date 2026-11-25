@@ -12,7 +12,10 @@
 //! - `entities`: the entity list, spawns, brush entities;
 //! - `sky`: the six `gfx/env` faces;
 //! - `studio`: a studio model (MDL v10) as a character body with its
-//!   sequences.
+//!   sequences (and their events);
+//! - `weapon_models`: a gun's view model (`v_*.mdl`, with the hands) and
+//!   held model (`p_*.mdl`, on the holder's hand by bone name);
+//! - `sounds`: waves under `sound/` as sound entries named by path.
 //!
 //! Space: GoldSrc's axes and unit are Source's (bsp.md, "Units and
 //! conventions"), so a point (x, y, z) in units is the engine's
@@ -25,8 +28,10 @@ pub mod entities;
 pub mod lightmap;
 pub mod maps;
 pub mod sky;
+pub mod sounds;
 pub mod studio;
 pub mod textures;
+pub mod weapon_models;
 
 use bevy::math::Vec3;
 

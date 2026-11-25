@@ -1,0 +1,63 @@
+# G3/SG-1 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_g3sg1"
+base = "cs16:gun"
+class = "marksman"
+slot = 0
+draw = 0.75
+max_speed = 210.0
+weight = 20
+
+[buy]
+price = 5000
+team = 1
+
+[trigger]
+automatic = true
+cycle = 0.25
+
+[magazine]
+clip = 20
+ammo = "cs16:762nato"
+reload = 3.5
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 80.0
+falloff = 0.98
+armor_ratio = 1.65
+
+[penetration]
+objects = 3
+
+[alt]
+kind = "scope"
+fov = [40.0, 15.0]
+max_speed = 150.0
+overlay = true
+step = 0.3
+sound = "weapons/zoom.wav"
+
+[sounds]
+fire = "weapons/g3sg1-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_g3sg1.mdl"
+view = "models/v_g3sg1.mdl"
+
+[hud]
+name = "G3/SG-1"
+icon = "d_g3sg1"
+
+[hooks."cs16:gun"]
+accuracy = { model = "since", base = 0.55, rate = 0.3, cap = 0.98, before = true, start = 0.98 }
+kick = { model = "random", up = [0.75, 1.75], lift = 0.25, side = 0.75 }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 0.45]
+moving = [[0.0, 0.0, 0.15]]
+ducked = [0.0, 0.035]
+still = [0.0, 0.055]
+unzoomed_scaled = 0.025

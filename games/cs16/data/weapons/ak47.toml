@@ -1,0 +1,60 @@
+# AK-47 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_ak47"
+base = "cs16:gun"
+class = "rifle"
+slot = 0
+draw = 0.75
+max_speed = 221.0
+weight = 25
+
+[buy]
+price = 2500
+team = 1
+
+[trigger]
+automatic = true
+cycle = 0.0955
+
+[magazine]
+clip = 30
+ammo = "cs16:762nato"
+reload = 2.45
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 36.0
+falloff = 0.98
+armor_ratio = 1.55
+
+[penetration]
+objects = 2
+
+[sounds]
+fire = "weapons/ak47-1.wav;weapons/ak47-2.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_ak47.mdl"
+view = "models/v_ak47.mdl"
+
+[hud]
+name = "AK-47"
+icon = "d_ak47"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 200.0, power = 3.0, offset = 0.35, cap = 1.25 }
+kick = { model = "table", order = "rifle" }
+
+[hooks."cs16:gun".spread]
+air = [0.04, 0.4]
+moving = [[140.0, 0.04, 0.07]]
+still = [0.0, 0.0275]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+moving = [1.5, 0.45, 0.225, 0.05, 6.5, 2.5, 7.0]
+air = [2.0, 1.0, 0.5, 0.35, 9.0, 6.0, 5.0]
+ducked = [0.9, 0.35, 0.15, 0.025, 5.5, 1.5, 9.0]
+standing = [1.0, 0.375, 0.175, 0.0375, 5.75, 1.75, 8.0]

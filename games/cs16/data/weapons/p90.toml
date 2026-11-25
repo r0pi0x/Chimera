@@ -1,0 +1,59 @@
+# P90 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_p90"
+base = "cs16:gun"
+class = "smg"
+slot = 0
+draw = 0.75
+max_speed = 245.0
+weight = 26
+
+[buy]
+price = 2350
+
+[trigger]
+automatic = true
+cycle = 0.066
+
+[magazine]
+clip = 50
+ammo = "cs16:57mm"
+reload = 3.4
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 21.0
+falloff = 0.885
+armor_ratio = 1.5
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/p90-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_p90.mdl"
+view = "models/v_p90.mdl"
+
+[hud]
+name = "P90"
+icon = "d_p90"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 175.0, power = 2.0, offset = 0.45, cap = 1.0 }
+kick = { model = "table", order = "smg" }
+
+[hooks."cs16:gun".spread]
+air = [0.0, 0.3]
+moving = [[170.0, 0.0, 0.115]]
+still = [0.0, 0.045]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+air = [0.9, 0.45, 0.35, 0.04, 5.25, 3.5, 4.0]
+moving = [0.45, 0.3, 0.2, 0.0275, 4.0, 2.25, 7.0]
+ducked = [0.275, 0.2, 0.125, 0.02, 3.0, 1.0, 9.0]
+standing = [0.3, 0.225, 0.125, 0.02, 3.25, 1.25, 8.0]

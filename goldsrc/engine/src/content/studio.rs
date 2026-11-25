@@ -61,7 +61,7 @@ use crate::{
     map::{
         BoneBox, LayerAddress, LayerCombine, LayerCoords, MapAlpha, MapBone, MapCharacterModel, MapData, MapLayer,
         MapMesh, MapModel, MapTexture,
-        anim::{AnimSet, Animation, Axis, BonePose, PoseParam, Sequence, Track},
+        anim::{AnimEvent, AnimSet, Animation, Axis, BonePose, PoseParam, Sequence, Track},
     },
     mount::Mount,
 };
@@ -118,13 +118,13 @@ pub fn upper_body(name: &str) -> bool {
     n.contains("_aim_") || n.contains("_shoot") || n.contains("_reload_") || n.contains("flinch")
 }
 
-fn raise(parent: i32, p: Vec3) -> Vec3 {
-    if parent < 0 { p + Vec3::Z * STAND_HALF_HEIGHT } else { p }
+fn raise(parent: i32, p: Vec3, lift: f32) -> Vec3 {
+    if parent < 0 { p + Vec3::Z * lift } else { p }
 }
 
 /// Bone `i`'s local pose at frame `f` of blend `blend` of sequence `seq`
 /// (raised when a root), from each channel's stored values.
-fn locals_of(mdl: &Mdl, anim: &[u8], seq: usize, blend: usize) -> Result<Vec<Vec<BonePose>>, String> {
+fn locals_of(mdl: &Mdl, anim: &[u8], seq: usize, blend: usize, lift: f32) -> Result<Vec<Vec<BonePose>>, String> {
     let frames = mdl.sequences[seq].frames.max(1) as usize;
     let mut out = Vec::with_capacity(mdl.bones.len());
     for (i, b) in mdl.bones.iter().enumerate() {
@@ -136,7 +136,7 @@ fn locals_of(mdl: &Mdl, anim: &[u8], seq: usize, blend: usize) -> Result<Vec<Vec
         out.push(
             (0..frames)
                 .map(|f| {
-                    let p = raise(b.parent, Vec3::new(value(0, f), value(1, f), value(2, f)));
+                    let p = raise(b.parent, Vec3::new(value(0, f), value(1, f), value(2, f)), lift);
                     (euler([value(3, f), value(4, f), value(5, f)]), p)
                 })
                 .collect(),
@@ -176,12 +176,20 @@ pub fn bind_locals(mdl: &Mdl) -> Vec<BonePose> {
         .collect()
 }
 
-/// Model `mdl`'s sequences as an animation set (module doc).
+/// Model `mdl`'s sequences as an animation set (module doc), its roots
+/// raised to a character's feet.
 pub fn anim_set(mdl: &Mdl, warnings: &mut Vec<String>) -> AnimSet {
+    anim_set_lifted(mdl, warnings, STAND_HALF_HEIGHT)
+}
+
+/// `anim_set` with the roots raised by `lift` units (0: as stored, a view
+/// model's: its origin is the eye). Each sequence's events
+/// (`AnimEvent`: its number and options) at the cycle of their frame.
+pub fn anim_set_lifted(mdl: &Mdl, warnings: &mut Vec<String>, lift: f32) -> AnimSet {
     let defaults: Vec<BonePose> = mdl
         .bones
         .iter()
-        .map(|b| (euler([b.value[3], b.value[4], b.value[5]]), raise(b.parent, Vec3::new(b.value[0], b.value[1], b.value[2]))))
+        .map(|b| (euler([b.value[3], b.value[4], b.value[5]]), raise(b.parent, Vec3::new(b.value[0], b.value[1], b.value[2]), lift)))
         .collect();
     let parents: Vec<Option<usize>> = mdl.bones.iter().map(|b| (b.parent >= 0).then_some(b.parent as usize)).collect();
     // The upper body: the spine and every bone under it.
@@ -219,7 +227,7 @@ pub fn anim_set(mdl: &Mdl, warnings: &mut Vec<String>) -> AnimSet {
         let motion = if speed > 0.0 { Vec2::new(lm.x, lm.y) / duration } else { Vec2::ZERO };
         let mut anims = Vec::with_capacity(blends);
         for blend in 0..blends {
-            let locals = match locals_of(mdl, &mdl.bytes, si, blend) {
+            let locals = match locals_of(mdl, &mdl.bytes, si, blend, lift) {
                 Ok(l) => l,
                 Err(e) => {
                     warnings.push(format!("sequence {} blend {blend}: {e}", s.name));
@@ -266,6 +274,16 @@ pub fn anim_set(mdl: &Mdl, warnings: &mut Vec<String>) -> AnimSet {
             anims,
             axes: [axis0, Axis::default()],
             bone_weights: weights,
+            events: s
+                .events
+                .iter()
+                .map(|e| AnimEvent {
+                    cycle: if s.frames > 1 { e.frame as f32 / (s.frames - 1) as f32 } else { 0.0 },
+                    event: e.event,
+                    name: String::new(),
+                    options: e.options.clone(),
+                })
+                .collect(),
             ..Default::default()
         });
     }
@@ -275,7 +293,7 @@ pub fn anim_set(mdl: &Mdl, warnings: &mut Vec<String>) -> AnimSet {
 
 /// The texture records of `mdl`, or of its `<name>T.mdl` beside `path`
 /// when it has none.
-fn textures_of(mount: &Mount, mdl: &Mdl, path: &str) -> Result<Mdl, String> {
+pub fn textures_of(mount: &Mount, mdl: &Mdl, path: &str) -> Result<Mdl, String> {
     if !mdl.textures.is_empty() {
         return Ok(mdl.clone());
     }
@@ -284,16 +302,9 @@ fn textures_of(mount: &Mount, mdl: &Mdl, path: &str) -> Result<Mdl, String> {
     Mdl::parse(bytes).map_err(|e| format!("{t}: {e}"))
 }
 
-/// The model at `path` on `mount` as a body of game `game` (module doc);
-/// `decode` off: its textures placeholders of their sizes.
-pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) -> Result<Body, String> {
-    let bytes = mount.read(path).map_err(|e| format!("{path}: {e}"))?;
-    let mdl = Mdl::parse(bytes).map_err(|e| format!("{path}: {e}"))?;
-    let tex_file = textures_of(mount, &mdl, path)?;
-    let mut warnings = Vec::new();
-    let set = anim_set(&mdl, &mut warnings);
-    // The bind pose (unraised) in skeleton space.
-    let bind = bind_locals(&mdl);
+/// The bones' bind poses in model space (the skeleton's, as stored).
+pub fn bind_globals(mdl: &Mdl) -> Vec<BonePose> {
+    let bind = bind_locals(mdl);
     let mut globals: Vec<BonePose> = Vec::with_capacity(mdl.bones.len());
     for (i, b) in mdl.bones.iter().enumerate() {
         let (q, p) = bind[i];
@@ -302,11 +313,32 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
             None => (q, p),
         });
     }
-    let root = root();
-    let to_char = |p: Vec3| root.rotation * p * METERS_PER_UNIT;
-    // The textures, each once.
-    let skin = tex_file.skins.first().cloned().unwrap_or_default();
-    let textures: Vec<MapTexture> = tex_file
+    globals
+}
+
+/// The bones in model space at frame `frame` of sequence `seq`'s first
+/// blend, unraised (None: no such sequence, or its animation unread).
+pub fn posed_globals(mdl: &Mdl, seq: usize, frame: usize) -> Option<Vec<BonePose>> {
+    if mdl.sequences.get(seq)?.group != 0 {
+        return None;
+    }
+    let locals = locals_of(mdl, &mdl.bytes, seq, 0, 0.0).ok()?;
+    let mut globals: Vec<BonePose> = Vec::with_capacity(mdl.bones.len());
+    for (i, b) in mdl.bones.iter().enumerate() {
+        let frames = locals.get(i)?;
+        let (q, p) = *frames.get(frame.min(frames.len().saturating_sub(1)))?;
+        globals.push(match (b.parent >= 0).then(|| globals.get(b.parent as usize)).flatten() {
+            Some((pq, pp)) => (*pq * q, *pp + *pq * p),
+            None => (q, p),
+        });
+    }
+    Some(globals)
+}
+
+/// The textures of `tex_file` (a model's, or its `<name>T.mdl`'s), each
+/// once, named after `path`; `decode` off: placeholders of their sizes.
+pub fn textures(tex_file: &Mdl, path: &str, decode: bool) -> Vec<MapTexture> {
+    tex_file
         .textures
         .iter()
         .map(|t| MapTexture {
@@ -318,9 +350,24 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
             rgba8: if decode { t.rgba() } else { Vec::new() },
             bc: None,
         })
-        .collect();
-    let mut by_texture: Vec<Option<MapMesh>> = vec![None; textures.len().max(1)];
-    let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
+        .collect()
+}
+
+/// Where a vertex goes (`meshes`): from its bone and its bind position and
+/// normal in model space, the list it joins and its position and normal
+/// there; None leaves its triangles out.
+pub type Place<'a> = &'a dyn Fn(usize, Vec3, Vec3) -> Option<(usize, Vec3, Vec3)>;
+
+/// Body number 0's submodels as meshes (one per texture) in `lists`
+/// lists, each vertex placed by `place` and rigidly skinned to its bone,
+/// with each list's bounds; texture indices are into `tex_file`'s
+/// textures (`textures`).
+pub fn meshes(mdl: &Mdl, tex_file: &Mdl, lists: usize, place: Place) -> Vec<(Vec<MapMesh>, (Vec3, Vec3))> {
+    let globals = bind_globals(mdl);
+    let skin = tex_file.skins.first().cloned().unwrap_or_default();
+    let count = tex_file.textures.len().max(1);
+    let mut by_texture: Vec<Vec<Option<MapMesh>>> = vec![vec![None; count]; lists];
+    let mut bounds = vec![(Vec3::MAX, Vec3::MIN); lists];
     for sub in mdl.submodels_for_body(0) {
         let vertex = |i: i16| -> Option<(usize, Vec3)> {
             let i = usize::try_from(i).ok()?;
@@ -337,22 +384,6 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
         for mesh in &sub.meshes {
             let ti = skin.get(mesh.skin_ref.max(0) as usize).copied().unwrap_or(0).max(0) as usize;
             let Some(tex) = tex_file.textures.get(ti) else { continue };
-            let slot = &mut by_texture[ti.min(textures.len().saturating_sub(1))];
-            let out = slot.get_or_insert_with(|| MapMesh {
-                material: tex.name.to_ascii_lowercase(),
-                texture: Some(ti),
-                color: [255; 3],
-                alpha: if tex.flags & 64 != 0 {
-                    MapAlpha::Mask(0.5)
-                } else if tex.flags & 32 != 0 {
-                    MapAlpha::Add
-                } else {
-                    MapAlpha::Opaque
-                },
-                unlit: tex.flags & 4 != 0,
-                layer: (tex.flags & CHROME != 0).then(|| chrome_layer(&tex.name, ti)),
-                ..Default::default()
-            });
             for tri in mesh.triangles() {
                 let corners: Vec<(usize, Vec3, Vec3)> = tri
                     .iter()
@@ -361,18 +392,38 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
                 if corners.len() != 3 {
                     continue;
                 }
+                let placed: Vec<(usize, Vec3, Vec3)> = corners.iter().filter_map(|(b, p, n)| place(*b, *p, *n)).collect();
+                if placed.len() != 3 || placed.iter().any(|c| c.0 != placed[0].0 || c.0 >= lists) {
+                    continue;
+                }
+                let list = placed[0].0;
+                let out = by_texture[list][ti.min(count - 1)].get_or_insert_with(|| MapMesh {
+                    material: tex.name.to_ascii_lowercase(),
+                    texture: Some(ti),
+                    color: [255; 3],
+                    alpha: if tex.flags & 64 != 0 {
+                        MapAlpha::Mask(0.5)
+                    } else if tex.flags & 32 != 0 {
+                        MapAlpha::Add
+                    } else {
+                        MapAlpha::Opaque
+                    },
+                    unlit: tex.flags & 4 != 0,
+                    layer: (tex.flags & CHROME != 0).then(|| chrome_layer(&tex.name, ti)),
+                    ..Default::default()
+                });
                 let face = (corners[1].1 - corners[0].1).cross(corners[2].1 - corners[0].1);
                 let along: Vec3 = corners.iter().map(|c| c.2).sum();
                 let order = if face.dot(along) < 0.0 { [0, 2, 1] } else { [0, 1, 2] };
                 for k in order {
-                    let (bone, p, n) = corners[k];
+                    let (bone, at, n) = (corners[k].0, placed[k].1, placed[k].2);
                     let c = tri[k];
-                    let at = to_char(p);
-                    lo = lo.min(at);
-                    hi = hi.max(at);
+                    let b = &mut bounds[list];
+                    b.0 = b.0.min(at);
+                    b.1 = b.1.max(at);
                     out.indices.push(out.positions.len() as u32);
                     out.positions.push(at.to_array());
-                    out.normals.push((root.rotation * n).to_array());
+                    out.normals.push(n.to_array());
                     out.uvs.push([c.s as f32 / tex.width.max(1) as f32, c.t as f32 / tex.height.max(1) as f32]);
                     out.joints.push([bone as u16, 0, 0, 0]);
                     out.joint_weights.push([1.0, 0.0, 0.0, 0.0]);
@@ -380,7 +431,45 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
             }
         }
     }
-    let meshes: Vec<MapMesh> = by_texture.into_iter().flatten().filter(|m| !m.indices.is_empty()).collect();
+    by_texture
+        .into_iter()
+        .zip(bounds)
+        .map(|(list, (lo, hi))| {
+            let meshes = list.into_iter().flatten().filter(|m| !m.indices.is_empty()).collect();
+            (meshes, if lo.x <= hi.x { (lo, hi) } else { Default::default() })
+        })
+        .collect()
+}
+
+/// The model's bones in their bind pose (relative to their parents).
+pub fn map_bones(mdl: &Mdl) -> Vec<MapBone> {
+    mdl.bones
+        .iter()
+        .zip(bind_locals(mdl))
+        .map(|(b, (q, p))| MapBone {
+            name: b.name.clone(),
+            parent: (b.parent >= 0).then_some(b.parent as usize),
+            position: p,
+            rotation: q,
+        })
+        .collect()
+}
+
+/// The model at `path` on `mount` as a body of game `game` (module doc);
+/// `decode` off: its textures placeholders of their sizes.
+pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) -> Result<Body, String> {
+    let bytes = mount.read(path).map_err(|e| format!("{path}: {e}"))?;
+    let mdl = Mdl::parse(bytes).map_err(|e| format!("{path}: {e}"))?;
+    let tex_file = textures_of(mount, &mdl, path)?;
+    let mut warnings = Vec::new();
+    let set = anim_set(&mdl, &mut warnings);
+    let globals = bind_globals(&mdl);
+    let root = root();
+    let to_char = |p: Vec3| root.rotation * p * METERS_PER_UNIT;
+    let textures = textures(&tex_file, path, decode);
+    let (meshes, bounds) = meshes(&mdl, &tex_file, 1, &|_, p, n| Some((0, to_char(p), root.rotation * n)))
+        .pop()
+        .unwrap_or_default();
     if meshes.is_empty() {
         return Err(format!("{path}: no meshes"));
     }
@@ -425,28 +514,14 @@ pub fn character(mount: &Mount, game: &'static str, path: &str, decode: bool) ->
             }
         })
         .collect();
-    let bones: Vec<MapBone> = mdl
-        .bones
-        .iter()
-        .zip(&bind)
-        .map(|(b, (q, p))| MapBone {
-            name: b.name.clone(),
-            parent: (b.parent >= 0).then_some(b.parent as usize),
-            position: *p,
-            rotation: *q,
-        })
-        .collect();
+    let bones = map_bones(&mdl);
     Ok(Body {
         character: MapCharacterModel {
             game: Some(game),
             team: None,
             name: None,
             class: None,
-            model: MapModel {
-                meshes,
-                bounds: if lo.x <= hi.x { (lo, hi) } else { Default::default() },
-                ..Default::default()
-            },
+            model: MapModel { meshes, bounds, ..Default::default() },
             hitboxes,
             bones,
             root,

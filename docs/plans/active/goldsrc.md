@@ -24,7 +24,7 @@ Force) is a small port on the same loader.
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Left: the lightmap brightening against captures; the logic's sounds and debris |
-| M1 weapons | not started | §5 |
+| M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Left: muzzle flash sprites and shells, the HE's and smoke's looks, the bodies' weapon sequences, measurements (weapons.md open questions) |
 | M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
 | M3 party rungs | not started | §5 |
 
@@ -334,6 +334,8 @@ check learns the `goldsrc` loader family in M0
    (`GameParts::knife`); HE grenades (flashbang and smoke later); view
    models (`v_*.mdl`, arms included) with their sequences' events
    (sounds, shells, muzzle flash sprites), `p_`/`w_` models, sounds.
+   Done 2026-11-25 (Log), flashbang and smoke included; the muzzle
+   flash sprites and shells left.
 3. **M2, movement**: the shared Quake-lineage movement lifted into
    Chimera (§4); `cs16:movement` on it with CS 1.6's config and the
    differences of §4 (hull traces, duck, edge friction, landing
@@ -629,3 +631,52 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   install). mdl.md: attachments at 212/216, sound tables at 220. bsp.md:
   the lightmap blocks pack with no gaps; `disposal`, `pool_party`,
   `rocket_frenzy` carry 837, 855, 822 trailing bytes.
+- 2026-11-25: M1, CS 1.6's weapons (specs/cs16/weapons.md, damage.md,
+  view_and_hud.md's flash fade). `games/cs16/data/weapons`: the 24 guns
+  in the spec's numbers (damage, range modifier, count and bullet type,
+  armour ratio, cycle, clip, reserve, reload, draw, price, side, speed as
+  `max_speed` with the scopes' zoomed speeds for the movement), the knife
+  and the HE, flash and smoke grenades. `cs16:gun` (games/cs16/src/game/
+  weapons/gun.rs): spread by state from the accuracy (the automatic
+  guns' shots count with the original's whole-number division and the
+  spray's stale accuracy, the recovery 0.4 s after the release then one
+  every 0.0225 s; the pistols' by the time since the last shot; the
+  G3SG1's and SG550's by theirs), the kick tables with the side flag,
+  the pistols' and bolt snipers' 2° up, the autosnipers' random kick and
+  the shotguns' whole degrees, the punch's decay (Chimera's
+  `weapon::decay_punch`, lifted from CS:S), the silencers' damage, the
+  Glock's follow-ups on the next two commands at a fixed 0.05, the
+  FAMAS's 34 first round and follow-ups at its spread, the timers set per
+  command so cycles round up (`timing = "set"`). Penetration: Chimera's
+  new `PowerPenetration` and `PowerRules` (GoldSrc's power, count,
+  per-material power scale and factor, 42/0.75/0.75 after a player or
+  the last hit, the next segment `power` beyond the hit, a start inside
+  a solid passing out freely), `games/cs16/data/penetration.toml`. The
+  knife on Chimera's melee (slash 15 always, stab 65, the backstab by the
+  levelled aim, `Backstab::Aim::level`). Grenades on Chimera's shared
+  grenade (`cs16:grenade`: the throw's bend and speed, 1.5 s fuse checked
+  every 0.1 s, HE 100 linear to 350 through walls, the flash's
+  4 − d × 4/1500 strength with its facing and behind holds and fades,
+  the smoke). Models: `goldsrc_engine::content::weapon_models` (view
+  models unraised in the eye's space with their sequences' events and
+  attachments; held `p_` models on the player skeleton's hand by bone
+  name, the Elites' left gun merged on its own hand), `studio` lifted
+  into a mesh builder (`studio::meshes`) and events on every sequence;
+  `sounds`: GoldSrc's waves as entries named by path (several by `;`).
+  The view rules (`weapons/view.rs`): the `_unsil` sequences with the
+  silencer off, the Glock's burst sequence, the Elites by hand, the
+  shotguns' shell sequences, the knife's and grenades'; 5001-5031 muzzle
+  flashes, 5004 sounds for the holder. `weapon/<id>` asset sets (`v_`,
+  `p_`, `w_`, every wave). `PARTS.scaffold` false: the guns are dealt
+  into the gun game's ladders. Tests (`games/cs16/tests/it/weapons.rs`):
+  the AK-47's first shots (0.0055, then 0.009625 to the sixth, 0.034375
+  after), 11 shots in 1 s, its first and second kicks, a reload, the
+  Deagle by time, the Glock's burst on consecutive commands, the AWP's
+  0.081 and zoomed-ducked 0 with its unzoom and return, the M4A1's
+  silencer, the knife's slash 15 and backstab 195, the M3's nine pellets
+  in one event, HE by distance, through the north wall and on armour;
+  heavy `guns`: every weapon's models and sounds load from the install.
+  Shortcuts: each module's doc (the muzzle flash sprites, shells, the
+  HE's and smoke's looks, the bodies' weapon sequences, the shotguns'
+  pellets summed before the distance rule, the blast's armour depletion,
+  the Elites' 5-unit offsets, friendly fire's × 0.35).

@@ -1,0 +1,79 @@
+# FAMAS (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_famas"
+base = "cs16:gun"
+class = "rifle"
+slot = 0
+draw = 0.75
+max_speed = 240.0
+weight = 25
+
+[buy]
+price = 2250
+team = 2
+
+[trigger]
+automatic = true
+cycle = 0.0825
+
+[magazine]
+clip = 25
+ammo = "cs16:556nato"
+reload = 3.3
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 30.0
+falloff = 0.96
+armor_ratio = 1.4
+
+[penetration]
+objects = 2
+
+# Mode 0 automatic, mode 1 bursts of three (the follow-ups 0.05 s apart;
+# the spec's 0.05 then 0.1 is an open question), 0.55 s a burst.
+[alt]
+kind = "burst"
+interval = 0.05
+refire = 0.55
+count = 3
+step = 0.3
+texts = ["Switched to automatic", "Switched to Burst-Fire mode"]
+
+[sounds]
+fire = "weapons/famas-1.wav;weapons/famas-2.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_famas.mdl"
+view = "models/v_famas.mdl"
+
+[hud]
+name = "FAMAS"
+icon = "d_famas"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 215.0, power = 3.0, offset = 0.3, cap = 1.0, reload_start = 0.0 }
+kick = { model = "table", order = "rifle" }
+# The burst: its first round 34; the follow-ups the first's spread, 30, no kick.
+burst_first = 34.0
+follow_ups = { amount = 30.0, falloff = 0.96 }
+
+[hooks."cs16:gun".spread]
+air = [0.04, 0.3]
+moving = [[140.0, 0.04, 0.07]]
+still = [0.01, 0.02]
+
+# In mode 1 (burst).
+[hooks."cs16:gun".alt_spread]
+air = [0.03, 0.3]
+moving = [[140.0, 0.03, 0.07]]
+still = [0.0, 0.02]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+moving = [1.0, 0.45, 0.275, 0.05, 4.0, 2.5, 7.0]
+air = [1.25, 0.45, 0.22, 0.18, 5.5, 4.0, 5.0]
+ducked = [0.575, 0.325, 0.2, 0.011, 3.25, 2.0, 8.0]
+standing = [0.625, 0.375, 0.25, 0.0125, 3.5, 2.25, 8.0]

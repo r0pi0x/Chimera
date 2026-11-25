@@ -1,0 +1,59 @@
+# M249 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_m249"
+base = "cs16:gun"
+class = "heavy"
+slot = 0
+draw = 0.75
+max_speed = 220.0
+weight = 25
+
+[buy]
+price = 5750
+
+[trigger]
+automatic = true
+cycle = 0.1
+
+[magazine]
+clip = 100
+ammo = "cs16:556natobox"
+reload = 4.7
+
+[hitscan]
+range = 8192.0
+
+[damage]
+amount = 32.0
+falloff = 0.97
+armor_ratio = 1.5
+
+[penetration]
+objects = 2
+
+[sounds]
+fire = "weapons/m249-1.wav;weapons/m249-2.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_m249.mdl"
+view = "models/v_m249.mdl"
+
+[hud]
+name = "M249"
+icon = "d_m249"
+
+[hooks."cs16:gun"]
+accuracy = { model = "shots", start = 0.2, divisor = 175.0, power = 3.0, offset = 0.4, cap = 0.9 }
+kick = { model = "table", order = "smg" }
+
+[hooks."cs16:gun".spread]
+air = [0.045, 0.5]
+moving = [[140.0, 0.045, 0.095]]
+still = [0.0, 0.03]
+
+# Kick rows [up, side, up per shot, side per shot, up cap, side cap, flip odds].
+[hooks."cs16:gun".kick_rows]
+air = [1.8, 0.65, 0.45, 0.125, 5.0, 3.5, 8.0]
+moving = [1.1, 0.5, 0.3, 0.06, 4.0, 3.0, 8.0]
+ducked = [0.75, 0.325, 0.25, 0.025, 3.5, 2.5, 9.0]
+standing = [0.8, 0.35, 0.3, 0.03, 3.75, 3.0, 9.0]

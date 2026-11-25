@@ -1,0 +1,50 @@
+# XM1014 (specs/cs16/weapons.md, "The guns").
+id = "cs16:weapon_xm1014"
+base = "cs16:gun"
+class = "shotgun"
+slot = 0
+draw = 0.75
+max_speed = 240.0
+weight = 20
+
+[buy]
+price = 3000
+
+[trigger]
+automatic = true
+cycle = 0.25
+
+[magazine]
+clip = 7
+ammo = "cs16:buckshot"
+reload = 0.3
+shells = { start = 0.55, insert = 0.3 }
+
+[hitscan]
+range = 3048.0
+pellets = 6
+spread = { cone = 0.0725 }
+
+[damage]
+amount = 20.0
+falloff = 1.0
+armor_ratio = 1.0
+
+[penetration]
+objects = 1
+
+[sounds]
+fire = "weapons/xm1014-1.wav"
+empty = "weapons/dryfire_rifle.wav"
+
+[models]
+world = "models/p_xm1014.mdl"
+view = "models/v_xm1014.mdl"
+
+[hud]
+name = "XM1014"
+icon = "d_xm1014"
+
+[hooks."cs16:gun"]
+kick = { model = "whole", ground = [3.0, 5.0], air = [7.0, 10.0] }
+pellet_range = 3048.0

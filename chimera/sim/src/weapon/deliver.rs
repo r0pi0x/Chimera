@@ -43,7 +43,7 @@ use bevy::prelude::*;
 use super::{
     lagcomp::Rewound,
     random::{Ran1, Rng},
-    Backstab, BulletTarget, DamageEffect, Hitscan, PassMaterials, Penetration, SpreadShape, Swing, WeaponEvent,
+    Backstab, BulletTarget, DamageEffect, Hitscan, PassMaterials, Penetration, PowerPenetration, SpreadShape, Swing, WeaponEvent,
     WeaponEventKind,
 };
 use crate::{
@@ -507,15 +507,76 @@ impl Shot<'_, '_, '_> {
     /// The material class of the surface hit (`MapSurface::game_material`):
     /// a prop's own surface property, else the nearest world triangle's.
     fn material_class(&self, hit: &Hit) -> Option<char> {
-        let name = match self.w.props.get(hit.collider).or_else(|_| self.w.props.get(hit.entity)) {
-            Ok(s) => s.0.clone(),
-            Err(_) => self.w.grid.as_ref()?.nearest(hit.point, SURFACE_REACH)?.to_string(),
-        };
+        let name = self.surface_name(hit)?;
         let sounds = &self.w.bank.as_ref()?.0;
         sounds
             .surface(&name)
             .or_else(|| sounds.surface("default"))
             .map(|s| s.game_material)
+    }
+
+    /// The name of the surface hit: a prop's own surface property, else
+    /// the nearest world triangle's.
+    fn surface_name(&self, hit: &Hit) -> Option<String> {
+        match self.w.props.get(hit.collider).or_else(|_| self.w.props.get(hit.entity)) {
+            Ok(s) => Some(s.0.clone()),
+            Err(_) => Some(self.w.grid.as_ref()?.nearest(hit.point, SURFACE_REACH)?.to_string()),
+        }
+    }
+
+    /// One bullet's `amount` (before the hit zone) on what `hit` struck,
+    /// into the shot's totals per target, if it has health: its region's
+    /// multiplier (the gun's table, or the target's own).
+    fn add_hit(&self, total: &mut Vec<(Entity, f32, BodyRegion, Vec3, Vec3)>, hit: &Hit, carried: f32, effect: &DamageEffect) {
+        let Ok(t) = self.w.targets.get(hit.entity) else { return };
+        if t.health.is_none() && t.damageable.is_none() {
+            return;
+        }
+        // Plain objects (breakables) have no hitgroups.
+        let group = match (hit.group, t.health) {
+            (Some(g), _) => g,
+            (None, Some(_)) => t
+                .aabb
+                .map_or(BodyRegion::Generic, |b| BodyRegion::from_hitgroup(hitgroup_at(b, hit.point))),
+            (None, None) => BodyRegion::Generic,
+        };
+        // The gun's table, or the target's own (hostages).
+        let own = t.bullet.and_then(|b| b.hitgroups).map(|h| super::RegionScale::from_hitgroups(&h));
+        let amount = carried * own.as_ref().unwrap_or(&effect.regions).get(group);
+        match total.iter_mut().find(|t| t.0 == hit.entity) {
+            Some(t) => {
+                t.1 += amount;
+                t.2 = group;
+                t.3 = hit.point;
+            }
+            None => total.push((hit.entity, amount, group, hit.point, hit.dir)),
+        }
+    }
+
+    /// Deal a shot's totals (`add_hit`), each target's once.
+    fn deal(&mut self, total: Vec<(Entity, f32, BodyRegion, Vec3, Vec3)>, effect: &DamageEffect) {
+        for (target, amount, hitgroup, point, dir) in total {
+            // A game's damage by distance: the target's sum, by how far
+            // the shooter's centre is from its own.
+            let amount = match effect.by_distance {
+                Some(b) => (b.rule)(amount, self.centre_distance(target), b.param),
+                None => amount,
+            };
+            let exact = self.w.targets.get(target).ok().and_then(|t| t.bullet).is_some_and(|b| b.exact);
+            self.apply(
+                target,
+                amount,
+                effect.armor_ratio,
+                if exact { 0.0 } else { effect.quantum },
+                hitgroup,
+                point,
+                dir,
+                DamageKind::Bullet,
+                true,
+                dir * effect.impulse,
+                None,
+            );
+        }
     }
 
     /// Fire every pellet of one shot.
@@ -589,29 +650,7 @@ impl Shot<'_, '_, '_> {
                 if effect.by_distance.is_none() {
                     carried *= falloff(effect.falloff, effect.falloff_step, hit.distance);
                 }
-                if let Ok(t) = self.w.targets.get(hit.entity)
-                    && (t.health.is_some() || t.damageable.is_some())
-                {
-                    // Plain objects (breakables) have no hitgroups.
-                    let group = match (hit.group, t.health) {
-                        (Some(g), _) => g,
-                        (None, Some(_)) => t
-                            .aabb
-                            .map_or(BodyRegion::Generic, |b| BodyRegion::from_hitgroup(hitgroup_at(b, hit.point))),
-                        (None, None) => BodyRegion::Generic,
-                    };
-                    // The gun's table, or the target's own (hostages).
-                    let own = t.bullet.and_then(|b| b.hitgroups).map(|h| super::RegionScale::from_hitgroups(&h));
-                    let amount = carried * own.as_ref().unwrap_or(&effect.regions).get(group);
-                    match total.iter_mut().find(|t| t.0 == hit.entity) {
-                        Some(t) => {
-                            t.1 += amount;
-                            t.2 = group;
-                            t.3 = hit.point;
-                        }
-                        None => total.push((hit.entity, amount, group, hit.point, hit.dir)),
-                    }
-                }
+                self.add_hit(&mut total, &hit, carried, effect);
                 // Through it?
                 let Some(pen) = pen else { break };
                 if passed >= pen.objects || hit.distance >= pen.max_distance {
@@ -664,28 +703,89 @@ impl Shot<'_, '_, '_> {
                 }
             }
         }
-        for (target, amount, hitgroup, point, dir) in total {
-            // A game's damage by distance: the target's sum, by how far
-            // the shooter's centre is from its own.
-            let amount = match effect.by_distance {
-                Some(b) => (b.rule)(amount, self.centre_distance(target), b.param),
-                None => amount,
-            };
-            let exact = self.w.targets.get(target).ok().and_then(|t| t.bullet).is_some_and(|b| b.exact);
-            self.apply(
-                target,
-                amount,
-                effect.armor_ratio,
-                if exact { 0.0 } else { effect.quantum },
-                hitgroup,
-                point,
-                dir,
-                DamageKind::Bullet,
-                true,
-                dir * effect.impulse,
-                None,
-            );
+        self.deal(total, effect);
+    }
+
+    /// Fire every pellet of one shot by GoldSrc's power rule
+    /// (`PowerPenetration`).
+    pub fn fire_power(&mut self, scan: &Hitscan, effect: &DamageEffect, pen: &PowerPenetration) {
+        let mut total: Vec<(Entity, f32, BodyRegion, Vec3, Vec3)> = Vec::new();
+        self.traced = true;
+        let rules = pen.rules.clone();
+        let whole = |m: f32| if rules.unit > 0.0 { (m / rules.unit).trunc() * rules.unit } else { m };
+        for dir in pellet_dirs(self.aim, self.seed, scan.spread, scan.pellets) {
+            let mut carried = effect.amount;
+            let (mut count, mut power, mut factor) = (pen.count.max(1), pen.power, rules.start_factor);
+            // Where the segment starts and how long it is, m from the eye.
+            let (mut start, mut remaining) = (0.0f32, scan.range);
+            let mut skip: Vec<Entity> = Vec::new();
+            let mut segment = 0;
+            loop {
+                // A start inside a solid passes out of it freely.
+                let from = if segment > 0 {
+                    self.solid_exit(dir, start, remaining).map_or(start, |exit| exit + STEP)
+                } else {
+                    start
+                };
+                let end = start + remaining;
+                if from >= end {
+                    break;
+                }
+                let hit = self.trace(dir, from, end, &skip, 0.0);
+                let (a, b) = (self.eye + *dir * from, hit.as_ref().map_or(self.eye + *dir * end, |h| h.point));
+                let protected = hit.as_ref().is_some_and(|h| self.hides(h.entity));
+                let (entity, normal) = match protected || !self.show_hits {
+                    true => (None, None),
+                    false => (hit.as_ref().map(|h| h.entity), hit.as_ref().map(|h| h.normal)),
+                };
+                let kind = if segment == 0 {
+                    WeaponEventKind::Shot { from: a, to: b, hit: entity, normal }
+                } else {
+                    WeaponEventKind::ShotContinued { from: a, to: b, hit: entity, normal }
+                };
+                self.w.event(self.owner, self.weapon, kind);
+                let Some(hit) = hit else { break };
+                if protected {
+                    break;
+                }
+                segment += 1;
+                count -= 1;
+                let d = hit.distance - start;
+                carried = quantize(carried * falloff(effect.falloff, effect.falloff_step, d), effect.quantum);
+                let last = count == 0 || d > pen.max_distance;
+                let character = self.is_character(hit.entity);
+                if !character
+                    && let Some(m) = rules.get(self.surface_name(&hit).and_then(|n| rules.class_of(&n)).or_else(|| self.material_class(&hit)))
+                {
+                    power = whole(power * m.power);
+                    if let Some(f) = m.factor {
+                        factor = f;
+                    }
+                }
+                let distance_factor = if character || last {
+                    power = rules.character_power;
+                    factor = rules.character_factor;
+                    rules.character_distance
+                } else {
+                    rules.wall_distance
+                };
+                self.push(hit.entity, hit.point, hit.dir * effect.impulse);
+                self.add_hit(&mut total, &hit, carried, effect);
+                if last {
+                    break;
+                }
+                if character {
+                    skip.push(hit.entity);
+                }
+                start = hit.distance + power;
+                remaining = (remaining - d) * distance_factor;
+                carried = quantize(carried * factor, effect.quantum);
+                if remaining <= 0.0 || carried <= 0.0 {
+                    break;
+                }
+            }
         }
+        self.deal(total, effect);
     }
 
     /// The distance between the shooter's centre and `target`'s (m): each
@@ -834,11 +934,12 @@ impl Shot<'_, '_, '_> {
                     amount = back;
                 }
             }
-            (Some(Backstab::Aim { dot, damage, .. }), Some(yaw), Some(_)) => {
-                // The attacker's aim (pitch and all) against the target's
-                // level facing (DoD:S's, measured).
+            (Some(Backstab::Aim { dot, damage, level, .. }), Some(yaw), Some(_)) => {
+                // The attacker's aim (pitch and all, DoD:S's, measured; or
+                // levelled, CS 1.6's) against the target's level facing.
                 let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
-                if forward.dot(facing) > dot {
+                let aim = if level { forward.with_y(0.0).normalize_or_zero() } else { forward };
+                if aim.dot(facing) > dot {
                     amount = damage;
                 }
             }
@@ -967,8 +1068,9 @@ impl Shot<'_, '_, '_> {
     /// timing): what the swing meets now is a character whose level
     /// facing the aim passes the rule's test.
     pub fn backstab_ahead(&self, swing: &Swing) -> bool {
-        let Some(Backstab::Aim { dot, .. }) = swing.backstab else { return false };
+        let Some(Backstab::Aim { dot, level, .. }) = swing.backstab else { return false };
         let forward = self.aim * Vec3::NEG_Z;
+        let forward = if level { forward.with_y(0.0).normalize_or_zero() } else { forward };
         let Some(hit) = self.swing_hit(swing).0 else { return false };
         self.w.targets.get(hit.entity).ok().filter(|t| t.health.is_some()).and_then(|t| t.intent).is_some_and(|i| {
             let facing = (i.yaw_rotation() * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();

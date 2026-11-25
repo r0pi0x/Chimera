@@ -1,10 +1,9 @@
 //! Counter-Strike 1.6 as a game crate on Chimera (docs/plans/active/cs16.md),
 //! made by tools/new-game: what the game tells the shell about itself
 //! (`game::INFO`), its install as a mount (`game::mount`), its maps
-//! (`game::MAP_LOADER`: none yet), a stand-in movement (`game::movement`)
-//! and a stand-in gun as data (`game::weapons`) so it can be played in the
-//! sandbox from day one. Each part is replaced from its spec in
-//! specs/cs16/ (docs/CONTRIBUTING-GAMES.md).
+//! (`game::MAP_LOADER`), a stand-in movement (`game::movement`) and its
+//! weapons as data with their rules as hooks (`game::weapons`). Each part
+//! is replaced from its spec in specs/cs16/ (docs/CONTRIBUTING-GAMES.md).
 //!
 //! `SimPlugins`: everything the game's simulation needs but its parts (the
 //! engine's base, the tick metrics); `harness`: the game on the engine's

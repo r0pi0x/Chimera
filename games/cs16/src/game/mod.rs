@@ -9,7 +9,8 @@
 //! - `bodies`: the eight player classes' bodies and what they play;
 //! - `movement`: `cs16:movement`, Chimera's placeholder movement with
 //!   the numbers of data/movement.toml;
-//! - `weapons`: the stand-in gun as data (data/weapons/);
+//! - `weapons`: the guns, knife and grenades as data (data/weapons/) with
+//!   the game's rules as hooks, their view and held models and sounds;
 //! - `parts`: what the game lends other games' apps (`PARTS`);
 //! - `sets`: what each piece reads, for the asset service's sets
 //!   (`chimera_pack sets cs16`).
@@ -19,9 +20,8 @@
 //! `BUNDLE` is the game for a party app.
 //!
 //! Known shortcuts:
-//! - Movement and the gun are tools/new-game's stand-ins: the placeholder
-//!   movement, one gun without models. Replace each part from its spec
-//!   (docs/CONTRIBUTING-GAMES.md).
+//! - Movement is tools/new-game's stand-in: the placeholder movement.
+//!   Replace it from its spec (docs/CONTRIBUTING-GAMES.md).
 
 pub mod bodies;
 pub mod maps;
@@ -137,7 +137,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     // What of its parts stays on its own maps: its guns (their ids' prefix).
     kept: &["cs16:weapon_"],
     binds: &[],
-    view_model_fov: None,
+    view_model_fov: Some(weapons::view::fov),
     view_model_fov_cvar: None,
     base: None,
     sim: party_sim,
@@ -145,8 +145,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     player_options: Some(chimera_core::game_data!("data/player_options.toml")),
 };
 
-/// The game's parts on the maps of other games: its player bodies
-/// (`bodies::dress_guest_in`; its gun has no models yet), converted once
+/// The game's parts on the maps of other games: its player bodies and its
+/// guns (`bodies::dress_guest_in`), converted once
 /// per app and load kind, then copied into each map
 /// (`chimera_world::map::kept`).
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
@@ -168,8 +168,8 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What the game adds to a game of several games: the game registered,
-/// its movement (not the match's), its gun, its bodies' animation and its
-/// maps' pool rules and measurements.
+/// its movement (not the match's), its weapons, its bodies' animation and
+/// its maps' pool rules and measurements.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);

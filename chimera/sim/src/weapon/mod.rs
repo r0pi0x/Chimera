@@ -1139,6 +1139,72 @@ pub struct Penetration {
     pub max_distance: f32,
 }
 
+/// Delivery add-on: bullets that pass surfaces by GoldSrc's power rule
+/// (specs/cs16/damage.md, "Wall penetration"), in place of `Penetration`.
+/// A bullet may hit `count` surfaces; at each its carried damage falls off
+/// by the segment it crossed (range modifier to the power length / step,
+/// truncated), the surface's material scales the power (truncated to
+/// whole units) and may set the damage factor; a character or the last
+/// hit sets the power, factor and distance factor of `PowerRules`; the
+/// next segment starts `power` beyond the hit (a start inside a solid
+/// passes out of it freely), the range left scaled by the distance
+/// factor, the damage by the factor. A segment longer than `max_distance`
+/// makes its hit the last.
+#[derive(Component, Clone, Debug)]
+pub struct PowerPenetration {
+    /// Surfaces it may hit (1: it passes nothing).
+    pub count: u32,
+    /// The bullet type's power, m.
+    pub power: f32,
+    /// A segment longer than this makes its hit the last, m.
+    pub max_distance: f32,
+    pub rules: Arc<PowerRules>,
+}
+
+/// A game's power rule's numbers (`PowerPenetration`; data:
+/// `PowerRules::parse`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PowerRules {
+    /// By material class (the surface's `MapSurface::game_material`).
+    pub materials: Vec<PowerMaterial>,
+    /// Surface names whose map gives them no class (GoldSrc's, named by
+    /// kind): the class each stands for.
+    pub names: Vec<(String, char)>,
+    /// After a character or the last hit: the power (m), damage factor
+    /// and distance factor.
+    pub character_power: f32,
+    pub character_factor: f32,
+    pub character_distance: f32,
+    /// After any other hit: the distance factor.
+    pub wall_distance: f32,
+    /// The damage factor before any material sets one.
+    pub start_factor: f32,
+    /// The power is kept in whole multiples of this, m (GoldSrc's unit).
+    pub unit: f32,
+}
+
+/// One material class's rule: the power's scale, and the damage factor it
+/// sets (None: the factor stays).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PowerMaterial {
+    pub class: char,
+    pub power: f32,
+    pub factor: Option<f32>,
+}
+
+impl PowerRules {
+    /// The rule for `class` (None: nothing listed, power and factor stay).
+    pub fn get(&self, class: Option<char>) -> Option<&PowerMaterial> {
+        let c = class?;
+        self.materials.iter().find(|m| m.class == c)
+    }
+
+    /// The class a surface named `name` stands for.
+    pub fn class_of(&self, name: &str) -> Option<char> {
+        self.names.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, c)| *c)
+    }
+}
+
 /// How bullets pass each kind of thing (see `Penetration`). Games set it.
 #[derive(Resource, Clone, Debug)]
 pub struct PassMaterials {
@@ -1254,6 +1320,19 @@ pub struct AltShot {
 /// Games that model recoil or flinching add and decay it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ViewPunch(pub Vec3);
+
+/// The punch's decay over `dt` seconds (Source's and GoldSrc's alike:
+/// specs/cs_source/weapons.md M3, specs/cs16/view_and_hud.md "View"): its
+/// length L, in degrees, over all three angles together, becomes
+/// max(L − (10 + 0.5 L) dt, 0).
+pub fn decay_punch(p: Vec3, dt: f32) -> Vec3 {
+    let len = p.length().to_degrees();
+    if len <= 0.0 {
+        return Vec3::ZERO;
+    }
+    let next = (len - (10.0 + 0.5 * len) * dt).max(0.0);
+    p * (next / len)
+}
 
 /// How far a character's first-person camera sits back along its own
 /// forward axis, metres (Combat Arms' per-shot back push,
@@ -1559,8 +1638,9 @@ pub enum Backstab {
     /// press, every attack blocked `slow.1`; otherwise it is the normal
     /// swing, no backstab whatever the target does meanwhile (DoD:S's 0.405
     /// and 0.9 s against 0.21 and 0.4). Without it the test is made when the
-    /// swing lands.
-    Aim { dot: f32, damage: f32, slow: Option<(f32, f32)> },
+    /// swing lands. With `level` the aim is levelled too (its pitch left
+    /// out: CS 1.6's knife, specs/cs16/weapons.md "Knife").
+    Aim { dot: f32, damage: f32, slow: Option<(f32, f32)>, level: bool },
 }
 
 impl Backstab {
@@ -2394,6 +2474,7 @@ struct WeaponParts {
     melee: Option<&'static Melee>,
     effect: Option<&'static DamageEffect>,
     penetration: Option<&'static Penetration>,
+    power_penetration: Option<&'static PowerPenetration>,
     sounds: Option<&'static WeaponSounds>,
     modes: Option<&'static mut AltModes>,
     zoom: Option<&'static Zoom>,
@@ -2489,7 +2570,10 @@ impl WeaponPartsItem<'_, '_> {
                 ctx.w.event(ctx.owner, self.entity, made);
                 // Without an effect the game delivers it (`Hitscan`).
                 if let Some(effect) = self.effect {
-                    ctx.fire(scan, effect, self.penetration);
+                    match self.power_penetration {
+                        Some(pen) => ctx.fire_power(scan, effect, pen),
+                        None => ctx.fire(scan, effect, self.penetration),
+                    }
                 }
             }
             let sound = self.sounds.and_then(|s| {
@@ -3146,7 +3230,7 @@ fn settled(swing: Swing, backstab: bool) -> Swing {
     match swing.backstab {
         Some(Backstab::Aim { damage, slow: Some((_, refire)), .. }) if backstab => Swing {
             // Every facing passes (a dot product is at least -1).
-            backstab: Some(Backstab::Aim { dot: -2.0, damage, slow: None }),
+            backstab: Some(Backstab::Aim { dot: -2.0, damage, slow: None, level: false }),
             hit_refire: refire,
             ..swing
         },

@@ -15,6 +15,13 @@ Syringe Gun) with specs/tf2/weapons_more.md's, the committed fallback until the
 game's own (encrypted) scripts' fields are mapped (`tf2::game::weapons::
 script_numbers`, which logs where each gun's numbers came from).
 
+CS 1.6's are `games/cs16/data/weapons/*.toml`: specs/cs16/weapons.md's and
+damage.md's tables (the game keeps its numbers in code, so nothing is read
+from its files but models and sounds), with the game's rules as hooks
+(below) and its sound entries GoldSrc's waves by path
+(`goldsrc_engine::content::sounds`: `weapons/ak47-1.wav`, several joined
+by `;` for a random pick).
+
 HL2:DM's are `games/hl2dm/data/weapons/*.toml`, the spec's numbers
 (specs/hl2dm/weapons.md); its install's weapon scripts are plain text
 beside the encrypted ones, and `games/hl2dm/tests/it/heavy/scripts.rs`
@@ -190,7 +197,8 @@ distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backs
 same_way, health, credit }`: TF2's three flattened dot tests, the damage
 `health` times the target's current health, the kill credited to the id
 `credit`; or `{ aim_dot, damage }`: DoD:S's, the damage when the
-attacker's aim · the target's level facing is over `aim_dot`), delay (seconds from the swing's start to its hit, traced along
+attacker's aim · the target's level facing is over `aim_dot`, the aim
+levelled too with `level = true`: CS 1.6's knife), delay (seconds from the swing's start to its hit, traced along
 the view then: TF2's smack delay; 0 hits at once), hitgroups, hitgroup_scale (`{ head, chest,
 stomach, arm, leg }`: the hit zone's multiplier on the swing's damage and
 its backstab, implying hitgroups: DoD:S's knife and spade), hit/miss
@@ -331,6 +339,17 @@ hud_icon = "ammo_762"
 - **Order.** Weapons register in document order; a game keeps its order
   stable (CS:S: knife, guns, grenades, C4).
 
+CS 1.6's (games/cs16/src/game/weapons/): `cs16:gun` (`accuracy` with a
+`model`: `shots` (`start`, `divisor`, `power`, `offset`, `cap`, `whole`,
+`reload_start`), `time` (`start`, `period`, `rate`, `low`), `since`
+(`base`, `rate`, `cap`, `before`, `start`) or `fixed`; `spread` and
+`alt_spread` tables (`air`, `moving`, `ducked`, `still` rows of [c, k],
+the moving ones [threshold, c, k]; `unzoomed`, `unzoomed_scaled`); `kick`
+(`table` with `kick_rows` in an `order`, `up`, `random`, `whole`);
+`alt_damage`, `follow_ups`, `burst_first`, `held_bursts`, `pellet_range`,
+`alternate_hands`) and `cs16:grenade` (`effect` he/flash/smoke, `max`,
+`bounce_sound`).
+
 ## Loading more
 
 ```rust
@@ -370,6 +389,29 @@ twice_from = 24.0               # an entity (prop, not world) passed this
 
 Unknown keys, a class that isn't one letter or is given twice are load
 errors.
+
+GoldSrc's rule is another shape (`PowerPenetration`, specs/cs16/damage.md
+"Wall penetration"): a bullet may hit `objects` surfaces; each material
+scales the power and may set the damage factor, a character or the last
+hit sets them all; the next segment starts the power's length beyond the
+hit. A game's `cs16:gun`-like hook puts it in place of `Penetration`, with
+its document (`PowerRules::parse`; CS 1.6's
+`games/cs16/data/penetration.toml`):
+
+```toml
+units = { length = 0.0254 }
+start_factor = 0.5              # the damage factor until a material sets one
+wall_distance = 0.5             # the range left after a wall, as a factor
+[character]                     # after a character or the last hit
+power = 42.0
+factor = 0.75
+distance = 0.75
+[[material]]
+class = "M"                     # one letter
+names = ["metal"]               # surface names standing for it (GoldSrc's maps)
+power = 0.15                    # the power's scale (whole units kept)
+factor = 0.2                    # the damage factor it sets (none: kept)
+```
 
 The shop (items that aren't weapons, the buy menu, the spawn kit) is
 data too: docs/economy-data.md. What isn't data yet: the accuracy and
