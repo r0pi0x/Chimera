@@ -108,6 +108,15 @@ fn every_batch_one_item_shows_its_own_model_on_its_class_arms() {
         assert!(item.looks.world.as_deref().is_some_and(|w| m.contains(w)), "{}: {:?}", item.id, item.looks.world);
         let base = tf2::game::weapons::tf2_weapons().get(&item.base).and_then(|b| b.models.view.clone());
         own += usize::from(base.as_deref() != Some(view));
+        for s in &item.looks.sounds {
+            assert!(!sounds.waves(s).is_empty(), "{}: {s} has no waves", item.id);
+        }
+        // Worn or carried (a shield, boots, a watch): no class's arms hold
+        // it, so no view model (`view::load_with` skips it).
+        if item.looks.arms.is_empty() {
+            assert!(!views.iter().any(|v| v.key == item.id), "{}: a view model with no arms", item.id);
+            continue;
+        }
         let v = views.iter().find(|v| v.key == item.id).unwrap_or_else(|| panic!("{}: no view model ({warnings:?})", item.id));
         let arms = source_engine::content::props::load_view_model(&mut materials, &tf2::game::sets::arms_model(&item.looks.arms), "arms", true).unwrap();
         assert!(v.bones.len() >= arms.bones.len(), "{}: {} bones, the arms {}", item.id, v.bones.len(), arms.bones.len());
@@ -115,9 +124,6 @@ fn every_batch_one_item_shows_its_own_model_on_its_class_arms() {
         assert!(v.model.meshes.len() > arms.model.meshes.len(), "{}: the weapon's meshes merged", item.id);
         assert!(v.animations.is_some(), "{}: the arms' sequences", item.id);
         assert!(tf2::game::view::sequences(&item.base).is_some() || tf2::game::view::melee_sequences(&item.base).is_some(), "{}", item.id);
-        for s in &item.looks.sounds {
-            assert!(!sounds.waves(s).is_empty(), "{}: {s} has no waves", item.id);
-        }
     }
     assert!(own >= 25, "{own} of {} items have a model of their own", batch.len());
 }

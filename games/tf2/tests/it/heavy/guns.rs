@@ -7,14 +7,51 @@
 //! the held models and the rocket's model; the guns' sound entries in the
 //! sound scripts; and each gun's `weapon/<id>` set covering everything a
 //! match loads for it (`maps::add_guns` and its sounds): a client with the
-//! set fetches nothing for the gun mid-match. Passes with a note without
-//! the install.
+//! set fetches nothing for the gun mid-match. The unlocks' checks read the
+//! store's item pack, or one converted from the install when the store
+//! has none (`install_mount_with_items`). Passes with a note without the
+//! install.
 
 use chimera_core::mount::Access;
 use source_engine::content::material::MaterialLoader;
 use tf2::game::{maps, sets, view, weapons};
 
 use super::maps::install_mount;
+
+/// The install's mount with the unlocks' item pack: the asset store's
+/// when the store layered under the install holds one, else the pack
+/// converted from the install in memory (`items::generated`, as
+/// `chimera_pack sets tf2 --only items` makes it), so the unlocks' guns
+/// (the Flare Gun's flare, the Cleaver's sounds) are checked on an
+/// install whatever the store has. Its scripts' numbers aren't read (no
+/// key): only the looks are checked here.
+fn install_mount_with_items() -> Option<chimera_core::mount::Mount> {
+    let mut mount = install_mount()?;
+    if tf2::game::items::read_pack(&mount).is_none() {
+        let sets = tf2::game::items::generated(&mount, tf2::game::items::SET);
+        let files = sets.into_iter().next().map(|(_, f)| f).unwrap_or_default();
+        assert!(!files.is_empty(), "the install converts into an item pack");
+        mount.push(Pack(files));
+    }
+    Some(mount)
+}
+
+/// Files in memory, as one mount layer (the converted item pack).
+struct Pack(Vec<(String, Vec<u8>)>);
+
+impl chimera_core::mount::FileSource for Pack {
+    fn name(&self) -> String {
+        "item pack (converted)".into()
+    }
+
+    fn entries(&self) -> Vec<chimera_core::mount::Entry> {
+        self.0.iter().map(|(p, b)| chimera_core::mount::Entry { path: p.clone(), size: b.len() as u64 }).collect()
+    }
+
+    fn read(&self, path: &str) -> Option<std::io::Result<Vec<u8>>> {
+        self.0.iter().find(|(p, _)| p == path).map(|(_, b)| Ok(b.clone()))
+    }
+}
 
 /// Whether view model `key` is a stock weapon's (the unlocks of the asset
 /// store's item pack, when it is here, load beside them: `items`' tests).
@@ -25,7 +62,7 @@ fn stock(key: &str) -> bool {
 
 #[test]
 fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
-    let Some(mount) = install_mount() else { return };
+    let Some(mount) = install_mount_with_items() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
@@ -334,10 +371,10 @@ fn the_launchers_bones_sit_where_tf2_holds_them() {
 /// and the bare script names stay out of it.
 #[test]
 fn every_guns_sound_is_tf2s_own() {
-    let Some(mount) = install_mount() else { return };
+    let Some(mount) = install_mount_with_items() else { return };
     let scripts = sets::sound_scripts(&mount);
     let mut map = chimera_world::map::MapData::default();
-    maps::dress_guest_with(&mut map, tf2::game::BUNDLE.kept, false).unwrap();
+    maps::dress_guest_in(&mount, &mut map, tf2::game::BUNDLE.kept, false);
     let mut named = std::collections::BTreeSet::new();
     for f in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/data/weapons")).unwrap().flatten() {
         let text = std::fs::read_to_string(f.path()).unwrap();
@@ -365,7 +402,7 @@ fn every_guns_sound_is_tf2s_own() {
 /// by it flies nose first.
 #[test]
 fn each_projectile_models_nose_is_its_long_axis() {
-    let Some(mount) = install_mount() else { return };
+    let Some(mount) = install_mount_with_items() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, false, &mut kit, &mut warnings);
