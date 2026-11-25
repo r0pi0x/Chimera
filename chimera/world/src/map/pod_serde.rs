@@ -2,8 +2,8 @@
 //! byte string each when a map is serialized (`cache`), instead of serde's
 //! element by element: `#[serde(with = "pod")]` on a `Vec<T>` of a
 //! `bytemuck::Pod` type, `pod_vecs` on a `Vec<Vec<T>>`, `pod_opt3` on an
-//! `Option<[Vec<T>; 3]>`, `pod_arrays` on a `[Vec<T>; N]`, `pod_arc` on an
-//! `Arc<Vec<T>>`, `pod_opt_arc` on an `Option<Arc<Vec<T>>>`. Reading
+//! `Option<[Vec<T>; 3]>`, `pod_opt` on an `Option<Vec<T>>`, `pod_arrays` on a `[Vec<T>; N]`, `pod_arc` on an
+//! `Arc<Vec<T>>`, `pod_arc_vecs` on an `Arc<Vec<Vec<T>>>`, `pod_opt_arc` on an `Option<Arc<Vec<T>>>`. Reading
 //! copies each string out (no alignment needed). The bytes are the
 //! machine's own order: the cache is local to the machine.
 //!
@@ -91,6 +91,21 @@ pub mod pod {
     }
 }
 
+/// `Option<Vec<T>>` (an animation track's rotations or positions:
+/// element by element they were most of a guest dressing's read,
+/// docs/performance.md, "Every game installed").
+pub mod pod_opt {
+    use super::*;
+
+    pub fn serialize<T: Pod, S: Serializer>(v: &Option<Vec<T>>, s: S) -> Result<S::Ok, S::Error> {
+        v.as_deref().map(Blob).serialize(s)
+    }
+
+    pub fn deserialize<'de, T: Pod, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<T>>, D::Error> {
+        Ok(Option::<Owned<T>>::deserialize(d)?.map(|o| o.0))
+    }
+}
+
 /// `Vec<Vec<T>>`.
 pub mod pod_vecs {
     use super::*;
@@ -130,6 +145,20 @@ pub mod pod_opt3 {
 
     pub fn deserialize<'de, T: Pod, D: Deserializer<'de>>(d: D) -> Result<Option<[Vec<T>; 3]>, D::Error> {
         Ok(Option::<[Owned<T>; 3]>::deserialize(d)?.map(|[a, b, c]| [a.0, b.0, c.0]))
+    }
+}
+
+/// `Arc<Vec<Vec<T>>>` (a block texture's levels: the bytes `pod_vecs`
+/// writes).
+pub mod pod_arc_vecs {
+    use super::*;
+
+    pub fn serialize<T: Pod, S: Serializer>(v: &Arc<Vec<Vec<T>>>, s: S) -> Result<S::Ok, S::Error> {
+        pod_vecs::serialize(v.as_slice(), s)
+    }
+
+    pub fn deserialize<'de, T: Pod, D: Deserializer<'de>>(d: D) -> Result<Arc<Vec<Vec<T>>>, D::Error> {
+        pod_vecs::deserialize(d).map(Arc::new)
     }
 }
 
@@ -222,6 +251,10 @@ mod tests {
         f: Option<Arc<Vec<[f32; 3]>>>,
         #[serde(with = "par_vec")]
         g: Vec<(String, Vec<u8>)>,
+        #[serde(with = "pod_opt")]
+        h: Option<Vec<bevy::math::Quat>>,
+        #[serde(with = "pod_opt")]
+        i: Option<Vec<bevy::math::Vec3>>,
     }
 
     #[test]
@@ -234,6 +267,8 @@ mod tests {
             e: Arc::new(vec![5; 9]),
             f: None,
             g: (0..40).map(|i| (format!("t{i}"), vec![i as u8; i])).collect(),
+            h: Some(vec![bevy::math::Quat::from_xyzw(0.1, -0.0, 0.3, 0.9); 3]),
+            i: None,
         };
         let bytes = postcard::to_allocvec(&x).unwrap();
         assert_eq!(postcard::from_bytes::<All>(&bytes).unwrap(), x);

@@ -183,11 +183,14 @@ pub struct RuleGoal {
 }
 
 /// One bone's values per frame (one entry: constant); None keeps the
-/// starting value.
+/// starting value. Serialized as byte strings (`pod_serde::pod_opt`): a
+/// guest's animation sets are most of its kept dressing's elements.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Track {
     pub bone: usize,
+    #[serde(with = "crate::map::pod_serde::pod_opt")]
     pub rotation: Option<Vec<Quat>>,
+    #[serde(with = "crate::map::pod_serde::pod_opt")]
     pub position: Option<Vec<Vec3>>,
 }
 
