@@ -1375,6 +1375,9 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     if let Some(t) = data.extras.get::<super::teleport::MapTeleporters>() {
         commands.insert_resource(t.clone());
     }
+    if let Some(t) = data.extras.get::<super::clip_trees::MapClipTrees>() {
+        commands.insert_resource(t.clone());
+    }
     if let Some(b) = data.extras.get::<super::nav_gen::NavWithin>() {
         commands.insert_resource(*b);
     }

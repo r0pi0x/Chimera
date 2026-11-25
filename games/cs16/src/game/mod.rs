@@ -7,8 +7,10 @@
 //! - `maps`: `MAP_LOADER` for `cs16:<map>`, GoldSrc's BSP conversion
 //!   (`goldsrc_engine::content`) with CS 1.6's spawns and kit;
 //! - `bodies`: the eight player classes' bodies and what they play;
-//! - `movement`: `cs16:movement`, Chimera's placeholder movement with
-//!   the numbers of data/movement.toml;
+//! - `movement`: `cs16:movement`, the shared movement of the Quake
+//!   lineage (`chimera_movement`) with CS 1.6's config from
+//!   specs/cs16/movement.md (the numbers in data/movement.toml), hull
+//!   traced on GoldSrc maps (`goldsrc_engine::hulls`);
 //! - `weapons`: the guns, knife and grenades as data (data/weapons/) with
 //!   the game's rules as hooks, their view and held models and sounds;
 //! - `parts`: what the game lends other games' apps (`PARTS`);
@@ -18,10 +20,6 @@
 //! `Cs16Plugins` adds the game's parts after `crate::SimPlugins`, its
 //! maps' logic among them (`goldsrc_engine::logic`, also in `party_sim`);
 //! `BUNDLE` is the game for a party app.
-//!
-//! Known shortcuts:
-//! - Movement is tools/new-game's stand-in: the placeholder movement.
-//!   Replace it from its spec (docs/CONTRIBUTING-GAMES.md).
 
 pub mod bodies;
 pub mod maps;
@@ -46,8 +44,8 @@ pub const GAME: &str = "cs16";
 pub const CONTENT_DIR: &str = "cstrike";
 
 /// The server tick, seconds: 100 Hz, GoldSrc's common case of 100
-/// commands a second of 10 ms each (docs/plans/active/goldsrc.md §4.3; to
-/// confirm against the server's `sys_ticrate` in specs/cs16/movement.md).
+/// commands a second of 10 ms each (specs/cs16/movement.md: `sys_ticrate`
+/// 100, the client's `fps_max` 100).
 pub const TICK_INTERVAL: f64 = 0.01;
 
 /// GoldSrc's unit, the inch, in metres (specs/goldsrc/bsp.md, "Units and

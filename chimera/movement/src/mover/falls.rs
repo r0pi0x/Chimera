@@ -53,6 +53,14 @@ impl Mover<'_, '_, '_, '_> {
     /// The punch angle's spring (movement spec, "Punch angle decay"), for
     /// its roll: the only part movement sets (recoil is the weapons').
     pub(crate) fn decay_punch(&mut self) {
+        if let Some((constant, share)) = self.cfg.punch_decay {
+            // GoldSrc: the length less (constant + share x length) a second.
+            let l = self.me.punch_roll.abs();
+            let left = (l - (constant + share * l) * self.dt).max(0.0);
+            self.me.punch_roll = left.copysign(self.me.punch_roll);
+            self.me.punch_roll_vel = 0.0;
+            return;
+        }
         let (p, v) = (self.me.punch_roll, self.me.punch_roll_vel);
         if p * p <= 0.001 && v * v <= 0.001 {
             self.me.punch_roll = 0.0;

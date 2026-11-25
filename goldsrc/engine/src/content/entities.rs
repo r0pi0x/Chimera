@@ -191,6 +191,8 @@ pub fn add(bsp: &Bsp, spawns: &[(&str, Option<Team>)], data: &mut MapData) -> Pa
                 Brush::StaticSolid | Brush::DrawnOnly => {
                     if kind == Brush::StaticSolid {
                         collision::add_static(bsp, model, origin, data);
+                        // Its clip hulls beside the world's (`crate::hulls`).
+                        crate::hulls::place(bsp, model, origin, data.extras.entry());
                     }
                     parts.drawn.push(Drawn { model, offset: origin, mover: None, render, color, flat });
                 }

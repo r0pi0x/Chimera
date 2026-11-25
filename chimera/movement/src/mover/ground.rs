@@ -6,7 +6,7 @@ use bevy::prelude::*;
 
 use crate::{
     mover::{
-        BUMPS, EDGE_PROBE_AHEAD, EDGE_PROBE_DOWN, GROUND_PROBE, MAX_CLIP_PLANES, Mover, SNAP_MIN, STAY_ON_GROUND_UP, STEP_EPSILON, UPWARD_AIR_FRICTION,
+        BUMPS, EDGE_PROBE_AHEAD, EDGE_PROBE_DOWN, GROUND_PROBE, MAX_CLIP_PLANES, Mover, SNAP_MIN, STAY_ON_GROUND_UP, STEP_EPSILON,
         WALKABLE_NORMAL_Z,
     },
     trace::HitSurface,
@@ -22,6 +22,16 @@ pub(crate) fn clip_velocity(v: Vec3, n: Vec3, overbounce: f32) -> Vec3 {
         out -= n * into;
     }
     out
+}
+
+/// `v` with its components smaller than `epsilon` zeroed
+/// (`QuakeConfig::clip_stop_epsilon`; 0: `v`).
+#[inline]
+pub(crate) fn stop_small(v: Vec3, epsilon: f32) -> Vec3 {
+    if epsilon <= 0.0 {
+        return v;
+    }
+    Vec3::select(v.abs().cmplt(Vec3::splat(epsilon)), Vec3::ZERO, v)
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -177,16 +187,17 @@ impl Mover<'_, '_, '_, '_> {
                 break;
             }
             planes.push(tr.normal);
+            let stop = self.cfg.clip_stop_epsilon;
             if planes.len() == 1 && !self.me.on_ground && self.me.ladder.is_none() {
                 let overbounce = if tr.normal.z > WALKABLE_NORMAL_Z {
                     1.0
                 } else {
                     1.0 + self.cfg.bounce * (1.0 - self.me.surface_friction)
                 };
-                self.v = clip_velocity(original, tr.normal, overbounce) + tr.normal * self.cfg.clip_push_out;
+                self.v = stop_small(clip_velocity(original, tr.normal, overbounce), stop) + tr.normal * self.cfg.clip_push_out;
             } else {
                 let found = planes.iter().enumerate().find_map(|(i, n)| {
-                    let clipped = clip_velocity(original, *n, 1.0);
+                    let clipped = stop_small(clip_velocity(original, *n, 1.0), stop);
                     planes
                         .iter()
                         .enumerate()
@@ -312,7 +323,9 @@ impl Mover<'_, '_, '_, '_> {
         } else {
             self.step_move();
         }
-        self.stay_on_ground();
+        if !self.cfg.ground_snap {
+            self.stay_on_ground();
+        }
         self.v -= base;
     }
 
@@ -365,7 +378,7 @@ impl Mover<'_, '_, '_, '_> {
             let full = self.trace.sweep_box(lo, hi, self.feet, down);
             let mut ground = (full.hit() && full.normal.z >= WALKABLE_NORMAL_Z).then_some(full);
             // (A hull trace is the whole box's already: no quarters.)
-            if ground.is_none() && self.trace.hulls.is_none() {
+            if ground.is_none() && self.trace.hulls.is_none() && !self.cfg.ground_snap {
                 let mid = Vec3::ZERO;
                 let quarters = [
                     (Vec3::new(lo.x, lo.y, lo.z), Vec3::new(mid.x, mid.y, hi.z)),
@@ -397,7 +410,7 @@ impl Mover<'_, '_, '_, '_> {
                 _ => None,
             };
             if let Some(tr) = ground {
-                if self.settle && !tr.start_solid {
+                if (self.settle || (self.cfg.ground_snap && self.me.water_level < 2)) && !tr.start_solid {
                     self.feet = tr.end;
                 }
                 self.me.ground_normal = tr.normal;
@@ -405,7 +418,7 @@ impl Mover<'_, '_, '_, '_> {
                 let hit = tr.surface.and_then(|h| self.trace.surface_name(h));
                 self.record_surface(hit);
             } else if self.v.z > 0.0 {
-                self.me.surface_friction = UPWARD_AIR_FRICTION;
+                self.me.surface_friction = self.cfg.rising_friction;
             }
         }
         self.water_check();

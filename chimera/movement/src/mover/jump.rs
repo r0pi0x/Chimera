@@ -17,12 +17,12 @@ impl Mover<'_, '_, '_, '_> {
         if !self.cfg.enable_bunnyhopping && cap > 0.0 {
             let speed = self.v.length();
             if speed > cap {
-                self.v *= cap / speed;
+                self.v *= cap / speed * self.cfg.bunnyhop_cut;
             }
         }
         let impulse = self.cfg.jump_impulse * self.ground_factors().1;
         self.set_ground(false, None);
-        if self.me.ducked || self.me.ducking {
+        if self.me.ducked || self.me.ducking || self.cfg.jump_sets_speed {
             self.v.z = impulse;
         } else {
             self.v.z += impulse;

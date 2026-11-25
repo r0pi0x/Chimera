@@ -392,6 +392,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<MapBrushTree>()
         .map_scoped::<KillHeight>()
         .map_scoped::<super::teleport::MapTeleporters>()
+        .map_scoped::<super::clip_trees::MapClipTrees>()
         .map_scoped::<super::nav_gen::NavWithin>()
         .map_scoped::<super::play_area::PlayArea>()
         .map_scoped::<super::play_area::ArenaMap>()

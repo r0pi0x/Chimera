@@ -147,6 +147,7 @@ fn riding_as_oilrig_elevator_has_no_prediction_errors() {
     let mut errors = Vec::new();
     let mut last = 0;
     let mut started = None;
+    let mut stopped = None;
     let (mut prev, mut still) = (lift0, 0);
     for k in 0..1500u64 {
         sim.step();
@@ -160,6 +161,9 @@ fn riding_as_oilrig_elevator_has_no_prediction_errors() {
             started = Some(k);
         }
         still = if now == prev { still + 1 } else { 0 };
+        if started.is_some() && still == 1 && stopped.is_none() {
+            stopped = Some(k - 1);
+        }
         prev = now;
         if started.is_some() && still > 50 {
             break;
@@ -176,11 +180,17 @@ fn riding_as_oilrig_elevator_has_no_prediction_errors() {
     assert!((rose - 505.0 * METERS_PER_UNIT).abs() < 0.01, "rose {rose}");
     assert!((carried - rose).abs() < 0.05, "the player rode {carried} of {rose}");
     assert!(g.carried > 100, "the client carried its player {} ticks", g.carried);
+    // Its stop mispredicts too on CS 1.6's own movement (the rider is put
+    // on its ground probe's end each tick, against where the client has
+    // the lift on the tick it arrives): one state within the stop's round
+    // trip, none during the ride.
+    let stopped = stopped.expect("the elevator never stopped");
     let w = window(&sim);
     assert!(
-        errors.iter().all(|k| *k <= started + w),
-        "prediction errors after the start's round trip (started {started}, window {w}): {errors:?}"
+        errors.iter().all(|k| *k <= started + w || (*k >= stopped && *k <= stopped + w)),
+        "prediction errors outside the start's and the stop's round trips (started {started}, stopped {stopped}, window {w}): {errors:?}"
     );
+    assert!(errors.len() <= 3, "{errors:?}");
 }
 
 #[test]

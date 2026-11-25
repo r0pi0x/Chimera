@@ -1,13 +1,124 @@
-# Counter-Strike 1.6's movement numbers (game::movement; Chimera's placeholder
-# movement under `cs16:movement`), in metres and seconds. Stand-ins made
-# by tools/new-game: put the numbers of specs/cs16/movement.md here (and
-# name the spec's constant on each line) until the game has its own movement.
+# Counter-Strike 1.6's movement numbers (game::movement, `cs16:movement`),
+# from specs/cs16/movement.md: units (inches) and seconds, as the spec
+# states them. The rules that go with them (hull traces, the per-command
+# jump penalty, the duck) are the shared movement's switches, set in
+# game/movement.rs.
 
-# Ground speeds, m/s.
-walk = 5.0
-sprint = 7.5
-crouch = 2.5
-# m/s^2, down.
-gravity = 20.0
-# The jump's upward speed, m/s.
-jump = 6.5
+# "Console variables": the server's defaults (HLDS build 10211). Each is a
+# console variable of the same name under `cs16:` (`cs16:sv_gravity`).
+[cvars]
+sv_accelerate = 5.0
+sv_airaccelerate = 10.0
+sv_friction = 4.0
+sv_stopspeed = 75.0
+edgefriction = 2.0
+# The engine's default; the shipped server.cfg's 320 is also above every
+# weapon's speed.
+sv_maxspeed = 900.0
+sv_stepsize = 18.0
+sv_gravity = 800.0
+sv_bounce = 1.0
+sv_maxvelocity = 2000.0
+
+# "Units and conventions" and "Fixed numbers".
+[keys]
+# cl_forwardspeed, cl_sidespeed, cl_backspeed (the shipped client config).
+speed = 400.0
+# cl_movespeedkey (ref.): the walk key scales the keys' amounts.
+walk = 0.52
+# duck_speed_factor: the keys' amounts while duck is held, ducking or ducked.
+duck = 0.333
+
+[body]
+# hull_stand, hull_duck: the boxes about the origin (their centre).
+half_width = 16.0
+stand_height = 72.0
+duck_height = 36.0
+# eye_stand (+17 over the standing origin), eye_duck (+12 over the ducked
+# one), above the feet.
+eye_stand = 53.0
+eye_duck = 30.0
+# duck_time, s.
+duck_time = 0.4
+
+[jump]
+# jump_speed, sqrt(2 x 800 x 45).
+speed = 268.3281573
+# jump_penalty_start (ms) and jump_penalty_slope (per ms: 0.019 % a ms).
+penalty_ms = 1315.789429
+penalty_slope = 0.00019
+# bhop_cap_factor (x the max speed) and bhop_cut.
+cap = 1.2
+cut = 0.8
+# leave_ground_vz.
+leave_ground = 180.0
+
+[water]
+# water_jump_up.
+jump_up = 225.0
+
+[fall]
+# fall_punch_min, fall_safe, fall_fatal, fall_damage_factor,
+# fall_sound_full and the two quieter landing thresholds.
+punch_min = 250.0
+safe = 500.0
+fatal = 1100.0
+damage_factor = 1.25
+sound_full = 580.0
+sound_soft = 290.0
+sound_none = 350.0
+
+[hit]
+# hit_slow_small, hit_slow_large, hit_knockback (and the speed above which
+# there is none), hit_slow_recover (per command).
+slow_small = 0.5
+slow_large = 0.65
+# The guns whose hits are large flinches (not in the legs, the victim not
+# ducked), by id after `cs16:weapon_`.
+large = ["scout", "aug", "sg550", "galil", "famas", "awp", "m3", "m4a1", "g3sg1", "deagle", "sg552", "ak47"]
+knockback = 170.0
+knockback_below = 300.0
+recover = 0.01
+
+[punch]
+# punch_decay_const (degrees/s), punch_decay_prop (1/s).
+decay_const = 10.0
+decay_prop = 0.5
+
+# "Maximum speed by what is held", units/s: by the gun's id after
+# `cs16:weapon_`; `none` with empty hands, `default` for what is not
+# listed (the knife, the pistols, the grenades, the C4, the MAC-10, the
+# TMP, the MP5, the UMP45: 250). A gun's document states the same number
+# as its `max_speed` (docs/weapon-data.md), which the weapon layer hands
+# the movement (`core::MaxSpeed`); the movement's tests hold the two
+# together.
+[speed]
+none = 240.0
+default = 250.0
+p90 = 245.0
+aug = 240.0
+xm1014 = 240.0
+famas = 240.0
+galil = 240.0
+sg552 = 235.0
+m3 = 230.0
+m4a1 = 230.0
+ak47 = 221.0
+m249 = 220.0
+awp = 210.0
+g3sg1 = 210.0
+sg550 = 210.0
+scout = 260.0
+shield_raised = 180.0
+shield_lowered = 250.0
+vip = 227.0
+freeze_time = 1.0
+observer = 900.0
+
+# The same while zoomed (a gun not listed keeps its speed: the AUG).
+[speed_zoomed]
+sg552 = 200.0
+awp = 150.0
+g3sg1 = 150.0
+sg550 = 150.0
+scout = 220.0

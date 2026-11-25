@@ -28,6 +28,16 @@
 //! registration (`QuakeMovementAppExt::quake_movement`: its id, config,
 //! console variables by list and namespace, its envelope and its seat).
 //!
+//! GoldSrc's rules are switches of the config, off in `reference()` and
+//! for every Source game (docs/plans/active/shared-movement.md, S7-S9 and
+//! the hand-off): the world traced through a map's clip hulls
+//! (`clip_hulls`), commands of whole milliseconds (`command_msec`), edge
+//! friction (`edge_friction`), and the smaller ones a GoldSrc game's spec
+//! names (`ground_snap`, `unduck_at_once`, `duck_ends_on_time`,
+//! `jump_sets_speed`, `bunnyhop_cut`, `modifier_per_tick`, `punch_decay`,
+//! `clip_stop_epsilon`, `rising_friction`, `water_jump_up`,
+//! `walk_scales_keys`); CS 1.6 sets them (`cs16::game::movement`).
+//!
 //! Each Source game registers it under its own id with its own config
 //! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with
 //! CS:S's measured values, `hl2dm:movement` with HL2:DM's, each in

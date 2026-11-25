@@ -24,7 +24,7 @@ names the seams, the specs give the numbers and rules.
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
 | S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases (aliases dropped 2026-11-24, last log entry): each in the log |
 | S7-S9 GoldSrc seams | done (2026-11-25) | clip hulls (S7), command milliseconds (S8), edge friction (S9): each in the log |
-| Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
+| Hand-off | done (2026-11-25) | goldsrc.md M2: the hull tracer in `goldsrc_engine` (`hulls`), `cs16:movement` on the crate; the GoldSrc rules beyond the seams as named switches (the log's last entry) |
 
 ## 1. What is there (origin/main, 2026-11-24)
 
@@ -620,3 +620,33 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   (+0.31 %), TF2 72 001 (+0.26 %), DoD:S 74 704 (+0.74 %: the rule looked
   up by the movement's game on the greybox, which has no map game, and
   the body written each tick).
+- 2026-11-25, the hand-off (goldsrc.md, M2): `cs16:movement` runs on the
+  crate. Beyond the three seams, each rule specs/cs16/movement.md has
+  that the existing switches did not cover is a named field of
+  `QuakeConfig`, at the shared code's value in `reference()` and so for
+  every Source game: `ground_snap` (the ground tested at the start of
+  every tick, the body put on its probe's end, no stick-to-ground in the
+  walk move, no quarter probes), `unduck_at_once` (no timed unduck; a
+  duck let go before it completed stands 18 units up on the ground),
+  `duck_ends_on_time` (the duck completes on the tick its timer reaches
+  the duck time, not the one after), `jump_sets_speed` (the jump's speed
+  set, not added), `bunnyhop_cut` (what a jump over the cap leaves of the
+  cap: 0.8), `modifier_per_tick` (a hit's modifier gaining a step each
+  ground tick and scaling the velocity after the move, the max speed
+  unscaled), `punch_decay` (the roll decaying by constant + share x its
+  size), `clip_stop_epsilon` (a slide's small components zeroed),
+  `rising_friction` (the 0.25 surface friction while rising: 1 for
+  GoldSrc), `water_jump_up` (256; 225) and `walk_scales_keys` (the walk
+  key on the keys, not the max speed). The jump penalty is the stamina
+  timer CS:S already had. The hull trace is `goldsrc_engine::hulls`
+  (`GoldSrcHulls` over `goldsrc_formats::bsp::Bsp::trace`, the trees
+  carried in the converted map as `map::clip_trees::MapClipTrees`). With
+  all of it in, the four games' hashes are equal. The step, before the
+  props service landed under it (of main before S7): CS:S 71 782
+  (+0.60 %), HL2:DM 67 427 (+0.56 %), TF2 71 893 (+0.50 %), DoD:S 74 189
+  (+0.57 %): about 60 instructions a tick over S9 for the switches'
+  tests; rebased over the props service (of the entry above's numbers):
+  CS:S 71 958 (+0.06 %), HL2:DM 67 658 (+0.12 %), TF2 72 070 (+0.10 %),
+  DoD:S 74 743 (+0.05 %). CS 1.6's own golden run (`0x455eb29c0bc087e4`,
+  1 620 ticks of 10 ms on the greybox, box sweeps): the step 71 460 a
+  tick.

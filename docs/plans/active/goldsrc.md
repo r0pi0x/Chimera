@@ -25,7 +25,7 @@ Force) is a small port on the same loader.
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Left: the lightmap brightening against captures; the logic's sounds and debris |
 | M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Left: muzzle flash sprites and shells, the HE's and smoke's looks, the bodies' weapon sequences, measurements (weapons.md open questions) |
-| M2 movement | not started | §5; the lift of Source's movement into Chimera planned in [shared-movement.md](shared-movement.md) (2026-11-24) |
+| M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Left: water volumes from GoldSrc maps, the ladder volumes' own rule, measurement in the game |
 | M3 party rungs | not started | §5 |
 
 ## 1. Rules for this port
@@ -404,6 +404,30 @@ an implementation session):
 - mdl.md: chrome's coordinate mapping (which vectors, the scale, whether
   it turns with the view or the light, the flat-shade flag beside it);
   ours is Chimera's camera-space sphere map.
+- movement.md (from `cs16::game::movement`, M2): the test cases for the
+  jump disagree with the ground rule. "68 commands in the air; lands at
+  vz -275.67" and the first ground command's timer of 635.79 ms hold
+  when only the move itself meets the floor; by "Ground detection" (the
+  2-unit probe after every move) the 67th command ends 0.22 units up,
+  inside the probe, so it lands there: 66 commands end in the air, the
+  fall speed counted is 259.67 and the first ground command's timer is
+  645.79 (scale 0.8773). Ours follows the rule; which is the game's?
+  "About 31 % after 10 commands" is the penalty's share alone (friction
+  takes it to about 19 %): say so.
+- movement.md: the walk key. By the text it scales the keys' amounts by
+  0.52 before the clamp to the max speed, which walks at 208 units/s
+  with a 250 gun (ours); is CS 1.6's walk not 0.52 of the max speed
+  (130), as CS:S's is?
+- movement.md: ladders. "The player is on it when the origin, tested
+  against the ladder model's hull for the box, is not empty" and the
+  trace toward the model's centre: what the trace returns when the origin
+  is already inside the grown hull (ours keeps the shared rule: the
+  volume is a solid ladder brush found by a 2-unit probe along the keys).
+  Water: the up key's amount in Chimera's terms (jump?), and whether
+  `func_water` volumes carry currents in the stock maps.
+- movement.md: on a duck let go before it completes, the text puts the
+  standing box 18 units up on the ground (the duck-tap hop: ours does);
+  confirm it is the game's and not only the reference's.
 
 A **measurement tool** comes first: `tools/cs16_probe`, as
 `tools/hl2dm_probe` and DoD:S's probe. HLDS is a 32-bit Linux binary
@@ -680,3 +704,52 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   HE's and smoke's looks, the bodies' weapon sequences, the shotguns'
   pellets summed before the distance rule, the blast's armour depletion,
   the Elites' 5-unit offsets, friendly fire's × 0.35).
+- 2026-11-25: M2, movement. The shared movement's GoldSrc seams landed
+  (shared-movement.md S7-S9: clip hulls, command milliseconds, edge
+  friction) and `cs16:movement` runs on it (`cs16::game::movement`, the
+  numbers in `games/cs16/data/movement.toml` under the spec's names):
+  the cvar defaults as `cs16:` console variables, the jump set to
+  268.33 with the per-command jump penalty and the 1.2 x cap cut to
+  0.96 x, the 36-unit duck (0.333 keys from the press, the box 40
+  commands later, at once in the air with the feet 18 up, up at once
+  when let go, the duck-tap hop), the ground tested and snapped every
+  command, steps of 18, ladders at 200, the water jump at 225, landing
+  effects from 250 and damage above 500 of (speed - 500) / 4.8, the hit
+  slowdown (0.5; 0.65 with the 170 push; +0.01 a ground command, scaling
+  the velocity), the punch roll's linear decay, the speed table by gun
+  (data; the weapon layer hands the held gun's `max_speed`, which the
+  tests hold to the table). Each GoldSrc rule beyond the
+  three seams is a named switch of `QuakeConfig`, off for Source's games
+  (shared-movement.md, Log). **Hull traces**: the conversion carries the
+  planes, the clip nodes and the placed models' hull roots (the world and
+  the static brush entities) as `map::clip_trees::MapClipTrees` in the
+  map's extras (converter version 2; the served `map/<name>` entries
+  must be packed again); `goldsrc_engine::hulls` rebuilds a `Bsp` of
+  just those and traces it with the formats' own `Bsp::trace`
+  (`GoldSrcHulls`, a `chimera_movement::ClipHulls`), offered as
+  `MapClipHulls` when a map with trees is loaded (`GoldSrcHullsPlugin`,
+  server and client alike). On every other game's map there are no
+  trees and the movement sweeps Chimera's shapes; other games'
+  characters on GoldSrc maps sweep the reconstructed solids as before
+  (§3). Movers, ladder volumes, characters and props are box sweeps for
+  everyone. The large flinch is by the hitting gun's id (the data's
+  twelve). `GameParts::scaffold` is false since M1 landed the same day.
+  Tests: the spec's test cases
+  on the greybox at 10 ms (`games/cs16/tests/it/movement.rs`: 12.5, 22,
+  97.31, 250 at the 41st command; 240, 166.21, 73.46 and 0 at the 55th;
+  the apex 44.99; the duck's 40 commands, the duck jump and the hop; no
+  standing up under 60 units; 20, 125 and 0 points at 600, 1 100 and
+  500; the cut to 240; 200 and 282.8 up a ladder, 270 off it; the
+  modifier 0.66 on the next command; two disagree with the spec's table
+  and follow its rules: the questions above), a golden run
+  (`0x455eb29c0bc087e4`, 1 620 ticks, the step 71 460 instructions a
+  tick on the greybox's shapes), `net_prediction` (no prediction error
+  through runs, jumps, ducks, the hop and the walk key at 80 ms; every
+  predicted tick the server's bits; the same place after loss), and on
+  the install `heavy::movement`: 112 six-second walks from de_dust2's
+  spawns, ducked for a stretch, never with the box where its hull is
+  solid (hull 1 standing, hull 3 ducked: exactly, no allowance), 13
+  stair steps climbed, a resting player within 1/20 unit of the floor;
+  26 of the 28 ladder volumes of de_nuke, cs_assault and de_train
+  climbed to their tops from their feet (de_dust2 has no ladder; one
+  each on de_nuke and cs_assault not reached from the four sides tried).

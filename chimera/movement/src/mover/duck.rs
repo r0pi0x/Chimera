@@ -99,6 +99,32 @@ impl Mover<'_, '_, '_, '_> {
         self.categorize();
     }
 
+    /// GoldSrc's unduck (`QuakeConfig::unduck_at_once`): the standing box
+    /// tried where the original puts it (its centre 18 over the ducked
+    /// box's on the ground, at it in the air; a duck not yet completed has
+    /// the standing box's centre still, so it is tried 18 higher on the
+    /// ground), and taken at once when it fits; else nothing, tried again
+    /// every tick.
+    pub(crate) fn unduck_now(&mut self) {
+        let lift = if self.me.ducked {
+            if self.me.on_ground { 0.0 } else { -self.cfg.air_duck_lift() }
+        } else if self.me.on_ground {
+            (self.cfg.stand_height - self.cfg.duck_height) / 2.0
+        } else {
+            0.0
+        };
+        let at = self.feet + Vec3::Z * lift;
+        if self.trace.solid(false, at) {
+            return;
+        }
+        self.feet = at;
+        self.me.ducked = false;
+        self.me.ducking = false;
+        self.me.duck_timer = 0.0;
+        self.me.eye = self.cfg.eye_stand;
+        self.categorize();
+    }
+
     /// A duck timer started this tick (`duck_counts_first_tick`).
     #[inline]
     pub(crate) fn duck_timer_start(&self) -> f32 {
@@ -129,12 +155,15 @@ impl Mover<'_, '_, '_, '_> {
             }
             if self.me.ducking && !self.me.ducked {
                 let elapsed = (DUCK_TIMER_START - self.me.duck_timer) / 1000.0;
-                if elapsed > self.cfg.duck_time || !self.me.on_ground {
+                let done = elapsed > self.cfg.duck_time || (self.cfg.duck_ends_on_time && elapsed >= self.cfg.duck_time);
+                if done || !self.me.on_ground {
                     self.finish_duck();
                 } else {
                     self.me.eye = self.eye_blend(Self::smooth(elapsed / self.cfg.duck_time));
                 }
             }
+        } else if self.cfg.unduck_at_once && (self.me.ducked || self.me.ducking) {
+            self.unduck_now();
         } else if self.me.ducked || self.me.ducking {
             if released {
                 if !self.me.ducking || self.me.ducked {

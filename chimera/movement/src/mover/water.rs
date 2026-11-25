@@ -6,7 +6,7 @@ use crate::{
     core::Intent,
     mover::{
         Mover, SWIM_SINK, SWIM_WISH_SCALE, WALKABLE_NORMAL_Z, WATER_FEET_PROBE, WATER_JUMP_DROP, WATER_JUMP_EYE_EXTRA,
-        WATER_JUMP_MIN_VZ, WATER_JUMP_PUSH, WATER_JUMP_REACH, WATER_JUMP_TIME, WATER_JUMP_UP,
+        WATER_JUMP_MIN_VZ, WATER_JUMP_PUSH, WATER_JUMP_REACH, WATER_JUMP_TIME,
     },
 };
 
@@ -79,7 +79,7 @@ impl Mover<'_, '_, '_, '_> {
         if !down.hit() || down.normal.z < WALKABLE_NORMAL_Z {
             return;
         }
-        self.v.z = WATER_JUMP_UP;
+        self.v.z = self.cfg.water_jump_up;
         self.me.water_jump_vel = -wall.normal * WATER_JUMP_PUSH;
         self.me.jump_held = true;
         self.me.water_jump_time = WATER_JUMP_TIME;

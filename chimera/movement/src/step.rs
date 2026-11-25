@@ -455,7 +455,16 @@ pub(crate) fn step(
         mover.me.use_held = intent.use_key;
         // The velocity modifier recovers after the move, whichever way it
         // went (M18: the first tick after a hit moves at the value set).
-        mover.me.velocity_modifier = (mover.me.velocity_modifier + cfg.velocity_modifier_recovery * dt).min(1.0);
+        if cfg.modifier_per_tick > 0.0 {
+            // GoldSrc (`QuakeConfig::modifier_per_tick`): on the ground it
+            // gains a step a tick and scales the velocity.
+            if mover.me.on_ground && mover.me.velocity_modifier < 1.0 {
+                mover.me.velocity_modifier = (mover.me.velocity_modifier + cfg.modifier_per_tick).min(1.0);
+                mover.v *= mover.me.velocity_modifier;
+            }
+        } else {
+            mover.me.velocity_modifier = (mover.me.velocity_modifier + cfg.velocity_modifier_recovery * dt).min(1.0);
+        }
         let (feet, v) = (mover.feet, mover.v);
         if let Some(mut touch) = touch {
             let new = shadow::PhysicsTouch {

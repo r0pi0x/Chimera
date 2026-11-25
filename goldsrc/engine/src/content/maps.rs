@@ -7,8 +7,11 @@
 //! load options and the file's hash): a second load reads the conversion
 //! back. The conversion, in order:
 //!
-//! 1. the entities (`entities::add`): the entity list, spawns, static
-//!    brush entities' solids, ladders, and which brush models to draw;
+//! 1. the clip hulls as plain data (`crate::hulls::trees`,
+//!    `map::clip_trees::MapClipTrees` in the map's extras: the world's and
+//!    the static brush entities'), then the entities (`entities::add`):
+//!    the entity list, spawns, static brush entities' solids, ladders, and
+//!    which brush models to draw;
 //! 2. the textures the drawn faces use and their families (`textures`:
 //!    an animation's frames, its alternate set, tiling variants), embedded
 //!    or from the WADs `worldspawn`'s `wad` key names; one found nowhere
@@ -127,6 +130,9 @@ pub fn convert(
     data.gravity = Some(game.gravity * METERS_PER_UNIT);
 
     report(0.1, "Entities");
+    // The clip hulls (`crate::hulls`): the world's here, the static brush
+    // entities' as the entity pass places them.
+    data.extras.insert(crate::hulls::trees(&bsp));
     let parts = entities::add(&bsp, game.spawns, &mut data);
     let worldspawn = bsp.entities().into_iter().next().unwrap_or_default();
 

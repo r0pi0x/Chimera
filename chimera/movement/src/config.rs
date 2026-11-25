@@ -269,6 +269,58 @@ pub struct QuakeConfig {
     /// straight down, meets nothing; starting in solid counts as a hit).
     /// 1 (Source's games): none, and no probe.
     pub edge_friction: f32,
+    /// GoldSrc's ground rule (specs/cs16/movement.md, "Ground detection"):
+    /// the ground is tested at the start of every tick, a body on it is put
+    /// at the end of its 2-unit ground probe (out of water deeper than the
+    /// feet, the probe not starting in solid), which keeps it on slopes and
+    /// down drops of up to 2 units a tick; the walk move has no stick to the
+    /// ground of its own, and the ground probe tries the whole box only.
+    /// Off (Source's games): the ground is tested when something moved the
+    /// body, the walk move sticks to the ground by the step height, and a
+    /// probe that misses is tried again by quarters.
+    pub ground_snap: bool,
+    /// GoldSrc's unduck (specs/cs16/movement.md, "Ducking"): letting go of
+    /// duck stands the body up at once where the standing box fits (no
+    /// timed unduck): a ducked body on the ground keeps its feet, one in
+    /// the air drops them by the air duck's lift, and a duck let go before
+    /// it completed lifts the body on the ground by half the boxes'
+    /// difference (18 units: the original's duck-tap hop). Off: the shared
+    /// code's 0.2 s unduck.
+    pub unduck_at_once: bool,
+    /// A duck completes on the tick its timer reaches `duck_time` (GoldSrc:
+    /// 40 commands of 10 ms after the press); off: on the first tick past
+    /// it.
+    pub duck_ends_on_time: bool,
+    /// A jump sets the vertical speed to the jump's (GoldSrc); off: a
+    /// standing jump adds it to the speed there is (the shared code).
+    pub jump_sets_speed: bool,
+    /// A jump over the bunny-hop cap leaves this times the cap (GoldSrc's
+    /// 0.8: 1.2 x 0.8 = 0.96 of the max speed); 1: the cap itself.
+    pub bunnyhop_cut: f32,
+    /// A hit's velocity modifier the GoldSrc way (specs/cs16/movement.md,
+    /// "Being hit"): on each tick that ends on the ground with the modifier
+    /// below 1, it gains this (0.01) and the whole velocity is multiplied
+    /// by it, after the move; the max speed is not scaled. 0 (Source's
+    /// games): the modifier scales the max speed and climbs by
+    /// `velocity_modifier_recovery` a second.
+    pub modifier_per_tick: f32,
+    /// The punch roll decays by length: L less (constant + share x L) a
+    /// second, degrees (GoldSrc: 10 and 0.5). None: the shared code's
+    /// spring.
+    pub punch_decay: Option<(f32, f32)>,
+    /// A slide's clipped velocity has its components smaller than this
+    /// zeroed (GoldSrc's 0.1 units/s); 0: kept.
+    pub clip_stop_epsilon: f32,
+    /// The surface friction of a body rising in the air (the shared code's
+    /// 0.25, which scales its air acceleration; GoldSrc has none: 1).
+    pub rising_friction: f32,
+    /// A water jump's upward speed, units/s (the shared code's 256;
+    /// GoldSrc's 225).
+    pub water_jump_up: f32,
+    /// The walk key scales the move keys' amounts by `walk_speed`
+    /// (GoldSrc: the client's `cl_movespeedkey`), the max speed untouched;
+    /// off: it scales the max speed (CS:S, measured).
+    pub walk_scales_keys: bool,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -520,6 +572,17 @@ impl QuakeConfig {
             clip_hulls: false,
             command_msec: false,
             edge_friction: 1.0,
+            ground_snap: false,
+            unduck_at_once: false,
+            duck_ends_on_time: false,
+            jump_sets_speed: false,
+            bunnyhop_cut: 1.0,
+            modifier_per_tick: 0.0,
+            punch_decay: None,
+            clip_stop_epsilon: 0.0,
+            rising_friction: crate::mover::UPWARD_AIR_FRICTION,
+            water_jump_up: crate::mover::WATER_JUMP_UP,
+            walk_scales_keys: false,
         }
     }
 }

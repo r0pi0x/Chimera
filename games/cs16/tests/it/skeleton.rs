@@ -1,7 +1,7 @@
 //! The skeleton on the headless harness (`harness::Cs16Sim`, the
 //! greybox): the game registers and is the gameplay at its tick, its data
 //! parses, and a body on `cs16:movement` spawns, stands on the floor and
-//! walks. Replace the stand-in numbers with the spec's as the parts land.
+//! runs at the knife's 250 units/s (the movement's own tests: `movement`).
 
 use bevy::prelude::*;
 use chimera_core::{game_registry::Games, gameplay::Gameplay, slots::MovementSlot};
@@ -53,7 +53,7 @@ fn a_body_spawns_stands_and_walks() {
     assert!(sim.state(p).on_ground, "standing on the greybox's floor");
     sim.intent(p).move_axis = Vec2::Y;
     sim.seconds(1.0);
-    let speed = sim.velocity(p).xz().length();
-    let walk = movement::tuning().walk;
-    assert!((speed - walk).abs() < 0.2, "walks at {speed} m/s, data says {walk}");
+    let speed = sim.velocity(p).xz().length() / cs16::game::METERS_PER_UNIT;
+    let run = movement::numbers().speed["default"];
+    assert!((speed - run).abs() < 0.5, "runs at {speed} units/s, data says {run}");
 }

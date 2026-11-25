@@ -38,8 +38,9 @@ fn bsp(mount: &chimera_core::mount::Mount, name: &str) -> Bsp {
     Bsp::parse(&mount.read(&gmaps::map_path(name)).unwrap()).unwrap()
 }
 
-/// The placeholder's capsule centre above its feet, metres.
-const CENTRE: f32 = chimera_core::character::CAPSULE_HEIGHT / 2.0;
+/// The transform above the feet, metres (the standing box's centre: 36
+/// units).
+const CENTRE: f32 = 36.0 * 0.0254;
 
 #[test]
 fn de_dust2_converts_with_every_texture() {

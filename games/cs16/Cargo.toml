@@ -1,7 +1,7 @@
 [package]
 name = "cs16"
 version = "0.1.0"
-description = "Counter-Strike 1.6 as a game crate: its maps and bodies from the install, a stand-in gun and movement so far (docs/plans/active/cs16.md)"
+description = "Counter-Strike 1.6 as a game crate: its maps and bodies from the install, its movement from its spec, a stand-in gun so far (docs/plans/active/cs16.md)"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -25,6 +25,8 @@ doctest = false
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+# The shared player movement `cs16:movement` runs on (game/movement.rs).
+chimera_movement.workspace = true
 # GoldSrc's formats: `liblist.gam` for the folder chain.
 goldsrc_formats.workspace = true
 # GoldSrc's maps and studio models converted (`goldsrc_engine::content`).
@@ -52,4 +54,4 @@ path = "tests/it/main.rs"
 
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on).
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "goldsrc_formats/dev", "goldsrc_engine/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_movement/dev", "goldsrc_formats/dev", "goldsrc_engine/dev"]

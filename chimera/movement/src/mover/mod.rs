@@ -215,12 +215,16 @@ impl Mover<'_, '_, '_, '_> {
         // A recent hit holds it lower (M18): faster than that slows by
         // the usual friction.
         let walk = if intent.walk { self.cfg.walk_speed } else { 1.0 };
+        // GoldSrc: the walk key scales the keys and a hit's modifier the
+        // velocity after the move (`walk_scales_keys`, `modifier_per_tick`).
+        let (walk, key_walk) = if self.cfg.walk_scales_keys { (1.0, walk) } else { (walk, 1.0) };
+        let modifier = if self.cfg.modifier_per_tick > 0.0 { 1.0 } else { self.me.velocity_modifier };
         let max_speed = match self.speed {
             // The game chose it (HL2:DM's walk, run or sprint).
-            Some(p) => p.min(self.cfg.maxspeed) * self.me.velocity_modifier,
-            None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier,
+            Some(p) => p.min(self.cfg.maxspeed) * modifier,
+            None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * modifier,
         } * self.ground_factors().0;
-        let keys = intent.move_axis;
+        let keys = intent.move_axis * key_walk;
         let (mut f, mut s) = (
             keys.y * self.cfg.key_speed + self.push_input.x,
             keys.x * self.cfg.key_speed + self.push_input.y,
@@ -278,7 +282,7 @@ impl Mover<'_, '_, '_, '_> {
         let moved = self.me.last_feet.is_none_or(|f| f.distance_squared(self.feet) > 1e-4);
         if self.unground {
             self.set_ground(false, None);
-        } else if self.me.ladder.is_some() || moved {
+        } else if self.me.ladder.is_some() || moved || self.cfg.ground_snap {
             self.categorize();
         } else if self.v.z > UNGROUND_VZ {
             self.set_ground(false, None);

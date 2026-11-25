@@ -39,7 +39,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    tf2_ui (games/tf2/ui/)   TF2's front end as its own crate (its HUD, its guns' kill icons): on tf2 and the shell; tf2 and its tests build no client
   |    dods (games/dods/)   Day of Defeat: Source (M0): GameInfo, mount from gameinfo.txt, maps (Allies/Axis spawns), the twelve class bodies, Source movement with its stances, a stand-in Colt, harness::DodsSim
   |    dods_ui (games/dods/ui/)   DoD:S's front end as its own crate (empty until its HUD)
-  |    cs16 (games/cs16/)   Counter-Strike 1.6 (scaffold): GameInfo, a loose-file mount, stand-in movement and gun, harness::Cs16Sim
+  |    cs16 (games/cs16/)   Counter-Strike 1.6: GameInfo, a loose-file mount, maps, bodies, its movement (chimera_movement, hull traced) and weapons, harness::Cs16Sim
   |    cs16_ui (games/cs16/ui/)   CS 1.6's front end as its own crate (empty)
   |
   |    cs_source_ui (games/cs_source/ui/)   CS:S's front end as its own crate (menus, panels, HUD, scoreboard): on cs_source, Source's shared crates, source_gameui and the shell
@@ -57,7 +57,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
 chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs as asset sources)
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, in_play, spawning, announce, dominations, status, kill_voice, server_docs, data_format; SimBasePlugins; testkit (feature)
-  |    chimera_movement (chimera/movement/)   the player movement Source's games share (and GoldSrc's will): config, state, hooks, trace, mover, step, shadow, pushaway, props (any movement meeting physics props), drown; QuakeMovementAppExt
+  |    chimera_movement (chimera/movement/)   the player movement Source's games and CS 1.6 share: config, state, hooks, trace (box sweeps; clip hulls), mover, step, shadow, pushaway, props (any movement meeting physics props), drown; QuakeMovementAppExt
   |    |
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
@@ -70,7 +70,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
                       blam_formats (blam/formats/)   Halo: Combat Evolved's formats as plain data (the Xbox disc image so far)
                       goldsrc_formats (goldsrc/formats/)   GoldSrc's formats as plain data (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, liblist.gam, materials.txt)
-                      goldsrc_engine (goldsrc/engine/)   GoldSrc's content in Chimera's types: a BSP 30 map as MapData (WAD textures, lightmaps, sky, entities, hull 0 solids and shrunk hull 1 player clip), a studio model as a character body
+                      goldsrc_engine (goldsrc/engine/)   GoldSrc's content in Chimera's types: a BSP 30 map as MapData (WAD textures, lightmaps, sky, entities, hull 0 solids and shrunk hull 1 player clip, the clip hulls for the shared movement), a studio model as a character body
 ```
 
 - **Layers by path** (checked: `layers_follow_paths`): a crate's folder
@@ -225,7 +225,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `QuakeMovementAppExt::quake_movement(id, config, cvars, namespace)`.
   It uses `chimera_core`, `chimera_world`, Bevy and avian only, and has
   no game's defaults (`QuakeConfig::reference`). Source's games
-  reach it through `source_engine::source_movement`. Its `props` is the
+  reach it through `source_engine::source_movement`; CS 1.6 registers
+  it itself (`cs16::game::movement`) with GoldSrc's seams on: the world
+  traced through a map's clip hulls (`trace::hulls`: `ClipHulls`,
+  `MapClipHulls`, which `goldsrc_engine::hulls` implements over the
+  BSP's clip nodes carried in the converted map,
+  `map::clip_trees::MapClipTrees`), commands of whole milliseconds, edge
+  friction. Its `props` is the
   service every movement meets physics props through, by the map's rule
   (docs/DESIGN.md "Props across games"): Combat Arms' and Halo's
   movements use it too.
@@ -519,8 +525,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   files, its maps (`game::maps`, `MAP_LOADER`: `goldsrc_engine`'s
   conversion with its spawns and kit, through the converted-map cache;
   its pool rules and measurements), the eight player bodies
-  (`game::bodies`, a gait and the pistol's aim played on them), the
-  placeholder movement and a stand-in gun as data, `harness::Cs16Sim`,
+  (`game::bodies`, a gait and the pistol's aim played on them), its
+  movement (`game::movement`: `chimera_movement` with CS 1.6's config,
+  hull traced on GoldSrc maps) and its weapons as data, `harness::Cs16Sim`,
   `BUNDLE` (a party guest: `GUEST` dresses other games' maps with its
   bodies). On the `goldsrc` loader layer. `cs16_ui` draws nothing of its
   own.

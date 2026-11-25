@@ -5,9 +5,12 @@
 //! Chimera's `MapData` and a studio model as a character body, each
 //! converter versioned (`content::CONVERTER`, build.rs) and
 //! deterministic; `logic`: the maps' entity logic (doors, buttons,
-//! triggers, breakables, the `+a` toggle), `GoldSrcLogicPlugin`.
+//! triggers, breakables, the `+a` toggle), `GoldSrcLogicPlugin`; `hulls`:
+//! a map's clip hulls traced for the shared movement
+//! (`chimera_movement::ClipHulls`), `GoldSrcHullsPlugin`.
 
 pub mod content;
+pub mod hulls;
 pub mod logic;
 
 // `crate::map`, `crate::core`, `crate::mount` and `crate::net` inside, as in the game

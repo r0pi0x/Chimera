@@ -19,6 +19,9 @@ doctest = false
 chimera_core.workspace = true
 # The map's types (`map::MapData` and its parts) the content converts into.
 chimera_world.workspace = true
+# The shared movement's clip hull seam (`hulls`: `ClipHulls` over the
+# BSP's clip nodes).
+chimera_movement.workspace = true
 goldsrc_formats.workspace = true
 # The network: the logic's movers and sprites replicated, a client's
 # movers stepped (`logic::net`, on `net::movers`).
@@ -35,7 +38,7 @@ workspace-hack.workspace = true
 
 [features]
 # Bevy as a dynamic library, as the games' `dev` (which turns this on).
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_net/dev", "goldsrc_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_movement/dev", "chimera_net/dev", "goldsrc_formats/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:
