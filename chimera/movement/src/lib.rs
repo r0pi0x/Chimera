@@ -20,7 +20,9 @@
 //! movement that asks for them), `mover` (one
 //! character's tick, in parts: ground, air, duck, jump, water, ladders,
 //! `lines` (ladder lines), falls, steps, stuck), `step` (the system),
-//! `shadow`, `pushaway`, `drown`; this file is the root: the systems as
+//! `shadow`, `pushaway` (with `props`, the service any movement uses to
+//! meet physics props by the map's rule: Combat Arms' and Halo's too),
+//! `drown`; this file is the root: the systems as
 //! one plugin (`QuakeMovementPlugin`), the set games order their own
 //! per-tick choices against (`MovementStep`), and a movement's
 //! registration (`QuakeMovementAppExt::quake_movement`: its id, config,
@@ -161,6 +163,7 @@ mod config;
 pub mod drown;
 mod hooks;
 mod mover;
+pub mod props;
 pub mod pushaway;
 pub mod shadow;
 mod state;
@@ -209,7 +212,8 @@ impl Plugin for QuakeMovementPlugin {
             .add_systems(First, lines::build_ladders)
             .add_systems(crate::core::Predict::Movement, step.in_set(MovementStep))
             .predicted_net::<QuakeMovement>()
-            .add_plugins((pushaway::PushAwayPlugin, shadow::ShadowPlugin));
+            .configure_sets(crate::core::Predict::Movement, MovementStep.before(crate::core::AfterMovements));
+        props::add(app);
         app.add_plugins(drown::DrowningPlugin);
     }
 }

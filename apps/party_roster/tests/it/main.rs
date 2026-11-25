@@ -25,6 +25,7 @@ mod halo_maps;
 mod kill_feed;
 mod ladders_across_games;
 mod overlay_guard;
+mod props_across_games;
 mod push_across_games;
 mod startup;
 

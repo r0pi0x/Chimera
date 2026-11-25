@@ -18,10 +18,12 @@ use crate::{
     map::{
         MapBrushCollider, MapBrushTree, MapBrushes, MapTerrain, MapTerrainCollider, MapWater, PhysicsProp, PlaySound,
         PropSurface, PushAway,
+        prop_physics::{PlayerPropRules, PlayerProps, PropGroups},
         sound::{SoundBank, SurfaceGrid},
     },
     mover::lines::{self, UseableLadder, UseableLadders},
     mover::{Mover, POST_HALF},
+    props::PropBody,
     pushaway, shadow,
     slots::MovementSlot,
     state::{SettleOnGround, QuakeMovement},
@@ -104,11 +106,15 @@ pub(crate) fn step(
     bank: Option<Res<SoundBank>>,
     mut play: MessageWriter<PlaySound>,
     mut damage: MessageWriter<Damage>,
-    (configs, mut ladders, mut outputs, (published, map_game)): (
+    (configs, mut ladders, mut outputs, (published, map_game, prop_rules)): (
         MovementConfigs,
         Option<ResMut<UseableLadders>>,
         MessageWriter<crate::map::entities::FireEntityOutput>,
-        (Option<Res<crate::core::MapLadders>>, Option<Res<crate::core::MapGame>>),
+        (
+            Option<Res<crate::core::MapLadders>>,
+            Option<Res<crate::core::MapGame>>,
+            Option<Res<crate::map::prop_physics::PlayerPropRules>>,
+        ),
     ),
     (clock, first, mut grid_cache, mut waist_steps, clip_hulls): (
         Res<crate::core::SimClock>,
@@ -118,12 +124,12 @@ pub(crate) fn step(
         Option<Res<MapClipHulls>>,
     ),
     other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<QuakeMovement>)>,
-    (health, dead, noblock, teams, (collider_of, afloat, turbo_groups)): (
+    (health, dead, noblock, teams, (collider_of, afloat, prop_groups)): (
         Query<&Health>,
         Query<(), With<ColliderDisabled>>,
         Option<Res<crate::core::NoBlock>>,
         Query<&crate::core::Team, Without<crate::core::Npc>>,
-        (Query<&ColliderOf>, Query<(), With<crate::map::buoyancy::Floating>>, TurboGroups),
+        (Query<&ColliderOf>, Query<(), With<crate::map::buoyancy::Floating>>, PropGroups),
     ),
 ) {
     // `chimera_noblock` (ours): which players pass through which (hostages
@@ -223,9 +229,9 @@ pub(crate) fn step(
     // map's player clips are among its brushes, their collider left out
     // with the rest.
     let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::CHARACTER_FILTER);
-    // The same under turbo physics (`QuakeConfig::turbo_physics`): only the
-    // props its players get past (`TurboGroups::passes`); made on the first
-    // such player's tick.
+    // The same under turbo physics (the map's prop rule, `props`): only the
+    // props its players get past (`PropGroups::moved_through`); made on the
+    // first such player's tick.
     let mut turbo_filter: Option<SpatialQueryFilter> = None;
     // The broad phase over the map's brushes, rebuilt with them.
     let grid = &mut *grid_cache;
@@ -262,6 +268,10 @@ pub(crate) fn step(
     let ladders: &[UseableLadder] = ladders.as_ref().map_or(&[], |l| &l.0);
     // The loaded map's envelope, each character's body fitted to it.
     let map_envelope = configs.map();
+    // The loaded map's prop rule (`props`), the same for every character.
+    let map_rule = map_game
+        .as_deref()
+        .map(|m| PlayerPropRules::for_character(prop_rules.as_deref(), Some(m), None));
     for (
         entity,
         intent,
@@ -348,14 +358,16 @@ pub(crate) fn step(
             }
         }
         let (forward, right) = Mover::view(intent);
-        let turbo = cfg.turbo_physics;
+        // The map's prop rule (on a map of no game, its movement's game's).
+        let turbo = map_rule.unwrap_or_else(|| PlayerPropRules::for_character(prop_rules.as_deref(), None, slot.map(|s| s.0)))
+            == PlayerProps::Turbo;
         // Under turbo physics only props in the push-away group push back
         // (a settled one is a wall).
         let push_input = pushaway::push_back(
-            pushaway::player_box(&transform, &me, cfg),
+            PropBody::quake(cfg, &me).bounds(transform.translation),
             forward,
             right,
-            props.iter().filter(|(e, ..)| !turbo || turbo_groups.soft(*e)).map(|(_, t, p)| (t, p)),
+            props.iter().filter(|(e, ..)| !turbo || prop_groups.soft(*e)).map(|(_, t, p)| (t, p)),
         );
         if turbo && turbo_filter.is_none() {
             let excluded = characters
@@ -363,7 +375,7 @@ pub(crate) fn step(
                 .copied()
                 .chain(brushes.as_ref().map(|_| brush_colliders.iter()).into_iter().flatten())
                 .chain(terrain.as_ref().map(|_| terrain_colliders.iter()).into_iter().flatten())
-                .chain(props.iter().filter(|(e, _, p)| turbo_groups.passes(*e, p)).map(|(e, ..)| e));
+                .chain(props.iter().filter(|(e, _, p)| prop_groups.moved_through(*e, p, PlayerProps::Turbo)).map(|(e, ..)| e));
             turbo_filter = Some(SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::CHARACTER_FILTER));
         }
         let base_filter = if turbo { turbo_filter.as_ref().unwrap_or(&filter) } else { &filter };
@@ -446,7 +458,11 @@ pub(crate) fn step(
         mover.me.velocity_modifier = (mover.me.velocity_modifier + cfg.velocity_modifier_recovery * dt).min(1.0);
         let (feet, v) = (mover.feet, mover.v);
         if let Some(mut touch) = touch {
-            *touch = shadow_props.touch(&mover.touched, mover.ground_collider, start, feet, mover.wish, dt);
+            let new = shadow::PhysicsTouch {
+                body: PropBody::quake(cfg, mover.me),
+                ..shadow_props.touch(&mover.touched, mover.ground_collider, start, feet, mover.wish, dt)
+            };
+            *touch = new;
         }
         if let Some(p) = pushed.as_mut() {
             let new = ExternalPush { lift: false, ..mover.push };
@@ -558,48 +574,5 @@ pub(crate) fn step(
             on_ladder: me.ladder.is_some() || me.useable.is_some(),
             view_roll: me.punch_roll.to_radians(),
         };
-    }
-}
-
-/// Physics props' groups under turbo physics (`QuakeConfig::turbo_physics`,
-/// `prop_physics::PropGroup::live`): which a player gets past and which
-/// are the push-away's soft props.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct TurboGroups<'w, 's> {
-    props: Query<
-        'w,
-        's,
-        (
-            &'static RigidBody,
-            Has<crate::map::prop_physics::StartAsleep>,
-            Has<Sleeping>,
-            Has<crate::map::prop_physics::DebrisProp>,
-        ),
-        With<PhysicsProp>,
-    >,
-}
-
-impl TurboGroups<'_, '_> {
-    /// Prop `e`'s group now.
-    pub(crate) fn group(&self, e: Entity) -> crate::map::prop_physics::PropGroup {
-        self.props.get(e).map_or_else(
-            |_| Default::default(),
-            |(rb, start_asleep, sleeping, debris)| {
-                crate::map::prop_physics::PropGroup::live(start_asleep, rb.is_dynamic() && !sleeping, debris)
-            },
-        )
-    }
-
-    /// Whether a player gets past prop `e` (`player_passes` by turbo
-    /// physics' rule).
-    pub(crate) fn passes(&self, e: Entity, p: &PhysicsProp) -> bool {
-        crate::map::prop_physics::player_passes(p, crate::map::prop_physics::PlayerProps::Turbo, self.group(e))
-    }
-
-    /// Whether prop `e` is one of the push-away's soft props: in the
-    /// push-away group, not debris (a "solid" one pushes the player back,
-    /// `pushaway::push_back`; any is shoved, `pushaway::push_props`).
-    pub(crate) fn soft(&self, e: Entity) -> bool {
-        self.group(e).soft()
     }
 }

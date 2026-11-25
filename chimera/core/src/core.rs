@@ -1666,6 +1666,13 @@ impl ExternalPush {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PushFooting;
 
+/// After every movement's step (`Predict::Movement`): what reads where the
+/// bodies ended up this tick (`chimera_movement::props`' observation of
+/// the movements that don't report to it themselves). Every movement's
+/// step goes before it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AfterMovements;
+
 pub fn push_footing(mut q: Query<(&mut ExternalPush, &MovementState, &Velocity)>, clock: Res<SimClock>) {
     let dt = clock.dt();
     for (mut p, state, v) in &mut q {

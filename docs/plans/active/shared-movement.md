@@ -591,3 +591,32 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   HL2:DM 67 373 (+0.48 %), TF2 71 814 (+0.39 %), DoD:S 74 155 (+0.52 %):
   S8 and S9 together cost under 40 instructions a tick. Next: the
   hand-off (goldsrc.md M2: `goldsrc_engine::hulls`, `cs16:movement`).
+- 2026-11-24, props for every movement (docs/DESIGN.md "Props across
+  games"): meeting physics props is a service of the crate,
+  `chimera_movement::props`, which any movement uses. The rule is the
+  map's (`PlayerPropRules::for_character`: the map's game's, on a map of
+  no game the movement's game's), so `QuakeConfig::turbo_physics` is gone
+  (DoD:S's maps register `Turbo`, as they did for the spots' walker). The
+  shadow and the push-away read a neutral body (`props::PropBody` in
+  `shadow::PhysicsTouch::body`: box height and half width, origin over the
+  feet, on the ground) instead of `QuakeMovement` and its config; the
+  shared movement writes it in its step with its measured touch;
+  `props::observe` (in `Predict::Movement`, set `core::AfterMovements`,
+  which every movement's step goes before: the shared one's
+  `MovementStep`, Combat Arms', Halo's, the placeholder's, noclip's) writes it for every other movement with a hull
+  (`MovementImpl::footing`) from its collider, its ground and its keys,
+  with what the box touches and stands on, and gives it the "solid" soft
+  props' push-back as Source's accelerate. Combat Arms' and Halo's
+  movements leave the passed props out of their casts (`props::PassedProps`,
+  over `prop_physics::PropGroups`, which replaced the step's `TurboGroups`),
+  run before `core::AfterMovements` (they depend on the crate for
+  `PassedProps`; the service's systems, `PropsPlugin`, are the app's, which
+  the shared movement's plugin adds: every app with a Source game's maps
+  has them, Combat Arms' and Halo's own apps, whose maps have no physics
+  props, don't; another body gets a shadow only while the map has a
+  physics prop). The shadow's box is the body's (TF2's 24-unit half width, where
+  it was 16 for every game). Golden hashes unchanged (CS:S, HL2:DM, TF2,
+  DoD:S); the step against S9's: CS:S 71 916 (+0.27 %), HL2:DM 67 579
+  (+0.31 %), TF2 72 001 (+0.26 %), DoD:S 74 704 (+0.74 %: the rule looked
+  up by the movement's game on the greybox, which has no map game, and
+  the body written each tick).

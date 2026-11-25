@@ -100,7 +100,7 @@ impl Plugin for PlaceholderMovementPlugin {
     fn build(&self, app: &mut App) {
         app.register_movement::<PlaceholderMovement>(ID)
             .init_resource::<Tunings>()
-            .add_systems(Predict::Movement, step)
+            .add_systems(Predict::Movement, step.before(crate::core::AfterMovements))
             .predicted_net::<PlaceholderMovement>();
     }
 }

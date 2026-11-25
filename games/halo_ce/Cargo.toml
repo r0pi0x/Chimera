@@ -26,6 +26,9 @@ doctest = false
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+# Meeting physics props as the map's rule says (`chimera_movement::props`:
+# the shadow, the push-away, the props its casts pass).
+chimera_movement.workspace = true
 # The network: replication of its players' vitality (`game::vitality`) and
 # the prediction harness for the movement's test (`harness::NetSim`).
 chimera_net.workspace = true
@@ -67,4 +70,4 @@ path = "tests/it/main.rs"
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p halo_ce --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "blam_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_movement/dev", "chimera_net/dev", "blam_formats/dev"]

@@ -697,7 +697,7 @@ impl Plugin for CaMovementPlugin {
             .register_movement::<CaMovement>(ID)
             .seat_movement(ID, footing, seat)
             .add_message::<super::volumes::PadLaunch>()
-            .add_systems(Predict::Movement, (step, sync_collider).chain())
+            .add_systems(Predict::Movement, (step, sync_collider).chain().before(crate::core::AfterMovements))
             .predicted_net::<CaMovement>()
             .predicted_net::<CustomMovePenalty>()
             .predicted_net::<VipMovement>();
@@ -1317,7 +1317,11 @@ fn step(
     pushers: Query<(Entity, &CaPusher)>,
     mut commands: Commands,
     ai: Query<(), Or<(With<crate::core::Bot>, With<crate::core::Npc>)>>,
-    (map_game, envelopes): (Option<Res<crate::core::MapGame>>, Option<Res<chimera_core::envelope::MovementEnvelopes>>),
+    (map_game, envelopes, props): (
+        Option<Res<crate::core::MapGame>>,
+        Option<Res<chimera_core::envelope::MovementEnvelopes>>,
+        chimera_movement::props::PassedProps,
+    ),
 ) {
     let dt = clock.dt();
     // The hull fitted to the loaded map (`body`).
@@ -1326,6 +1330,10 @@ fn step(
     let d = &*fitted;
     let s = d.meters_per_unit;
     let ai_passes_clips = !crate::core::foreign_map(map_game.as_deref(), Some(super::GAME));
+    // The physics props its casts pass, by the map's rule
+    // (`chimera_movement::props`): multiplayer ones, or under turbo physics
+    // those in the push-away group and debris.
+    let passed = props.passed(props.rule(Some(ID)));
     let now = clock.now;
     let first = first.is_none_or(|f| f.0);
     let is_character = |e: Entity| characters.contains(e);
@@ -1371,13 +1379,15 @@ fn step(
             // Q5): bots and mercenaries pass them. Another game's map's
             // players-only surfaces (Source's player clips) stop every
             // player, bots too, as there.
-            filter: SpatialQueryFilter::from_excluded_entities([entity]).with_mask(if ai_passes_clips
-                && ai.contains(entity)
-            {
-                CHARACTER_FILTER.0 & !crate::core::PLAYER_CLIP_LAYER.0
-            } else {
-                CHARACTER_FILTER.0
-            }),
+            filter: chimera_movement::props::PassedProps::filter(
+                entity,
+                &passed,
+                LayerMask(if ai_passes_clips && ai.contains(entity) {
+                    CHARACTER_FILTER.0 & !crate::core::PLAYER_CLIP_LAYER.0
+                } else {
+                    CHARACTER_FILTER.0
+                }),
+            ),
             scale: s,
             skin: d.skin,
             radius: d.stand_half_extents[0].max(d.stand_half_extents[2]),

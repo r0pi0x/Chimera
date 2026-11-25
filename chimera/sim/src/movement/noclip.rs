@@ -53,7 +53,7 @@ pub struct NoclipPlugin;
 impl Plugin for NoclipPlugin {
     fn build(&self, app: &mut App) {
         app.register_movement::<Noclip>(ID)
-            .add_systems(Predict::Movement, step);
+            .add_systems(Predict::Movement, step.before(crate::core::AfterMovements));
     }
 }
 

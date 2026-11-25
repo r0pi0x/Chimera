@@ -3,8 +3,10 @@
 //! (an impulse at the player's centre, so they spin too; one asleep since
 //! it spawned wakes, with OnAwakened) at most every 0.1 s (`PUSH_INTERVAL`,
 //! measured), and "solid"-mode props push the player back through the move
-//! input. Under turbo physics (`QuakeConfig::turbo_physics`, DoD:S's:
-//! specs/dods/physics_props.md 3) only props in the push-away group
+//! input (the shared movement's; another's by `props`). For every character
+//! on a movement that meets props (its body, `shadow::PhysicsTouch::body`).
+//! Under turbo physics (the map's rule, `prop_physics::PlayerProps::Turbo`,
+//! DoD:S's: specs/dods/physics_props.md 3) only props in the push-away group
 //! (`prop_physics::PropGroup::live`: asleep since they spawned, or
 //! moving) are soft; a settled one is a wall (`step`) and debris is
 //! neither shoved nor pushes back.
@@ -13,15 +15,14 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use super::{
-    config::{MovementConfigs, QuakeConfig},
-    state::QuakeMovement,
+    shadow::PhysicsTouch,
     units::{METERS_PER_UNIT, to_engine, to_units},
 };
 use crate::{
-    core::{SimSet, Velocity},
+    core::{Intent, SimSet, Velocity},
     map::{
         PhysicsProp, PushAway,
-        prop_physics::{DebrisProp, PropAwakened, PropGroup, StartAsleep},
+        prop_physics::{DebrisProp, PlayerPropRules, PlayerProps, PropAwakened, PropGroup, StartAsleep},
     },
 };
 
@@ -41,8 +42,6 @@ const PUSHBACK_MAX: f32 = 10_000.0;
 /// Applied to every client push-back (a quirk the game keeps).
 const PUSHBACK_SCALE: f32 = 0.25;
 const PUSHBACK_GAP: f32 = 5.0;
-/// The movement's transform sits this far above the feet (units).
-const ORIGIN_ABOVE_FEET: f32 = 36.0;
 
 pub struct PushAwayPlugin;
 
@@ -51,7 +50,10 @@ impl Plugin for PushAwayPlugin {
         use chimera_core::character::CharacterPartsExt;
         app.add_message::<PropAwakened>()
             .on_every_character::<NextPush>()
-            .add_systems(FixedUpdate, push_props.after(SimSet::Movement));
+            // Its impulses wait for the physics step; the props it shoves
+            // are moved there: unordered against the games' systems on
+            // purpose (the schedule ratchets).
+            .add_systems(FixedUpdate, push_props.after(SimSet::Movement).ambiguous_with_all());
     }
 }
 
@@ -84,16 +86,6 @@ pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, V
     (centre - reach).cmpgt(query.1).any() || (centre + reach).cmplt(query.0).any()
 }
 
-/// The player's box (Source units) from the movement transform.
-pub fn player_box(transform: &Transform, me: &QuakeMovement, cfg: &QuakeConfig) -> (Vec3, Vec3) {
-    let feet = to_units(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
-    let height = if me.ducked { cfg.duck_height } else { cfg.stand_height };
-    (
-        feet + Vec3::new(-cfg.half_width, -cfg.half_width, 0.0),
-        feet + Vec3::new(cfg.half_width, cfg.half_width, height),
-    )
-}
-
 fn overlap(a: (Vec3, Vec3), b: (Vec3, Vec3)) -> bool {
     a.0.cmple(b.1).all() && b.0.cmple(a.1).all()
 }
@@ -108,7 +100,7 @@ fn push_props(
         Entity,
         &Transform,
         &Velocity,
-        &QuakeMovement,
+        &PhysicsTouch,
         Option<&crate::core::MapControls>,
         Option<&NextPush>,
         Option<&crate::slots::MovementSlot>,
@@ -116,14 +108,15 @@ fn push_props(
     clock: Res<crate::core::SimClock>,
     mut props: Query<
         (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>, (&RigidBody, Has<Sleeping>, Has<DebrisProp>)),
-        (Without<QuakeMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
+        (Without<Intent>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
-    cfg: MovementConfigs,
+    (rules, map_game): (Option<Res<PlayerPropRules>>, Option<Res<crate::core::MapGame>>),
     mut commands: Commands,
     mut awakened: MessageWriter<PropAwakened>,
 ) {
-    for (who, pt, pv, me, controls, next, slot) in &players {
-        if controls.is_some_and(|c| c.parented) {
+    for (who, pt, pv, touch, controls, next, slot) in &players {
+        // A body a movement meeting props moved.
+        if controls.is_some_and(|c| c.parented) || !touch.body.some() {
             continue;
         }
         // Ticks land a hair off 0.1 s steps: compared with a little slack.
@@ -131,9 +124,9 @@ fn push_props(
             continue;
         }
         let mut pushed = false;
-        let cfg = cfg.of(slot);
-        let turbo = cfg.turbo_physics;
-        let mut player = player_box(pt, me, &cfg);
+        let turbo =
+            PlayerPropRules::for_character(rules.as_deref(), map_game.as_deref(), slot.map(|s| s.0)) == PlayerProps::Turbo;
+        let mut player = touch.body.bounds(pt.translation);
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);

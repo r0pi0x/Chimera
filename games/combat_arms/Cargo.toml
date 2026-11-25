@@ -27,6 +27,9 @@ doctest = false
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+# Meeting physics props as the map's rule says (`chimera_movement::props`:
+# the shadow, the push-away, the props its casts pass).
+chimera_movement.workspace = true
 # The network: the game registers what it replicates there (`game::net`);
 # its predicted parts go with Chimera's prediction.
 chimera_net.workspace = true
@@ -54,7 +57,7 @@ path = "tests/it/main.rs"
 [features]
 # Bevy as a dynamic library, as the app's `dev` (which turns this on):
 # `cargo test -p combat_arms --features dev` shares the app's Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "lithtech_formats/dev", "chimera_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_movement/dev", "chimera_net/dev", "lithtech_formats/dev", "chimera_formats/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:

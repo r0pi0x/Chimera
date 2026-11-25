@@ -8,11 +8,13 @@
 //! player's own kinematic collider touches only the heavy ones, so it
 //! can't launch light ones). After the physics step the
 //! player is moved to where the shadow got to while pushing or standing
-//! on a prop (reconciliation). Multiplayer props are pushaway.rs's. A
-//! movement with turbo physics (`QuakeConfig::turbo_physics`: DoD:S's,
-//! specs/dods/physics_props.md 1) has no shadow: its players wear
-//! `prop_physics::NoShadow`, shove no `prop_physics` and meet every one as
-//! a wall.
+//! on a prop (reconciliation). Multiplayer props are pushaway.rs's. Every
+//! character on a movement that meets props has one (`props`: the shared
+//! movement's, Combat Arms', Halo's; its body, `PhysicsTouch::body`, the
+//! box the shadow takes), but on a map whose rule is turbo physics
+//! (`prop_physics::PlayerProps::Turbo`: DoD:S's, specs/dods/physics_props.md
+//! 1): there it has none, wears `prop_physics::NoShadow`, shoves no
+//! `prop_physics` and meets every one as a wall.
 //! A game that wants it (`ShadowKnockPlugin`, HL2:DM's; CS:S's keeps its
 //! measured contacts) has a prop running into a player from the side knock
 //! him on that tick and go on forward, rather than stop on the shadow and
@@ -47,7 +49,8 @@ use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use super::{
-    config::{MovementConfigs, QuakeConfig},
+    config::MovementConfigs,
+    props::PropBody,
     state::QuakeMovement,
     units::{to_engine, to_units},
 };
@@ -55,13 +58,14 @@ use crate::{
     core::{Health, Intent, PropSurface, SHADOW_LAYER, Velocity},
     map::{
         PhysicsProp, PushAway,
-        prop_physics::{NoShadow, PhysicsShadow, SHADOW_MASS, SHADOW_PUSH_MASS, Shadowed, StartAsleep},
+        prop_physics::{
+            NoShadow, PhysicsShadow, PlayerPropRules, PlayerProps, SHADOW_MASS, SHADOW_PUSH_MASS, Shadowed, StartAsleep,
+        },
     },
 };
 
 const METERS_PER_UNIT: f32 = 0.0254;
-const HALF_WIDTH: f32 = 16.0;
-/// The movement's transform sits this far above the feet (units).
+/// The shared movement's transform sits this far above the feet (units).
 const ORIGIN_ABOVE_FEET: f32 = 36.0;
 /// Reconciliation thresholds (spec 4.1 step 7): position (units) and
 /// velocity (units/s) errors, and the stricter pair on a rideable body.
@@ -89,12 +93,24 @@ impl Plugin for ShadowPlugin {
         use chimera_core::character::CharacterPartsExt;
         app.on_every_character::<Shadowed>()
             .on_every_character::<PhysicsTouch>()
-            .add_systems(FixedUpdate, attach.before(crate::core::SimSet::Movement))
+            // It only spawns and drops shadows (by commands) and puts
+            // `NoShadow` on or off; `drive` places each shadow every physics
+            // step: unordered against the games' systems on purpose (the
+            // schedule ratchets).
+            .add_systems(FixedUpdate, attach.before(crate::core::SimSet::Movement).ambiguous_with_all())
             .add_systems(
                 FixedPostUpdate,
                 (
-                    drive.before(PhysicsSystems::First),
-                    reconcile.after(PhysicsSystems::Writeback),
+                    // Shadows only: no character's position (moved by
+                    // hand) and no prop's drag.
+                    drive
+                        .before(PhysicsSystems::First)
+                        .ambiguous_with(crate::core::keep_moved_positions)
+                        .ambiguous_with(crate::map::prop_physics::air_drag),
+                    // Characters only: no prop settles here.
+                    reconcile
+                        .after(PhysicsSystems::Writeback)
+                        .ambiguous_with(crate::map::prop_physics::settle_props),
                 ),
             );
     }
@@ -219,6 +235,9 @@ pub struct PhysicsTouch {
     pub wish: Vec3,
     /// The move's time step (s).
     pub dt: f32,
+    /// The body that moved (`props::PropBody`; none: no movement meeting
+    /// props moves it).
+    pub body: PropBody,
 }
 
 /// Which physics props the movement's hits are.
@@ -260,6 +279,7 @@ impl ShadowProps<'_, '_> {
             feet,
             wish,
             dt,
+            body: PropBody::default(),
         }
     }
 }
@@ -319,31 +339,34 @@ pub fn reconciled(
     (out, Some(shadow_feet))
 }
 
-fn hull_height(cfg: &QuakeConfig, ducked: bool) -> f32 {
-    if ducked { cfg.duck_height } else { cfg.stand_height }
+/// The shadow's box for a body (engine meters).
+fn shadow_collider(body: &PropBody) -> Collider {
+    let w = 2.0 * body.half_width * METERS_PER_UNIT;
+    Collider::cuboid(w, body.height * METERS_PER_UNIT, w)
 }
 
-/// The shadow's box for a player (engine meters).
-fn shadow_collider(height: f32) -> Collider {
-    let w = 2.0 * HALF_WIDTH * METERS_PER_UNIT;
-    Collider::cuboid(w, height * METERS_PER_UNIT, w)
-}
-
-/// The shadow's state the game keeps: the box height it has.
+/// The shadow's state the game keeps: the box (height, half width) it has.
 #[derive(Component, Clone, Copy, Debug)]
-struct ShadowBox(f32);
+struct ShadowBox(f32, f32);
+
+impl ShadowBox {
+    fn of(body: &PropBody) -> Self {
+        Self(body.height, body.half_width)
+    }
+}
 
 /// Where the shadow was last sent (engine centre; None: not yet).
 #[derive(Component, Clone, Copy, Debug, Default)]
 struct ShadowAim(Option<Vec3>);
 
-/// Give every Source player a shadow; remove the shadows of players gone
-/// or no longer moving the Source way. `Shadowed` and `PhysicsTouch` are on
-/// every character from the spawn (`ShadowPlugin`), a shadow or none: they
-/// came and went with the movement, each a new archetype for every
-/// combination of the character's other parts. A movement with turbo
-/// physics (`QuakeConfig::turbo_physics`) has none: its players wear
-/// `NoShadow` instead.
+/// Give every character on a movement that meets props a shadow (its body,
+/// `PhysicsTouch::body`; the shared movement's from the spawn); remove the
+/// shadows of characters gone or no longer meeting props. `Shadowed` and
+/// `PhysicsTouch` are on every character from the spawn (`ShadowPlugin`), a
+/// shadow or none: they came and went with the movement, each a new
+/// archetype for every combination of the character's other parts. On a map
+/// whose rule is turbo physics (`PlayerPropRules::for_character`) it has
+/// none: it wears `NoShadow` instead.
 #[allow(clippy::type_complexity)]
 fn attach(
     mut commands: Commands,
@@ -352,21 +375,37 @@ fn attach(
         &Transform,
         Option<&crate::slots::MovementSlot>,
         &Shadowed,
+        &PhysicsTouch,
         Has<QuakeMovement>,
         Has<NoShadow>,
     )>,
     shadows: Query<(Entity, &PhysicsShadow)>,
     owners: Query<&Shadowed>,
     cfg: MovementConfigs,
+    (rules, map_game): (Option<Res<PlayerPropRules>>, Option<Res<crate::core::MapGame>>),
+    props: Query<(), With<PhysicsProp>>,
 ) {
+    // Another movement's body has a shadow only where there is a prop to
+    // push (the shared movement's always has one).
+    let any_props = !props.is_empty();
     for (shadow, s) in &shadows {
         if owners.get(s.owner).is_ok_and(|o| o.0 == Some(shadow)) {
             continue;
         }
         commands.entity(shadow).try_despawn();
     }
-    for (owner, t, slot, shadowed, quake, unshadowed) in &characters {
-        let turbo = quake && cfg.own(slot).turbo_physics;
+    for (owner, t, slot, shadowed, touch, quake, unshadowed) in &characters {
+        // The shared movement's before its first step: its standing box.
+        let body = match touch.body {
+            b if b.some() && (quake || any_props) => Some(b),
+            _ if quake => {
+                let c = cfg.of(slot);
+                Some(PropBody { height: c.stand_height, half_width: c.half_width, origin_above_feet: ORIGIN_ABOVE_FEET, on_ground: false })
+            }
+            _ => None,
+        };
+        let turbo = body.is_some()
+            && PlayerPropRules::for_character(rules.as_deref(), map_game.as_deref(), slot.map(|s| s.0)) == PlayerProps::Turbo;
         if turbo != unshadowed {
             if turbo {
                 commands.entity(owner).insert(NoShadow);
@@ -374,27 +413,26 @@ fn attach(
                 commands.entity(owner).remove::<NoShadow>();
             }
         }
-        let source = quake && !turbo;
-        match (shadowed.0, source) {
-            (Some(shadow), false) => {
+        let body = body.filter(|_| !turbo);
+        let body = match (shadowed.0, body) {
+            (Some(shadow), None) => {
                 commands.entity(shadow).try_despawn();
                 commands.entity(owner).insert((Shadowed(None), PhysicsTouch::default()));
                 continue;
             }
-            (None, true) => {}
+            (None, Some(body)) => body,
             _ => continue,
-        }
-        let height = cfg.of(slot).stand_height;
-        let centre = t.translation + Vec3::Y * (height / 2.0 - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT;
+        };
+        let centre = t.translation + Vec3::Y * (body.height / 2.0 - body.origin_above_feet) * METERS_PER_UNIT;
         let shadow = commands
             .spawn((
                 Name::new("Physics shadow"),
                 PhysicsShadow { owner, active: false },
-                ShadowBox(height),
+                ShadowBox::of(&body),
                 ShadowAim::default(),
                 Transform::from_translation(centre),
                 RigidBody::Dynamic,
-                shadow_collider(height),
+                shadow_collider(&body),
                 Mass(SHADOW_MASS),
                 // Surfaceprop "player" (friction 0.5, elasticity 0.001);
                 // no rotation, no gravity: its controller holds it up.
@@ -410,9 +448,7 @@ fn attach(
                 ActiveCollisionHooks::FILTER_PAIRS,
             ))
             .id();
-        commands
-            .entity(owner)
-            .insert((Shadowed(Some(shadow)), PhysicsTouch::default()));
+        commands.entity(owner).insert((Shadowed(Some(shadow)), PhysicsTouch { body, ..default() }));
     }
 }
 
@@ -421,15 +457,7 @@ fn attach(
 /// box changes with ducking). A dead player's shadow touches nothing.
 #[allow(clippy::type_complexity)]
 fn drive(
-    owners: Query<(
-        &Transform,
-        &QuakeMovement,
-        &PhysicsTouch,
-        &Shadowed,
-        Option<&Health>,
-        Option<&crate::core::MapControls>,
-        Option<&crate::slots::MovementSlot>,
-    )>,
+    owners: Query<(&Transform, &PhysicsTouch, &Shadowed, Option<&Health>, Option<&crate::core::MapControls>)>,
     mut shadows: Query<
         (
             &mut PhysicsShadow,
@@ -442,35 +470,35 @@ fn drive(
         Without<Shadowed>,
     >,
     mut commands: Commands,
-    cfg: MovementConfigs,
     time: Res<Time>,
 ) {
     let dt = time.delta_secs();
-    for (t, me, touch, shadowed, health, controls, slot) in &owners {
+    for (t, touch, shadowed, health, controls) in &owners {
         let Some(shadow) = shadowed.0 else { continue };
         let Ok((mut s, mut size, mut aim, mut pos, mut st, mut v)) = shadows.get_mut(shadow) else {
             continue;
         };
-        // A parented player (riding a kart) touches nothing either.
-        let alive = health.is_none_or(|h| h.current > 0.0) && !controls.is_some_and(|c| c.parented);
+        let body = &touch.body;
+        // A parented player (riding a kart) touches nothing either; nor
+        // one whose body no movement wrote yet.
+        let alive = health.is_none_or(|h| h.current > 0.0) && !controls.is_some_and(|c| c.parented) && body.some();
         if s.active != alive {
             s.active = alive;
         }
-        let feet = to_units(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
+        let feet = body.feet(t.translation);
         // Moved since the movement (a teleport): no push this step.
         let moved_here = touch.feet.distance_squared(feet) < 1.0;
-        let target_feet = if moved_here { target(touch, me.on_ground) } else { feet };
+        let target_feet = if moved_here { target(touch, body.on_ground) } else { feet };
         // Spec 4.1 step 6: the shadow goes up with a step, not at the speed
         // that would get it there in one physics step, which the
         // reconciliation would hand to the player (the step up onto a bench
         // threw him up at 18 units a tick, 1200 units/s).
-        let stepped = if moved_here && me.on_ground { touch.feet.z - touch.prev_feet.z } else { 0.0 };
-        let height = hull_height(&cfg.of(slot), me.ducked);
-        let centre = to_engine(target_feet + Vec3::Z * height / 2.0);
-        let resized = size.0 != height;
-        if resized {
-            size.0 = height;
-            commands.entity(shadow).insert(shadow_collider(height));
+        let stepped = if moved_here && body.on_ground { touch.feet.z - touch.prev_feet.z } else { 0.0 };
+        let centre = to_engine(target_feet + Vec3::Z * body.height / 2.0);
+        let resized = size.0 != body.height || size.1 != body.half_width;
+        if resized && body.some() {
+            *size = ShadowBox::of(body);
+            commands.entity(shadow).insert(shadow_collider(body));
         }
         if !alive || dt <= 0.0 {
             v.0 = Vec3::ZERO;
@@ -508,34 +536,26 @@ fn drive(
 /// anything.
 #[allow(clippy::type_complexity)]
 fn reconcile(
-    mut owners: Query<(
-        Entity,
-        &mut Transform,
-        &mut Velocity,
-        &QuakeMovement,
-        &PhysicsTouch,
-        &Shadowed,
-        Option<&crate::slots::MovementSlot>,
-    )>,
+    mut owners: Query<(Entity, &mut Transform, &mut Velocity, &PhysicsTouch, &Shadowed)>,
     shadows: Query<(&PhysicsShadow, &ShadowBox, &Position, &LinearVelocity), Without<Shadowed>>,
     characters: Query<Entity, With<Intent>>,
     props: Query<(Entity, &PhysicsProp)>,
     spatial: SpatialQuery,
-    cfg: MovementConfigs,
     held: Query<(Entity, &crate::map::held::Held, Option<&RigidBodyColliders>)>,
 ) {
-    for (owner, mut t, mut vel, me, touch, shadowed, slot) in &mut owners {
+    for (owner, mut t, mut vel, touch, shadowed) in &mut owners {
         let Some(Ok((s, size, pos, sv))) = shadowed.0.map(|e| shadows.get(e)) else {
             continue;
         };
         if !s.active || !(touch.touched || touch.standing_on.is_some()) {
             continue;
         }
-        let height = hull_height(&cfg.of(slot), me.ducked);
-        if size.0 != height {
+        let body = &touch.body;
+        let height = body.height;
+        if size.0 != height || size.1 != body.half_width {
             continue;
         }
-        let feet = to_units(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
+        let feet = body.feet(t.translation);
         let shadow_feet = to_units(pos.0) - Vec3::Z * height / 2.0;
         let (v, to) = reconciled(
             feet,
@@ -543,7 +563,7 @@ fn reconcile(
             shadow_feet,
             to_units(sv.0),
             touch,
-            !me.on_ground,
+            !body.on_ground,
         );
         let v = to_engine(v);
         if vel.0 != v {
@@ -566,9 +586,9 @@ fn reconcile(
         // What it holds never blocks it.
         let excluded = excluded.chain(crate::map::held::held_by(owner, held.iter()));
         let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::CHARACTER_FILTER);
-        let w = 2.0 * HALF_WIDTH * METERS_PER_UNIT;
+        let w = 2.0 * body.half_width * METERS_PER_UNIT;
         let shape = Collider::cuboid(w, height * METERS_PER_UNIT, w);
-        let centre = from + Vec3::Y * (height / 2.0 - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT;
+        let centre = from + Vec3::Y * (height / 2.0 - body.origin_above_feet) * METERS_PER_UNIT;
         let config = ShapeCastConfig {
             max_distance: len,
             ignore_origin_penetration: true,
@@ -596,6 +616,7 @@ mod tests {
             feet: Vec3::new(1.0, 0.0, 0.0),
             wish: Vec3::new(250.0, 0.0, 0.0),
             dt: 0.015,
+            body: PropBody::default(),
         }
     }
 

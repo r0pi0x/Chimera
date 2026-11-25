@@ -13,14 +13,17 @@
 //! `SpawnClimbs`), the ground speed clamped to the tick's cap
 //! (`ground_clamp`: the stamina's caps, the slow cap and the cap while
 //! changing stance the speed itself, not the wish: movement.md, "Stamina
-//! and sprint"), and turbo physics (`turbo_physics`, the shipped
-//! `sv_turbophysics 1`: specs/dods/physics_props.md): no physics shadow,
+//! and sprint"), and turbo physics on its maps (the shipped
+//! `sv_turbophysics 1`: specs/dods/physics_props.md; its maps' prop rule,
+//! `prop_physics::PlayerProps::Turbo`, which every character on them
+//! follows whatever its movement, `chimera_movement::props`, and its own
+//! on a map of no game): no physics shadow,
 //! so a `prop_physics` of any mass is a wall; a multiplayer prop is soft
 //! (walked into, pushing the player back, shoved the less the heavier it
 //! is) only while in the push-away group (asleep since it spawned, or
 //! moving), a wall once settled; debris and non-solid ones are walked
-//! through. The spawn spots' walk meets the props by the same rule
-//! (`prop_physics::PlayerProps::Turbo`). Its box is the
+//! through. The spawn spots' walk meets the props by the same rule. Its
+//! box is the
 //! envelope its maps carry (`chimera_core::envelope`, registered by
 //! `source_movement`), so other games' characters fit on its maps and its
 //! own on theirs.
@@ -102,10 +105,6 @@ pub fn config() -> QuakeConfig {
         duck_time: 0.4,
         unduck_counts_first_tick: true,
         ground_clamp: true,
-        // `sv_turbophysics 1` (the shipped `cfg/game.cfg`,
-        // specs/dods/physics_props.md): no shadow, every `prop_physics` a
-        // wall, a multiplayer prop soft only in the push-away group.
-        turbo_physics: true,
         jump_stamina: 0.0,
         enable_bunnyhopping: false,
         bunnyhop_cap: 0.0,
@@ -147,9 +146,11 @@ pub fn add_movement(app: &mut App) {
         use crate::map::SpawnClimbAppExt;
         app.add_spawn_climb(super::GAME, 0.8);
     }
-    // Its shipped config's turbo physics (specs/dods/physics_props.md):
-    // the spots' walk goes through only debris and the multiplayer props
-    // still asleep since load; every other physics prop is a wall.
+    // Its shipped config's turbo physics (specs/dods/physics_props.md),
+    // its maps' prop rule: every character on them (and its own on a map of
+    // no game) has no shadow, and the spots' walk goes through only debris
+    // and the multiplayer props still asleep since load; every other
+    // physics prop is a wall.
     {
         use crate::map::prop_physics::{PlayerProps, PlayerPropsAppExt};
         app.add_player_props(super::GAME, PlayerProps::Turbo);

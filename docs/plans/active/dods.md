@@ -349,9 +349,11 @@ propsurvey pronecap sightstart backstab2 mgsweep`; the log):
 
 **Implemented after shared-movement S6** (the movement in
 `chimera_movement`; was "waiting on shared-movement S4"):
-- **Players and physics props under turbo physics**: a per-game choice in
-  the shared movement, `QuakeConfig::turbo_physics` (off for CS:S, HL2:DM
-  and TF2, whose golden runs are unchanged), on in DoD:S's config: no
+- **Players and physics props under turbo physics**: DoD:S's maps' prop
+  rule (`prop_physics::PlayerProps::Turbo`; first a per-game choice in the
+  shared movement's config, `turbo_physics`, made the map's rule for every
+  movement on 2026-11-24: `chimera_movement::props`, docs/DESIGN.md "Props
+  across games"; a DoD:S player on a map of no game keeps it): no
   physics shadow (`prop_physics::NoShadow` on its players), so a
   `prop_physics` of any mass is a wall; a multiplayer prop is the
   push-away's soft prop (pushes the player back, 0.88 v − 33 a tick, and

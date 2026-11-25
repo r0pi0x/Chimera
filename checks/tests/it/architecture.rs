@@ -95,9 +95,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("state", &["mover"]),
     ("trace", &["core", "map", "units"]),
     ("mover", &["core", "map", "slots", "config", "hooks", "state", "trace", "units"]),
-    ("step", &["core", "map", "slots", "config", "hooks", "mover", "pushaway", "shadow", "state", "trace", "units"]),
-    ("shadow", &["core", "map", "slots", "config", "state", "units"]),
-    ("pushaway", &["core", "map", "slots", "config", "state", "units"]),
+    ("step", &["core", "map", "slots", "config", "hooks", "mover", "props", "pushaway", "shadow", "state", "trace", "units"]),
+    ("shadow", &["core", "map", "slots", "config", "props", "state", "units"]),
+    ("pushaway", &["core", "map", "slots", "shadow", "units"]),
+    // Meeting physics props for any movement: the body, the props a
+    // movement's casts pass, the observed bodies of the other movements.
+    ("props", &["core", "map", "slots", "config", "pushaway", "shadow", "state", "units"]),
     ("drown", &["core", "slots", "config", "state"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.

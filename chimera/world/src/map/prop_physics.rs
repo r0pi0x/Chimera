@@ -24,7 +24,12 @@
 //! as the game runs also the moving ones, `PropGroup::live`, which the
 //! movement under turbo physics meets; a frozen prop a wall under both, as
 //! the movement sweeps it), which walkers standing in for players (the
-//! spawn spots', the map sweep's) go through;
+//! spawn spots', the map sweep's) go through; the same rule for every
+//! character on the map whatever its movement
+//! (`PlayerPropRules::for_character`; on a map of no game its movement's
+//! game's), and `PropGroups`, which props a movement's casts pass under it
+//! (`moved_through`: a `prop_physics` stays solid to the movement under
+//! `Shadow`, which its shadow shoves);
 //! `settle_props`: a moving prop that keeps within 1 in and 5 degrees of
 //! one pose for 0.5 s is stopped and put to sleep (`Settling`), as Source's
 //! physics sleeps nearly still bodies; one sunk more than 1 in into the
@@ -546,7 +551,8 @@ pub struct PhysicsShadow {
 pub struct Shadowed(pub Option<Entity>);
 
 /// A character moving under turbo physics (specs/dods/physics_props.md:
-/// no shadow, `chimera_movement`'s `turbo_physics`): its movement meets
+/// no shadow; the map's rule, `PlayerProps::Turbo`, which every movement
+/// meeting props follows, `chimera_movement::props`): its movement meets
 /// every `prop_physics` as a wall, and its own collider touches the
 /// physics props a shadowed character's does (the heavy `prop_physics`
 /// ones), so walking never shoves one.
@@ -647,6 +653,18 @@ impl PlayerPropRules {
             _ => PlayerProps::Shadow,
         }
     }
+
+    /// The rule a character on movement `movement` (its id) meets: the
+    /// loaded map's game's (`map`), or on a map of no game (the greybox, a
+    /// test's) its movement's game's; no rules registered: `Shadow`. The
+    /// same whatever movement moves it (`chimera_movement::props`).
+    pub fn for_character(rules: Option<&Self>, map: Option<&crate::core::MapGame>, movement: Option<&str>) -> PlayerProps {
+        let Some(rules) = rules else { return PlayerProps::Shadow };
+        match map {
+            Some(m) => rules.of(&m.0),
+            None => movement.and_then(crate::core::movement_game).map_or(PlayerProps::Shadow, |g| rules.of(g)),
+        }
+    }
 }
 
 /// Registering a game's rule.
@@ -678,7 +696,7 @@ impl PropGroup {
     /// since it spawned (`start_asleep`) or moving (`moving`: a simulated
     /// body awake; one that wakes, moves and settles again leaves it), so a
     /// "solid" multiplayer prop is a wall once it settles. What the
-    /// movement meets (`chimera_movement`'s `turbo_physics`); the spots'
+    /// movement meets (`PropGroups`, `chimera_movement::props`); the spots'
     /// walker takes the map at load, where the moving ones are those that
     /// will settle (`asleep`: `StartAsleep` alone).
     pub fn live(start_asleep: bool, moving: bool, debris: bool) -> Self {
@@ -708,6 +726,42 @@ pub fn player_passes(p: &PhysicsProp, rule: PlayerProps, group: PropGroup) -> bo
             PushAway::Solid => group.debris || group.asleep,
             PushAway::NonSolid | PushAway::Ignore => true,
         },
+    }
+}
+
+/// Physics props' groups as the game runs (`PropGroup::live`), for a
+/// movement meeting them: which it moves through under a rule, which are
+/// the push-away's soft props under turbo physics.
+#[derive(SystemParam)]
+pub struct PropGroups<'w, 's> {
+    props: Query<'w, 's, (&'static RigidBody, Has<StartAsleep>, Has<Sleeping>, Has<DebrisProp>), With<PhysicsProp>>,
+}
+
+impl PropGroups<'_, '_> {
+    /// Prop `e`'s group now.
+    pub fn group(&self, e: Entity) -> PropGroup {
+        self.props.get(e).map_or_else(
+            |_| Default::default(),
+            |(rb, start_asleep, sleeping, debris)| PropGroup::live(start_asleep, rb.is_dynamic() && !sleeping, debris),
+        )
+    }
+
+    /// Whether a character's movement under `rule` moves through prop `e`
+    /// (its casts leave it out): under `Shadow` a multiplayer prop (a
+    /// `prop_physics` is solid to the movement: the shadow shoves the light
+    /// ones and the character follows, spec 4.1), under `Turbo` the ones a
+    /// player gets past (`player_passes`).
+    pub fn moved_through(&self, e: Entity, p: &PhysicsProp, rule: PlayerProps) -> bool {
+        match rule {
+            PlayerProps::Shadow => p.push != super::PushAway::Collide,
+            PlayerProps::Turbo => player_passes(p, PlayerProps::Turbo, self.group(e)),
+        }
+    }
+
+    /// Whether prop `e` is one of the push-away's soft props under turbo
+    /// physics: in the push-away group, not debris.
+    pub fn soft(&self, e: Entity) -> bool {
+        self.group(e).soft()
     }
 }
 

@@ -145,6 +145,7 @@ use std::borrow::Cow;
 
 use avian3d::{character_controller::move_and_slide::DepenetrationConfig, prelude::*};
 use bevy::prelude::*;
+use chimera_movement::props::PassedProps;
 use chimera_core::{
     character::{CAPSULE_HEIGHT, CAPSULE_RADIUS},
     core::MapGame,
@@ -206,7 +207,7 @@ pub fn register(app: &mut App) {
     app.insert_resource(d)
         .register_movement::<HaloMovement>(ID)
         .seat_movement(ID, footing, seat)
-        .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
+        .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain().before(crate::core::AfterMovements))
         .add_systems(
             FixedUpdate,
             falls::other_bodies
@@ -363,8 +364,13 @@ fn step(
     mut hits: MessageWriter<HaloHit>,
     (map_ladders, zones): (Option<Res<MapLadders>>, Query<&LadderZone>),
     (envelopes, map_game, tables): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>, Option<Res<BodyTables>>),
+    props: PassedProps,
 ) {
     let map = map_body_envelope(envelopes.as_deref(), map_game.as_deref());
+    // The physics props its casts pass, by the map's rule
+    // (`chimera_movement::props`): multiplayer ones, or under turbo physics
+    // those in the push-away group and debris.
+    let passed = props.passed(props.rule(Some(ID)));
     // Every ladder, climbed by Halo's rule (docs/DESIGN.md, "Ladders
     // across games"): the map's volumes, the games' zones, and the map's
     // ladder lines (HL2's) as volumes reaching the geometry behind them
@@ -390,7 +396,7 @@ fn step(
             me.was_dead = true;
             continue;
         }
-        let filter = SpatialQueryFilter::from_excluded_entities([e]).with_mask(CHARACTER_FILTER);
+        let filter = PassedProps::filter(e, &passed, CHARACTER_FILTER);
         let space = space::EngineSpace::new(&move_and_slide, filter.clone(), d).with_ladders(&ladders);
         if me.was_dead {
             // A respawn: a new biped.

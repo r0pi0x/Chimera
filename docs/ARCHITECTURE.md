@@ -57,7 +57,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
 chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs as asset sources)
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, in_play, spawning, announce, dominations, status, kill_voice, server_docs, data_format; SimBasePlugins; testkit (feature)
-  |    chimera_movement (chimera/movement/)   the player movement Source's games share (and GoldSrc's will): config, state, hooks, trace, mover, step, shadow, pushaway, drown; QuakeMovementAppExt
+  |    chimera_movement (chimera/movement/)   the player movement Source's games share (and GoldSrc's will): config, state, hooks, trace, mover, step, shadow, pushaway, props (any movement meeting physics props), drown; QuakeMovementAppExt
   |    |
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
@@ -225,7 +225,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `QuakeMovementAppExt::quake_movement(id, config, cvars, namespace)`.
   It uses `chimera_core`, `chimera_world`, Bevy and avian only, and has
   no game's defaults (`QuakeConfig::reference`). Source's games
-  reach it through `source_engine::source_movement`.
+  reach it through `source_engine::source_movement`. Its `props` is the
+  service every movement meets physics props through, by the map's rule
+  (docs/DESIGN.md "Props across games"): Combat Arms' and Halo's
+  movements use it too.
 - `chimera_sim` is the simulation's frameworks: `weapon` (the weapon
   system), `movement` (the movement slot's placeholder and noclip) and
   `rule_module` (the rule-module interface, `mashup::rules::module`),

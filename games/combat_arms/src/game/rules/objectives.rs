@@ -303,12 +303,15 @@ pub fn set_carry(world: &mut World, e: Entity, c: CaCarry) {
 }
 
 /// The floor under `at` (the first thing straight down within 100 m that
-/// isn't a character), else `at`.
+/// isn't a character or a physics shadow), else `at`.
 pub fn floor_below(world: &mut World, at: Vec3) -> Vec3 {
     let characters: Vec<Entity> = world.query_filtered::<Entity, With<Intent>>().iter(world).collect();
     let mut state: SystemState<SpatialQuery> = SystemState::new(world);
     let Ok(query) = state.get(world) else { return at };
-    let filter = SpatialQueryFilter::default().with_excluded_entities(characters);
+    // Players' physics shadows (on another game's map) aren't floors.
+    let filter = SpatialQueryFilter::default()
+        .with_excluded_entities(characters)
+        .with_mask(avian3d::prelude::LayerMask(!crate::core::SHADOW_LAYER.0));
     match query.cast_ray(at, Dir3::NEG_Y, 100.0, true, &filter) {
         Some(hit) => at - Vec3::Y * hit.distance,
         None => at,
@@ -686,7 +689,9 @@ pub fn give_weapon_later(commands: &mut Commands, e: Entity, id: &'static str) {
 /// out of the ray).
 pub fn floor_below_in(spatial: Option<&SpatialQuery>, characters: &Query<Entity, With<Intent>>, at: Vec3) -> Vec3 {
     let Some(query) = spatial else { return at };
-    let filter = SpatialQueryFilter::default().with_excluded_entities(characters.iter());
+    let filter = SpatialQueryFilter::default()
+        .with_excluded_entities(characters.iter())
+        .with_mask(avian3d::prelude::LayerMask(!crate::core::SHADOW_LAYER.0));
     match query.cast_ray(at, Dir3::NEG_Y, 100.0, true, &filter) {
         Some(hit) => at - Vec3::Y * hit.distance,
         None => at,

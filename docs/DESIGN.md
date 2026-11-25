@@ -561,6 +561,37 @@ game's clips. Monster clips (NPC-only brushes) stop no player
 nobody: the only NPCs, CS:S's hostages, walk with the match's player
 movement, and the specs give no NPC mask for them.
 
+### Props across games
+
+A character meets a map's physics props by that map's rule, whatever
+movement moves it (the user's call, 2026-11-24: Combat Arms' and Halo's
+movements met every prop as a wall, while the spawn-spot walker counted
+the crates Source characters push as passable). The rule is the map's
+game's (`prop_physics::PlayerPropRules`, `for_character`; on a map of no
+game, the greybox or a test's, the movement's own game's): under
+`Shadow` (CS:S, HL2:DM, TF2) a physics shadow shoves a `prop_physics` up
+to 350 kg and the character follows it, a heavier one is a wall, and
+multiplayer props are walked through, shoved and, "solid" ones, push
+back; under `Turbo` (DoD:S) there is no shadow, every `prop_physics` is
+a wall and only the push-away group is soft. One service in
+`chimera_movement::props` does it for every movement: the shared
+(Quake-lineage) movement writes its body and its measured touch from
+inside its step as it always did; another movement (Combat Arms',
+Halo's) only leaves the props the rule passes out of its casts
+(`PassedProps`), runs before `core::AfterMovements`, and is observed after its move
+(its collider's box, its ground, its keys, what its box touches and
+stands on). The shadow, the push-away and the reconciliation read that
+neutral body (`PhysicsTouch::body`), never a movement's own state. The
+service's systems are the app's, added with the shared movement (every
+app with a Source game's maps); a body other than the shared movement's
+gets a shadow only while the map has a physics prop.
+Chosen over each movement modelling props: one service serves today's
+movements and the next game's, and the walker and every movement agree
+(apps/party_roster/tests/it/props_across_games.rs). DoD:S's turbo physics
+was a choice of its movement's config before; it is its maps' rule now
+(a CS:S character on a DoD:S map has no shadow there, a DoD:S one on a
+CS:S map has one).
+
 ### Impacts across games
 
 Any game's gun works on any game's map; where a game lacks something,
