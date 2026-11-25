@@ -25,9 +25,9 @@ reload = 2.8125
 
 [hitscan]
 pellets = 1
-# `Accuracy` as a cone's half-angle sine (weapons.md, open question 1:
-# CS:S's seeded spread assumed); `dods:gun` sets it each shot.
-spread = { cone = 0.014 }
+# `Accuracy` as the spread (weapons.md, "Spread"), drawn as DoD:S's
+# seeded pattern (spread.md); `dods:gun` sets it each shot.
+spread = { template_disc = 0.014 }
 
 [damage]
 amount = 110.0

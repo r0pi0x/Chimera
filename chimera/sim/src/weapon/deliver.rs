@@ -1025,6 +1025,12 @@ impl Shot<'_, '_, '_> {
 /// own generator per pellet with `seed + 1 + i`. The same on every machine
 /// for the same inputs: others' shots are drawn from them.
 pub fn pellet_dirs(aim: Quat, seed: u32, spread: SpreadShape, pellets: u32) -> Vec<Dir3> {
+    if let SpreadShape::TemplateDisc(s) = spread {
+        return template_disc_offsets(seed, pellets)
+            .into_iter()
+            .map(|o| spread_dir(aim, s, o.x, o.y))
+            .collect();
+    }
     if let SpreadShape::Disc { inaccuracy, spread } = spread {
         return cs_offsets(seed, inaccuracy, spread, pellets)
             .into_iter()
@@ -1055,7 +1061,28 @@ pub fn pellet_dirs(aim: Quat, seed: u32, spread: SpreadShape, pellets: u32) -> V
                     }
                     cone_dir(aim, s, x, y)
                 }
-                SpreadShape::Disc { .. } => unreachable!("drawn above"),
+                SpreadShape::Disc { .. } | SpreadShape::TemplateDisc(_) => unreachable!("drawn above"),
+            }
+        })
+        .collect()
+}
+
+/// DoD:S's pellet offsets in units of the spread (specs/dods/spread.md,
+/// measured on all 256 seeds): reseed `Ran1` with `seed` itself (0 and 1
+/// alike); per pellet x = U(-.5,.5) + U(-.5,.5), then y likewise, drawn
+/// again from the same stream while x² + y² > 1 (at most 64 tries).
+pub fn template_disc_offsets(seed: u32, pellets: u32) -> Vec<Vec2> {
+    let mut rng = Ran1::new(seed as i32);
+    (0..pellets.max(1))
+        .map(|_| {
+            let mut tries = 0;
+            loop {
+                let x = rng.range(-0.5, 0.5) + rng.range(-0.5, 0.5);
+                let y = rng.range(-0.5, 0.5) + rng.range(-0.5, 0.5);
+                tries += 1;
+                if x * x + y * y <= 1.0 || tries >= 64 {
+                    break Vec2::new(x, y);
+                }
             }
         })
         .collect()
@@ -1184,6 +1211,38 @@ pub fn hitgroup_at(b: &ColliderAabb, point: Vec3) -> Hitgroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dods_offsets_match_the_measured_seeds() {
+        // specs/dods/spread.md's test cases, in units of the spread.
+        let cases = [
+            (0, (-0.4920, 0.2861)),
+            (1, (-0.4920, 0.2861)),
+            (2, (-0.2553, 0.1285)),
+            (3, (0.4562, 0.3560)),
+            (7, (-0.4487, 0.1116)),
+            (8, (0.1701, -0.3028)),
+            (100, (0.8393, 0.0860)),
+            (167, (-0.5936, -0.2505)),
+            (206, (-0.0635, 0.1127)),
+            (219, (-0.2297, -0.6196)),
+            (255, (0.6639, -0.5735)),
+            (12345 & 255, (0.6905, -0.2992)),
+        ];
+        for (seed, (x, y)) in cases {
+            let o = template_disc_offsets(seed, 1)[0];
+            assert!((o.x - x).abs() < 1.5e-4 && (o.y - y).abs() < 1.5e-4, "seed {seed}: {o} != ({x}, {y})");
+        }
+        // Seed 8's first pair (-0.8807, 0.9046) is outside the disc: drawn again.
+        let mut rng = Ran1::new(8);
+        let x = rng.range(-0.5, 0.5) + rng.range(-0.5, 0.5);
+        let y = rng.range(-0.5, 0.5) + rng.range(-0.5, 0.5);
+        assert!((x + 0.8807).abs() < 1.5e-4 && (y - 0.9046).abs() < 1.5e-4);
+        // In the aim's frame: forward -Z, right +X, up +Y; spread 0.055.
+        let d = pellet_dirs(Quat::IDENTITY, 0, SpreadShape::TemplateDisc(0.055), 1)[0];
+        let (rx, uy) = (d.x / -d.z, d.y / -d.z);
+        assert!((rx + 0.02706).abs() < 1e-5 && (uy - 0.01574).abs() < 1e-5, "{d}");
+    }
 
     #[test]
     fn armour_that_runs_out_passes_the_rest_to_health() {

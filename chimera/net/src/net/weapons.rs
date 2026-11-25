@@ -398,6 +398,7 @@ fn send_weapon_events(
                     SpreadShape::Disc { inaccuracy, spread } => (spread_shape::DISC, inaccuracy, spread),
                     SpreadShape::Template(s) => (spread_shape::TEMPLATE, s, 0.0),
                     SpreadShape::Cone(s) => (spread_shape::CONE, s, 0.0),
+                    SpreadShape::TemplateDisc(s) => (spread_shape::TEMPLATE_DISC, s, 0.0),
                 };
                 let every = scans.get(e.weapon).map_or(0, |s| s.tracer_every);
                 let message = FireBullets {
@@ -947,6 +948,7 @@ fn receive_fire(mut fire: MessageReader<FireBullets>, mut commands: Commands) {
                         spread: f.spread,
                     },
                     spread_shape::CONE => SpreadShape::Cone(f.inaccuracy),
+                    spread_shape::TEMPLATE_DISC => SpreadShape::TemplateDisc(f.inaccuracy),
                     _ => SpreadShape::Template(f.inaccuracy),
                 },
                 mode: f.mode,

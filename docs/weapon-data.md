@@ -96,6 +96,8 @@ range = 8192.0
 # pellets = 1, punch_scale = 2.0 (from the base)
 # spread = { disc = { inaccuracy = 0.0, spread = 0.0 } } or { template = 0.05 }
 #   or { cone = 0.04362 } (Source's generic HL2 cone: HL2:DM's guns)
+#   or { template_disc = 0.055 } (the template's draw cut to the unit
+#   disc, seeded with the shot seed itself: DoD:S's guns)
 # tracer_every = 2              # a tracer every Nth bullet by one count over
 #   every bullet a network server fires: it flags each round it sends
 #   other clients, who draw a tracer on every bullet of a flagged one

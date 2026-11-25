@@ -351,6 +351,8 @@ pub enum SpreadData {
     /// Source's generic (HL2) cone (`SpreadShape::Cone`): the spread
     /// vector's component, the same on both axes.
     Cone(f32),
+    /// DoD:S's disc-cut template draw (`SpreadShape::TemplateDisc`).
+    TemplateDisc(f32),
 }
 
 /// `DamageEffect` (damage in damage units, `falloff_step` a length,
@@ -1330,6 +1332,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 Some(SpreadData::Template(s)) => SpreadShape::Template(s),
                 Some(SpreadData::Disc { inaccuracy, spread }) => SpreadShape::Disc { inaccuracy, spread },
                 Some(SpreadData::Cone(s)) => SpreadShape::Cone(s),
+                Some(SpreadData::TemplateDisc(s)) => SpreadShape::TemplateDisc(s),
             },
             punch_scale: h.punch_scale,
             tracer_every: h.tracer_every,

@@ -39,6 +39,7 @@
 
 pub mod bodies;
 pub mod classes;
+pub mod helmets;
 pub mod hud;
 pub mod maps;
 pub mod mount;

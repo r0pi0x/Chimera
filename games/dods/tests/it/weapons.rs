@@ -162,7 +162,7 @@ fn the_sights_block_the_trigger_049_s() {
     let after = (first + 1) as f64 * TICK_INTERVAL;
     assert!((0.48..0.52).contains(&after), "first shot {after} s after the sights went up");
     // Sighted, the cone is the script's alt accuracy (0 for the Garand).
-    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.0));
+    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::TemplateDisc(0.0));
 }
 
 /// One shot of `id` at a target `units` away, aimed `aim` units over its
@@ -176,7 +176,7 @@ fn one_shot(id: &str, units: f32, aim: f32) -> (f32, f64) {
     if sim.app.world().get::<AltModes>(w).is_some() {
         run(&mut sim, p, 40, |s, k| s.intent(p).secondary = k == 0);
     }
-    sim.app.world_mut().get_mut::<Hitscan>(w).unwrap().spread = SpreadShape::Cone(0.0);
+    sim.app.world_mut().get_mut::<Hitscan>(w).unwrap().spread = SpreadShape::TemplateDisc(0.0);
     let feet = sim.position(t) - Vec3::Y * 36.0 * U;
     testkit::aim_at(&mut sim, p, feet + Vec3::Y * aim * U);
     let before = health_points(&sim, t);
@@ -304,7 +304,7 @@ fn the_bars_alt_fire_selects_semi_automatic() {
     assert_eq!(sim.app.world().get::<AltModes>(w).unwrap().current, 1, "semi-automatic");
     assert_eq!(fired(&ev).len(), 1, "one shot a press: {:?}", fired(&ev));
     assert_eq!(fov(&sim, p), None, "no sights");
-    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.02), "its alt accuracy");
+    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::TemplateDisc(0.02), "its alt accuracy");
     // A press every other tick: one shot each 0.3 s (20 ticks) at most.
     let ev = run(&mut sim, p, 100, |s, t| s.intent(p).fire = t % 2 == 0);
     let shots = fired(&ev);
@@ -527,7 +527,7 @@ fn the_spread_is_the_scripts_plus_the_whole_penalty_over_45() {
     let (p, w) = holding(&mut sim, greybox::SPAWNS[0], THOMPSON);
     sim.intent(p).pitch = 1.2;
     run(&mut sim, p, 2, |s, _| s.intent(p).fire = true);
-    assert_eq!(cone(&sim, w), SpreadShape::Cone(0.055), "still");
+    assert_eq!(cone(&sim, w), SpreadShape::TemplateDisc(0.055), "still");
     sim.intent(p).fire = false;
     sim.intent(p).crouch = true;
     sim.intent(p).move_axis = Vec2::Y;
@@ -535,7 +535,7 @@ fn the_spread_is_the_scripts_plus_the_whole_penalty_over_45() {
     let v = sim.velocity(p).xz().length() / U;
     assert!(v > 45.0, "ducked moving {v}");
     run(&mut sim, p, 2, |s, _| s.intent(p).fire = true);
-    assert!(matches!(cone(&sim, w), SpreadShape::Cone(c) if (c - 0.155).abs() < 1e-6), "{:?}", cone(&sim, w));
+    assert!(matches!(cone(&sim, w), SpreadShape::TemplateDisc(c) if (c - 0.155).abs() < 1e-6), "{:?}", cone(&sim, w));
     let set = weapons::dods_weapons();
     assert_eq!(set.get(weapons::MG42).unwrap().hitscan.as_ref().unwrap().pellets, 1, "the MG42 fires one bullet");
 }

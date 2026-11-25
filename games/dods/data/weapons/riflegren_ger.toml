@@ -34,7 +34,7 @@ reload = 2.505
 range = 8192.0
 pellets = 1
 punch_scale = 0.0
-spread = { cone = 0.0 }
+spread = { template_disc = 0.0 }
 
 [hooks."dods:rifle_grenade"]
 script = "weapon_riflegren_ger"

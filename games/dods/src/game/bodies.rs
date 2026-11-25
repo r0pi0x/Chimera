@@ -25,9 +25,8 @@
 //! (`wear_classes`: `classes::Classes::held`, with its rung's drawn class),
 //! by name; the practice targets keep the body they were added with.
 //!
-//! Known shortcuts:
-//! - Bodies have no team skin or helmet/hair body groups chosen
-//!   (`helmetgroup`, `hairgroup` in the class scripts).
+//! Body groups and skins (specs/dods/bodygroups.md): one skin each (the
+//! team is the model), the helmet part shown or not by `helmets`.
 
 use bevy::prelude::*;
 use source_engine::content::{material::MaterialLoader, props, surfaceprops::SurfaceProps};
@@ -206,6 +205,7 @@ impl Plugin for DodsBodiesPlugin {
         chimera_core::games_in_play::track_game_characters(app);
         super::classes::add_rung_classes(app);
         app.add_systems(Update, (unwear, wear_classes.before(unwear), hold_weapons.in_set(crate::map::DriveAnimation)));
+        super::helmets::add(app);
     }
 }
 

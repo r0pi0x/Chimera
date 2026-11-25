@@ -6,8 +6,12 @@
 //!   first mode: the sights, the scope, the BAR's and StG44's semi-auto)
 //!   or a machine gun is deployed (`stance::DodsStance::deployed`), plus
 //!   the whole `AccuracyMovePenalty` while its holder's horizontal speed
-//!   after the tick's movement is over 45 units/s (`MOVING`); no stance
-//!   bonus, no growth over a burst (`before_frame`).
+//!   after the tick's movement is 45 units/s or more (`MOVING`; 45.0
+//!   itself counts, spread.md); no stance bonus, no growth over a burst
+//!   (`before_frame`). Each bullet is drawn inside it as DoD:S's pattern
+//!   (specs/dods/spread.md: `SpreadShape::TemplateDisc`, Source's
+//!   generator seeded with the shot seed, the template's draw cut to the
+//!   unit disc), so the same command seed hits the same spot.
 //! - **Sights block the trigger**: raising or lowering the sights or
 //!   scope (the data's `[alt]` scope, `step` 0.49 s) blocks the next shot
 //!   for that time (measured on the Garand, weapons.md "Alt fire"): the
@@ -34,8 +38,6 @@
 //!   backstab (damage.md, "Melee").
 //!
 //! Known shortcuts (docs/tech-debt.md):
-//! - The spread pattern inside the cone is CS:S's seeded spread (weapons.md,
-//!   open question 1: not visible on the server).
 //! - `Recoil` is kept in the parameters but gives no view kick: its shape
 //!   and recovery are unmeasured (weapons.md, open question 8).
 //! - The field of view changes in one step (measured: over 0.1 s); the
@@ -48,14 +50,15 @@ use chimera_sim::weapon::{AltModes, Hitscan, Inventory, Magazine, OwnZoom, Sprea
 
 use crate::core::Velocity;
 
-/// Horizontal speed over which a holder's shot takes the move penalty,
-/// m/s (weapons.md, "Spread": 45 units/s, measured).
+/// Horizontal speed from which a holder's shot takes the move penalty,
+/// m/s (weapons.md, "Spread"; spread.md: 45.0 units/s counts, measured).
 pub const MOVING: f32 = 45.0 * 0.0254;
 
 /// Whether a holder moving at `velocity` (m/s) takes the move penalty:
-/// its horizontal speed over `MOVING`.
+/// its horizontal speed `MOVING` or more (a hair under it for float
+/// rounding: a steady 45.0 measured as moving).
 pub fn moving(velocity: Vec3) -> bool {
-    velocity.with_y(0.0).length() > MOVING
+    velocity.with_y(0.0).length() >= MOVING - 1e-5
 }
 
 /// From the sights' or scope's press to the narrower view, seconds
@@ -147,7 +150,7 @@ pub fn before_frame(
         let mag = mag.as_deref();
         let moving = velocity.is_some_and(|v| moving(v.0));
         let sighted = alt.is_some_and(|a| a.current > 0) || stance.is_some_and(|s| s.deployed);
-        let cone = SpreadShape::Cone(gun.cone(sighted, moving));
+        let cone = SpreadShape::TemplateDisc(gun.cone(sighted, moving));
         if scan.spread != cone {
             scan.spread = cone;
         }

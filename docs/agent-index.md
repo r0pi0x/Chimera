@@ -371,6 +371,6 @@ module list is `docs/modules.md`.
 
 - 1: Weapon data | Weapons are data loaded at run time (docs/plans/active/engine-split.md, "Data-driven first"): a TOML document per weapon, parsed and...
 - 34: Documents | A document holds a weapon (a top-level `id`), ammo types (`[ammo."<id>"]` tables), or both
-- 223: Rules | inches: 0.0254) and health per damage point (hit points of 100: 0.01); both default to 1
-- 332: Loading more | data (games/cs_source/tests/data/weapon_rail.toml), buys it, fires it and plays it over the network
-- 344: Penetration by material | How bullets pass walls and characters (`PassMaterials`) is a game's document too, read by `PassMaterials::parse` (`weapon::pass_data`)...
+- 225: Rules | inches: 0.0254) and health per damage point (hit points of 100: 0.01); both default to 1
+- 334: Loading more | data (games/cs_source/tests/data/weapon_rail.toml), buys it, fires it and plays it over the network
+- 346: Penetration by material | How bullets pass walls and characters (`PassMaterials`) is a game's document too, read by `PassMaterials::parse` (`weapon::pass_data`)...

@@ -27,6 +27,7 @@ mod net_prediction;
 mod player_anim;
 mod props;
 mod skeleton;
+mod spread_helmets;
 mod stance;
 mod weapons;
 

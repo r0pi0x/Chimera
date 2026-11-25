@@ -276,8 +276,6 @@ binaries); 216 GB free on 2026-11-24. Then a listen server measures it as
   they move needs seeing).
 - The HUD's open questions (hud.md 1-7: the silhouette's red direction,
   the health bar's colour, the magazine box, the icon font, fades).
-- Body groups: `helmetgroup` / `hairgroup` in the class scripts (which
-  submodel each picks), team skins (`bodies`).
 - The player animation choices (`player_anim`: idle against aim, walk
   against run and the sprint set, feet and torso rules, the jump's landing,
   hand signals, the SMGs' stock strike, the bazooka's shouldering and
@@ -299,6 +297,22 @@ beyond the measured points, the ledge found by four downward traces,
 what narrows the yaw limit (below), the speed while the sights rise.
 Measured and not matched: going prone from a sprint (re-measured the
 same day, below: it was the stance-change cap, not friction).
+
+**Specified 2026-11-24 (measurements 4), implemented the same day**
+(spec commit "DoD:S spec measurements 4"; `measure.py pattern helmet`):
+- **The spread pattern** (spread.md): each bullet is Source's generator
+  seeded with the command's seed & 255 itself, the template's x then y
+  (U(-.5,.5) + U(-.5,.5) each) drawn again while outside the unit disc,
+  times the shot's spread; the same on every gun, per command
+  (`SpreadShape::TemplateDisc`, `deliver::template_disc_offsets`; the
+  guns' data `spread = { template_disc = ... }`); the move penalty from
+  45.0 u/s itself (`gun::moving`).
+- **Helmets and skins** (bodygroups.md): one skin per model (the team is
+  the model), a helmet part (0 on, 1 empty); a bullet to the head knocks
+  it off, lethal or not, until the next life (`helmets`: `DodsHelmet` on every character,
+  replicated in the network part `dods`, drawn as `BodyNumber` 1 on
+  DoD:S bodies). Left: the flying helmet and head hits by melee or blasts
+  (unmeasured).
 
 **Specified 2026-11-24 (measurements 3), implemented the same day**
 (spec commit "DoD:S spec measurements 3"; `measure.py mpprops propmass
@@ -370,8 +384,7 @@ propsurvey pronecap sightstart backstab2 mgsweep`; the log):
   field).
 
 **Still unmeasured on the dedicated server** (specs' open questions):
-the spread pattern inside the cone (no impact message on the server:
-needs the retail client); the MG yaw check's exact point, width and
+the MG yaw check's exact point, width and
 reach (weapons.md OQ 11; ours a fit), and whether a ledge deploy checks
 the same; the thrower's velocity law beyond three
 throws; what `dod_grenademaxspeed` caps; the swing's shape and what the
@@ -446,6 +459,13 @@ no spec says what a mashup should do (a design question for the user).
 
 ## Log
 
+- 2026-11-24: measurements 4 (spread.md, bodygroups.md) implemented (§7):
+  Chimera's `SpreadShape::TemplateDisc` (data `template_disc`, sent as
+  `spread_shape::TEMPLATE_DISC`) for every DoD:S gun, `gun::moving` from
+  45 u/s itself, `helmets` (the head shot's helmet, replicated);
+  `NET_VERSION` net77 (a spread shape the old clients would draw as the
+  template). Tests:
+  `deliver`'s measured seeds, dods `spread_helmets`.
 - 2026-11-24: the movement's two from measurements 3 implemented on
   `chimera_movement` (§7, "Implemented after shared-movement S6"): turbo
   physics as a per-game movement config (`turbo_physics`, DoD:S's), the

@@ -189,7 +189,7 @@ fn the_30cal_deploys_prone_waits_1_2_s_and_fires_on_its_sights_without_stamina()
     let first = *shots.first().expect("it fires once deployed");
     assert!(first as f64 * TICK_INTERVAL >= 1.2 - 1e-3, "first shot {first} ticks after deploying");
     assert!(shots.windows(2).all(|w| w[1] - w[0] == 7), "a shot every 7 ticks: {shots:?}");
-    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.01), "the sights' spread");
+    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::TemplateDisc(0.01), "the sights' spread");
     assert!((stamina(&sim, p) - 100.0).abs() < 1e-3, "deployed: no stamina spent");
     // Deployed: no crawl.
     sim.intent(p).fire = false;
@@ -223,7 +223,7 @@ fn the_30cal_fired_standing_costs_15_stamina_a_shot_and_climbs_back() {
     assert_eq!(shots, vec![0, 7], "two shots, 7 ticks apart");
     assert!((after[0] - 85.0).abs() < 1e-3, "after the first shot: {}", after[0]);
     assert!((after[7] - 76.3).abs() < 1e-3, "8.7 less after the second: {}", after[7]);
-    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.2), "undeployed: the script's 0.2");
+    assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::TemplateDisc(0.2), "undeployed: the script's 0.2");
     // Standing, the alt fire deploys nothing.
     sim.intent(p).secondary = true;
     sim.ticks(1);

@@ -39,6 +39,10 @@ serde.workspace = true
 toml.workspace = true
 vbsp.workspace = true
 workspace-hack.workspace = true
+# The network's parts: DoD:S's own replicated state (`helmets::DodsHelmet`;
+# tests/it/net_prediction.rs's `NetSim` too).
+chimera_net.workspace = true
+bevy_replicon.workspace = true
 
 # The tests' own: the presentation's Bevy and Avian features, for this
 # crate's own tests only (the dedicated servers build without them), so
@@ -55,8 +59,6 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 bevy_winit.workspace = true
 # The maps' headers (tests/it/heavy/maps.rs).
 source_formats.workspace = true
-# Prediction over the network (tests/it/net_prediction.rs: `NetSim`).
-chimera_net.workspace = true
 
 # The integration tests (tests/it/; the install's in tests/it/heavy/).
 [[test]]

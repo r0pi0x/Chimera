@@ -276,7 +276,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net76");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net77");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -948,6 +948,7 @@ pub mod spread_shape {
     pub const TEMPLATE: u8 = 0;
     pub const DISC: u8 = 1;
     pub const CONE: u8 = 2;
+    pub const TEMPLATE_DISC: u8 = 3;
 }
 
 /// `WeaponFx::kind`.

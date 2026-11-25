@@ -144,7 +144,7 @@ pub fn apply_script(data: &Kv, doc: &mut Table) -> Applied {
         }
         if let Some(a) = num("Accuracy", &mut out.notes) {
             let mut cone = Table::new();
-            cone.insert("cone".into(), Value::Float(a));
+            cone.insert("template_disc".into(), Value::Float(a));
             table(doc, "hitscan").insert("spread".into(), Value::Table(cone));
             hook(doc, super::GUN_HOOK).insert("accuracy".into(), Value::Float(a));
             out.set.push("accuracy");

@@ -1218,13 +1218,19 @@ pub enum SpreadShape {
     /// vector component (the same on both axes), along the aim's right and
     /// up (HL2:DM's SMG1 0.04362, 5 degrees).
     Cone(f32),
+    /// DoD:S's (specs/dods/spread.md, measured): Source's generator
+    /// seeded with the shot seed itself, each axis U(-.5,.5)+U(-.5,.5)
+    /// (x then y), the pair drawn again from the same stream while
+    /// outside the unit disc, times this spread along the aim's right and
+    /// up (`deliver::template_disc_offsets`).
+    TemplateDisc(f32),
 }
 
 impl SpreadShape {
     /// The widest a shot may stray, tangent units (a HUD's crosshair gap).
     pub fn width(self) -> f32 {
         match self {
-            SpreadShape::Template(s) | SpreadShape::Cone(s) => s,
+            SpreadShape::Template(s) | SpreadShape::Cone(s) | SpreadShape::TemplateDisc(s) => s,
             SpreadShape::Disc { inaccuracy, spread } => inaccuracy + spread,
         }
     }
