@@ -118,8 +118,8 @@ module list is `docs/modules.md`.
 - 251: Where an install is found (no config needed) | A game's install (what its tests and `GameInfo::install()` read) is the first of these that holds the files the game needs...
 - 281: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the dedicated server's build 25338204, published with `--build`: the...
 - 304: Counter-Strike 1.6: an install of your own, or the service | CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the Half-Life Dedicated Server's build 15961496, published with `--build`):
-- 332: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 377: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 334: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 379: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 

@@ -787,5 +787,8 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   bsp.md's "only style 0" (to correct in the spec). The atlas is the
   start's sum and each style a `MapLightStyle` share; the logic's
   switches reach `map::LightStyles` (not network clients yet).
-- Converter version 3; the cs16 sets republished.
+- Converter version 3; the cs16 sets republished under builds 12934623
+  and 15961496 (`sets cs16 --pack --sign`, `convert cs16 --sign`; the
+  manifests snapshotted first): the maps' sets gained their sounds and
+  sprites (1-14 files each), the HE's and smoke's their look sprites.
 

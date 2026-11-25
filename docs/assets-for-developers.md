@@ -311,7 +311,9 @@ weapons from 2026-11-25 (M1: the `v_`, `p_` and `w_` models, every wave
 the data and the view model's events name, the muzzle flash sprites;
 about 0.2-0.3 MB stored each), published under build 15961496 and the
 client's 12934623 (the newest, 15961496, is what clients take), the guest
-dressing converted again with the guns. Its install is loose files, so it
+dressing converted again with the guns; republished 2026-11-25 with
+converter version 3 (the maps' sets carry the waves and sprites their
+entities name, the HE's and smoke's sets their look sprites). Its install is loose files, so it
 is packed from what its pieces read (`chimera_pack sets cs16 --pack`
 starts the manifest), not whole: 175 files, 324 MB plain, 142 MB stored
 (the WADs maps share, such as `halflife.wad` and `cstrike.wad`, are one
