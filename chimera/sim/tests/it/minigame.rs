@@ -1395,3 +1395,27 @@ fn the_results_name_the_weapon_the_rung_gives() {
     assert_eq!(rows.iter().find(|r| r.player == Some(b)).and_then(|r| r.gun.as_deref()), Some(PISTOL));
     sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(b).unwrap().active = knife;
 }
+
+/// A join that waits for the match's start (`players.min` in: the start
+/// places everyone) is already the game of what it holds, as a spawn makes
+/// it (`identity = "weapon"`): with no identity, a game's per-character
+/// parts took it as theirs beside another game's body and kept them past
+/// the start (party_roster's cross_hits: a CS:S body without its hitboxes).
+#[test]
+fn a_join_waiting_for_the_start_follows_its_weapon_at_once() {
+    let def = DEF.replace("[spawn]", "[slots]\nidentity = \"weapon\"\n\n[spawn]");
+    let mut sim = started(&def);
+    let a = player(&mut sim);
+    sim.ticks(2);
+    // Holding a weapon before it's taken in (a character's own, as
+    // Combat Arms' soldiers have).
+    let b = player(&mut sim);
+    chimera_sim::weapon::give(sim.app.world_mut(), b, RIFLE).expect("the kit's rifle");
+    sim.ticks(1);
+    let w = sim.app.world();
+    assert_eq!(phase(&sim), Phase::Starting, "b's join brought the start");
+    assert_eq!(chimera_sim::testkit::active_id(w, b), Some(RIFLE));
+    assert!(w.get::<chimera_core::slots::FollowsWeapon>(b).is_some(), "b follows its weapon");
+    assert_eq!(w.get::<chimera_core::slots::GameIdentity>(b).map(|i| i.0.as_str()), Some("kit"), "b is its weapon's game");
+    assert!(w.get::<chimera_core::slots::GameIdentity>(a).is_some(), "a spawned as its weapon's game");
+}

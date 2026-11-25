@@ -9,7 +9,9 @@
 //!   (one with no team first on the first side), comes in at once unless
 //!   the match is over or about to start (`Starting`, or `Waiting` with
 //!   `players.min` in: the start places everyone as one batch, so a join
-//!   then, a restart's too, isn't spawned twice), and is marked `InMinigame`; the rules module
+//!   then, a restart's too, isn't spawned twice; it follows its weapon's
+//!   game at once all the same, as a spawn makes it), and is marked
+//!   `InMinigame`; the rules module
 //!   hears of it first (`minigame::Joined`, an entity event triggered and
 //!   applied there: the ladder's join rung). A match's start
 //!   (`minigame::restart`) has its players join again the same way,
@@ -554,8 +556,20 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
             });
             world.flush();
         }
-        if !over && !match_about_to_start(world) {
+        if over {
+            continue;
+        }
+        if !match_about_to_start(world) {
             respawn(world, e);
+        } else if world.get_resource::<ActiveMinigame>().is_some_and(|a| a.def.slots.identity == Some(IdentityDef::Weapon)) {
+            // Placed by the start's batch, but already the game of what it
+            // holds (as a spawn makes it): with no identity a game's
+            // per-character parts (Combat Arms' pose and hitboxes) took it
+            // as theirs beside another game's body, which kept them when
+            // the start made it that game's (its hitboxes gone, its pose
+            // Combat Arms': CS:S bodies Source's guns missed).
+            world.entity_mut(e).insert(FollowsWeapon);
+            crate::identity::follow(world, e);
         }
     }
 }
