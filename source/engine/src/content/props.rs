@@ -11,7 +11,9 @@
 //! HL2:DM map has none, the crates stay as the solid models they are).
 //!
 //! Known shortcuts (docs/tech-debt.md): Models vmdl can't read: animations in
-//! `.ani` blocks are dropped from vmdl's read (our `anim` reads them), and a
+//! `.ani` blocks, or with a compressed value run of 255 values that vmdl
+//! overflows on (koth_sharkbay's shark), are dropped from vmdl's read (our
+//! `anim` reads them; such a model loses vmdl's idle transform), and a
 //! model whose `.vtx` indexes past its `.vvd` (surf_surreal) is skipped with a
 //! warning instead of drawn. Why it's OK for now: vmdl `todo!()`s and panics
 //! there; the meshes don't need the animations.
@@ -82,10 +84,11 @@ pub fn read_mdl(bytes: &[u8]) -> Result<vmdl::mdl::Mdl, String> {
             .map_err(|_| "unreadable animations".to_string())
             .and_then(|r| r.map_err(|e| e.to_string()))
     };
-    // Models with animation blocks go straight to the second read (no
-    // panic to catch).
+    // Models with animation blocks, or with a value run vmdl overflows on,
+    // go straight to the second read (no panic to catch).
     let blocks = bytes.get(352..356).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()));
     if blocks <= 0
+        && !vmdl_anim_overflows(bytes)
         && let Ok(m) = read(bytes)
     {
         return Ok(m);
@@ -96,6 +99,84 @@ pub fn read_mdl(bytes: &[u8]) -> Result<vmdl::mdl::Mdl, String> {
     }
     terminate_names(&mut copy);
     read(&copy)
+}
+
+/// Offset of `localanimindex`, an animation description's size and its
+/// frame count, block and data offsets (public mstudioanimdesc_t layout).
+const MDL_LOCAL_ANIM_INDEX: usize = 184;
+const ANIM_DESC_SIZE: usize = 100;
+
+/// Whether vmdl's animation read would overflow on the model's local
+/// animations: a compressed value stream (a run of `valid` values covering
+/// `total` frames, a byte each) whose run has 255 values and is skipped
+/// over for a later frame. The format allows 255 (the engine steps
+/// `valid + 1` values in a wider integer); vmdl adds 1 to the byte itself
+/// and panics in a debug build (wraps to a wrong offset in a release one):
+/// koth_sharkbay's shark (models/props_gunn/shark/shark.mdl). Read as vmdl
+/// reads them: every frame's index cut to a byte, so only runs within the
+/// first 256 frames matter.
+fn vmdl_anim_overflows(mdl: &[u8]) -> bool {
+    let i32_at = |at: usize| mdl.get(at..at + 4).map(|v| i32::from_le_bytes(v.try_into().unwrap()));
+    let u16_at = |at: usize| mdl.get(at..at + 2).map(|v| u16::from_le_bytes(v.try_into().unwrap()));
+    let (Some(count), Some(first)) = (i32_at(MDL_NUM_LOCAL_ANIM), i32_at(MDL_LOCAL_ANIM_INDEX)) else { return false };
+    // One stream: does a run of 255 values get stepped over?
+    let stream = |at: usize, last: usize| {
+        let (mut at, mut start) = (at, 0usize);
+        while let (Some(&valid), Some(&total)) = (mdl.get(at), mdl.get(at + 1)) {
+            // vmdl reads 0 past a run when the next one is empty.
+            if (start > 0 && total == 0) || start + total as usize > last {
+                return false;
+            }
+            if valid == u8::MAX {
+                return true;
+            }
+            start += total as usize;
+            at += (valid as usize + 1) * 2;
+        }
+        false
+    };
+    for a in 0..count.clamp(0, 4096) as usize {
+        let desc = first.max(0) as usize + a * ANIM_DESC_SIZE;
+        let (Some(frames), Some(block), Some(index)) = (i32_at(desc + 16), i32_at(desc + 52), i32_at(desc + 56)) else {
+            return false;
+        };
+        if block != 0 || frames <= 1 {
+            continue;
+        }
+        let last = (frames as usize - 1).min(u8::MAX as usize);
+        let mut record = (desc as i64 + index as i64).max(0) as usize;
+        for _ in 0..256 {
+            let (Some(&flags), Some(next)) = (mdl.get(record + 1), u16_at(record + 2)) else { break };
+            let mut at = record + 4;
+            let mut pointers = Vec::new();
+            if flags & 0x02 != 0 {
+                at += 6;
+            } else if flags & 0x20 != 0 {
+                at += 8;
+            } else if flags & 0x08 != 0 {
+                pointers.push(at);
+                at += 6;
+            }
+            if flags & 0x01 == 0 && flags & 0x04 != 0 {
+                pointers.push(at);
+            }
+            for base in pointers {
+                for c in 0..3 {
+                    if let Some(off) = u16_at(base + 2 * c)
+                        && off != 0
+                        && stream(base + off as usize, last)
+                    {
+                        return true;
+                    }
+                }
+            }
+            if next == 0 {
+                break;
+            }
+            record += next as usize;
+        }
+    }
+    false
 }
 
 /// Offsets of the body part count and offset in the MDL header, and the
@@ -2663,6 +2744,42 @@ mod name_tests {
         assert_eq!(&mdl[500..504], b"K?r\0");
         let changed = (0..mdl.len()).filter(|i| mdl[*i] != before[*i]).count();
         assert_eq!(changed, 3);
+    }
+    /// One local animation (10 frames) whose bone's x rotation is a
+    /// compressed stream: a run of 255 values covering 2 frames, then a run
+    /// of 1 value covering 8. The format allows 255 values in a run; vmdl's
+    /// read adds 1 to the byte and panics stepping over it for frame 2
+    /// (koth_sharkbay's shark), so the model is read without its local
+    /// animations instead. With 254 values, or 2 frames (no step), vmdl
+    /// reads it.
+    #[test]
+    fn a_run_of_255_values_is_read_without_vmdl() {
+        fn model(valid: u8, frames: i32) -> Vec<u8> {
+            let mut mdl = vec![0u8; 2000];
+            let put = |m: &mut Vec<u8>, at: usize, v: i32| m[at..at + 4].copy_from_slice(&v.to_le_bytes());
+            put(&mut mdl, MDL_NUM_LOCAL_ANIM, 1);
+            put(&mut mdl, MDL_LOCAL_ANIM_INDEX, 400);
+            put(&mut mdl, 400 + 16, frames);
+            // The bone's record 100 bytes after the description.
+            put(&mut mdl, 400 + 56, 100);
+            let record = 500;
+            mdl[record + 1] = 0x08; // animated rotation
+            // x's stream 6 bytes past the pointers.
+            mdl[record + 4..record + 6].copy_from_slice(&6u16.to_le_bytes());
+            let stream = record + 10;
+            mdl[stream] = valid;
+            mdl[stream + 1] = 2;
+            let next = stream + (valid as usize + 1) * 2;
+            mdl[next] = 1;
+            mdl[next + 1] = 8;
+            mdl
+        }
+        assert!(vmdl_anim_overflows(&model(255, 10)));
+        assert!(!vmdl_anim_overflows(&model(254, 10)));
+        assert!(!vmdl_anim_overflows(&model(255, 2)));
+        let reads = |m: &[u8]| std::panic::catch_unwind(|| vmdl::mdl::Mdl::read(m)).is_ok();
+        assert!(!reads(&model(255, 10)) || !cfg!(debug_assertions), "vmdl reads the run of 255 values now: drop the check");
+        assert!(reads(&model(254, 10)));
     }
 }
 
