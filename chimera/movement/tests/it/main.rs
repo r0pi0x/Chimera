@@ -5,9 +5,11 @@
 //! of a game or a loader (docs/plans/active/shared-movement.md, section 7).
 //! `course`: a small course of brushes high over the greybox, and the same
 //! solids as clip hulls (`course::BrushHulls`, a test's `ClipHulls`);
-//! `hulls`: the world traced through clip hulls.
+//! `hulls`: the world traced through clip hulls; `msec`: commands of whole
+//! milliseconds and their carried remainder.
 //! `cargo test -p chimera_movement --features dev --test it`; where tests
 //! go: docs/OBSERVABILITY.md, section 1.
 
 mod course;
 mod hulls;
+mod msec;

@@ -173,6 +173,7 @@ pub use hooks::{MoveSpeed, MoveStance, MoveTraits, StepSounds};
 pub use mover::falls::punch_spring;
 pub use mover::lines::{self, EntityLadders, ForcedMove, LadderFrom, UseableLadder, UseableLadders};
 pub use state::{SettleOnGround, QuakeMovement};
+pub use step::command_msec;
 pub use trace::hulls::{ClipHulls, HullContents, HullHit, MapClipHulls};
 pub use units::{to_engine, to_units};
 

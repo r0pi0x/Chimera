@@ -37,6 +37,22 @@ pub(crate) fn hull_height(cfg: &QuakeConfig, ducked: bool) -> f32 {
     if ducked { cfg.duck_height } else { cfg.stand_height }
 }
 
+/// The most milliseconds one command lasts (GoldSrc's commands carry
+/// their length in a byte).
+pub(crate) const COMMAND_MSEC_MAX: f32 = 255.0;
+
+/// A tick of `dt` seconds after one that left `carry` ms over, as a
+/// command of whole milliseconds (`QuakeConfig::command_msec`): its
+/// length (ms; 0: no command this tick) and what it leaves over. A
+/// thousandth of a millisecond short of a whole one counts as whole (the
+/// tick's time is an f32: 15 ms may read 14.999999).
+#[inline]
+pub fn command_msec(dt: f32, carry: f32) -> (f32, f32) {
+    let total = dt * 1000.0 + carry;
+    let msec = (total + 1e-3).floor().clamp(0.0, COMMAND_MSEC_MAX);
+    (msec, (total - msec).clamp(0.0, 1.0))
+}
+
 pub(crate) fn step(
     mut q: Query<(
         Entity,
@@ -288,6 +304,20 @@ pub(crate) fn step(
             continue;
         }
         let dt = dt * time_scale;
+        // A command of whole milliseconds (`QuakeConfig::command_msec`):
+        // the rest is carried, in the predicted state.
+        let dt = if cfg.command_msec {
+            let (msec, carry) = command_msec(dt, me.msec_carry);
+            if me.msec_carry != carry {
+                me.msec_carry = carry;
+            }
+            if msec == 0.0 {
+                continue;
+            }
+            msec / 1000.0
+        } else {
+            dt
+        };
         // The mover stood on isn't part of the saved form (an entity): a
         // network client restores it into `MovementState::ground` after a
         // correction (`net::movers::restore_ground`). Otherwise the two

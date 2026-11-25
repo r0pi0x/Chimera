@@ -101,6 +101,10 @@ pub struct QuakeMovement {
     pub stance_low: bool,
     #[serde(default)]
     pub stance_crouch: bool,
+    /// The part of a millisecond the last command left over
+    /// (`QuakeConfig::command_msec`), ms: added to the next tick's time.
+    #[serde(default)]
+    pub msec_carry: f32,
 }
 
 impl Default for QuakeMovement {
@@ -146,6 +150,7 @@ impl Default for QuakeMovement {
             reduck_timer: 0.0,
             stance_low: false,
             stance_crouch: false,
+            msec_carry: 0.0,
         }
     }
 }

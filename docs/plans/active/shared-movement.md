@@ -23,7 +23,7 @@ names the seams, the specs give the numbers and rules.
 | S0 baselines | done (2026-11-24) | golden trajectories and work counts for the four games (the log's table) |
 | S1-S4 carve inside `source_engine` | done (2026-11-24) | file split, neutral hooks, CS:S's numbers to `cs_source`, cvars as data: each in the log |
 | S5-S6 the crate | done (2026-11-24) | `chimera_movement`, then neutral names with Source aliases (aliases dropped 2026-11-24, last log entry): each in the log |
-| S7-S9 GoldSrc seams | S7 done (2026-11-25) | clip hulls (S7: in the log), command milliseconds, edge friction |
+| S7-S9 GoldSrc seams | S7, S8 done (2026-11-25) | clip hulls (S7) and command milliseconds (S8): in the log; edge friction |
 | Hand-off | | goldsrc.md M2: the hull tracer in `goldsrc_engine`, `cs16:movement` |
 
 ## 1. What is there (origin/main, 2026-11-24)
@@ -553,3 +553,23 @@ the placeholder to `quake_movement` with CS 1.6's config from its spec.
   is not in the sweeps; where it is was not found (the step itself
   fetches one more resource and builds a wider `Tracer`: not measured
   apart).
+- 2026-11-25, S8: commands of whole milliseconds.
+  `QuakeConfig::command_msec` (off in `reference()` and every Source
+  game): the step's time for that character is `command_msec(dt, carry)`:
+  the tick's time plus what the last one left over, cut to whole
+  milliseconds (at most 255; a thousandth of a millisecond short of a
+  whole one counts as whole, the tick's time being an f32), the rest
+  kept in `QuakeMovement::msec_carry`, a new field at the end of the
+  predicted state (`NET_VERSION` net78: the blob is positional). A tick
+  shorter than a millisecond steps nothing and carries it all. Tests
+  (`tests/it/msec.rs`): the cut itself (10 and 15 ms exact; 1/66 s: six
+  steps of 15 ms then one of 16, a second of ticks a second of steps); a
+  run of the course at 10 ms ticks with it on is the run with it off, bit
+  for bit; at 1/66 s a free fall loses 0.8 units/s a millisecond of each
+  step and the remainder in the state is the function's; a replay (the
+  transform, the velocity and the movement's state put back, the ticks
+  run again) reaches the next 16 ms step on the same tick at the same
+  bits, and with another remainder put back on another tick. Hashes
+  equal (the four games' golden runs are in the commit's fast tier). The
+  step: CS:S 71 720 (+2 of S7; +0.51 % of main before S7); the others
+  not measured apart for this step (S9's numbers hold both).

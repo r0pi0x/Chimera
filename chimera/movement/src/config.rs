@@ -264,6 +264,14 @@ pub struct QuakeConfig {
     /// box no hull is made for, the box sweep. Off (Source's games): the
     /// box sweep everywhere.
     pub clip_hulls: bool,
+    /// A tick is a command of whole milliseconds (GoldSrc: one step per
+    /// client command, its length a whole number of milliseconds, at most
+    /// 255): the tick's time is cut to whole milliseconds and what is left
+    /// over is carried to the next tick (`QuakeMovement::msec_carry`,
+    /// predicted). Nothing changes at a tick of whole milliseconds (0.01 s,
+    /// 0.015 s); at 1/66 s the steps are 15 ms with a 16 ms one every 6 or
+    /// 7. Off (Source's games): the tick's own time.
+    pub command_msec: bool,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -512,6 +520,7 @@ impl QuakeConfig {
             ladder_off_output: "OnPlayerGotOffLadder",
             velocity_modifier_recovery: 1.0 / 3.0,
             clip_hulls: false,
+            command_msec: false,
         }
     }
 }
