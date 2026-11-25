@@ -64,10 +64,19 @@ fn digest(map: &MapData) -> Vec<(&'static str, String)> {
         ("meshes", h(&map.meshes)),
         ("textures", h(&map.textures)),
         // Serialized, a texture leaves out the texels its blocks decode
-        // to (chimera_world `map::texture_serde`): compared here.
+        // to (chimera_world `map::texture_serde`), and one read back is
+        // its blocks until someone reads it (`MapTexture::decoded`):
+        // compared here, decoded.
         (
             "texels",
-            h(&map.textures.iter().map(|t| (&t.rgba8, &t.mips)).collect::<Vec<_>>()),
+            h(&map
+                .textures
+                .iter()
+                .map(|t| {
+                    let t = t.decoded();
+                    (t.rgba8.clone(), t.mips.clone())
+                })
+                .collect::<Vec<_>>()),
         ),
         ("lightmap", h(&map.lightmap)),
         (
@@ -172,6 +181,28 @@ fn cold_and_warm(options: &MapLoadOptions, what: &str) {
     assert_eq!(digest(&cold), digest(&miss));
     assert_eq!(digest(&cold), digest(&warm), "read back, the same map");
     assert_eq!(probes(&cold), probes(&warm), "the same light field");
+    // The read keeps its textures as blocks (nothing decoded but what the
+    // CPU reads: the shadows' silhouettes), and whoever reads one gets
+    // what the conversion gave.
+    if options.textures {
+        let kept = warm.textures.iter().filter(|t| t.blocks_only()).count();
+        eprintln!("de_dust2 {what}: {kept} of {} textures read back as their blocks", warm.textures.len());
+        assert!(kept * 2 > warm.textures.len(), "{kept} of {} textures kept as blocks", warm.textures.len());
+        let read = warm.silhouette_textures();
+        assert_eq!(read, cold.silhouette_textures());
+        assert!(read.iter().any(|r| *r), "some casters are alpha-tested");
+        for ((c, w), read) in cold.textures.iter().zip(&warm.textures).zip(read) {
+            if read {
+                assert!(c.rgba8 == w.rgba8 && c.mips == w.mips, "{}: a silhouette's texels", c.name);
+            }
+            use chimera_world::map::surface_color::average_color;
+            assert_eq!(average_color(c), average_color(w), "{}: its colour", c.name);
+        }
+        if let (Some(c), Some(w)) = (&cold.sky, &warm.sky) {
+            let image = |sky, map: &MapData| chimera_world::map::sky_image(sky, &map.textures).data;
+            assert!(image(c, &cold) == image(w, &warm), "the sky's cube");
+        }
+    }
     assert_eq!(warm.load_times.first().map(|t| t.0), Some("map cache"));
     let _ = std::fs::remove_dir_all(&dir);
 }

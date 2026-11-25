@@ -205,8 +205,9 @@ fn most_surfaces_get_textures() {
         eprintln!("warning: {w}");
     }
     assert!(share > 0.95, "only {:.1}% of triangles textured", share * 100.0);
+    // (Read back from the converted cache, a texture is its blocks.)
     for t in &map.textures {
-        assert_eq!(t.rgba8.len(), (t.width * t.height * 4) as usize, "{}", t.name);
+        assert_eq!(t.decoded().rgba8.len(), (t.width * t.height * 4) as usize, "{}", t.name);
     }
 }
 
@@ -923,7 +924,7 @@ fn junk_props_are_textured() {
     );
     // Its mesh survives distance only through the VTF's own mips, which
     // Valve built to keep alpha-test coverage.
-    let tex = &map.textures[crate_mesh.texture.unwrap()];
+    let tex = map.textures[crate_mesh.texture.unwrap()].decoded();
     assert_eq!(tex.mips.len(), 9, "{}: VTF mips not used", tex.name);
 }
 
@@ -2678,7 +2679,7 @@ fn gun_models_icons_and_handedness() {
 fn overview_lines_up_with_the_world() {
     let Some(map) = dust2() else { return };
     let o = map.overview.clone().expect("dust2 has an overview");
-    let t = &map.textures[o.texture];
+    let t = map.textures[o.texture].decoded();
     let green = |p: Vec2| -> f32 {
         if p.x < 0.0 || p.y < 0.0 || p.x >= o.size.x || p.y >= o.size.y {
             return 0.0;
@@ -3025,6 +3026,7 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         if l.name.ends_with(".vtf") {
             assert!(l.rgba8.is_empty() && l.mips.is_empty(), "{}: placeholder", l.name);
         }
+        let f = f.decoded();
         assert!(f.rgba8.len() == (f.width * f.height * 4) as usize, "{}: {} bytes", f.name, f.rgba8.len());
     }
     let texture_of = |m: &MapData| m.meshes.iter().map(|m| (m.texture, m.normal_map, m.detail.map(|d| d.texture))).collect::<Vec<_>>();

@@ -462,7 +462,7 @@ fn dark_textures() {
     let Ok(name) = std::env::var("MAP") else { return };
     let Some(map) = load(&name) else { return };
     for m in map.meshes.iter().chain(map.models.iter().flat_map(|m| m.meshes.iter())) {
-        let Some(t) = m.texture.map(|i| &map.textures[i]) else {
+        let Some(t) = m.texture.map(|i| map.textures[i].decoded()) else {
             if m.alpha != chimera_world::map::MapAlpha::Add {
                 println!("{} untextured", m.material);
             }
@@ -479,7 +479,7 @@ fn dark_textures() {
             println!("{} {} {mean:.3} {}x{}", m.material, t.name, t.width, t.height);
         }
         if let Some(d) = m.detail {
-            let t = &map.textures[d.texture];
+            let t = map.textures[d.texture].decoded();
             let n = (t.rgba8.len() / 4).max(1) as f32;
             let dm = t
                 .rgba8
@@ -501,7 +501,7 @@ fn dark_textures() {
             .sum::<f32>()
             / (3.0 * 255.0 * n)
     };
-    for t in &map.textures {
+    for t in map.textures.iter().map(|t| t.decoded()) {
         let full = mean(&t.rgba8);
         for (level, mip) in t.mips.iter().enumerate() {
             let m = mean(mip);

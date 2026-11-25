@@ -268,7 +268,7 @@ fn lightmap_face_raw() {
 fn texture_alpha_coverage() {
     let map = crate::load_map("cs_source:de_dust2").unwrap();
     let name = std::env::var("TEX").unwrap_or("plasticcrate01a".into());
-    for t in map.textures.iter().filter(|t| t.name.contains(&name)) {
+    for t in map.textures.iter().filter(|t| t.name.contains(&name)).map(|t| t.decoded()) {
         let cov = |d: &[u8]| d.chunks(4).filter(|p| p[3] >= 128).count() as f32 / (d.len() / 4) as f32;
         println!("{} {}x{} base {:.3}", t.name, t.width, t.height, cov(&t.rgba8));
         if let Ok(out) = std::env::var("TEX_OUT") {

@@ -395,7 +395,7 @@ fn envmap_only_ramps_reflect_their_sky() {
         .collect();
     assert!(!sky.is_empty(), "the ramps' fake-sky meshes");
     for m in sky {
-        let texture = &map.textures[m.texture.expect("a black base texture")];
+        let texture = map.textures[m.texture.expect("a black base texture")].decoded();
         assert_eq!(&texture.rgba8[..3], &[0, 0, 0], "{}: black albedo", m.material);
         assert!(m.envmap.is_some_and(|e| e.cubemap.is_some()), "{}: its sky cubemap", m.material);
     }

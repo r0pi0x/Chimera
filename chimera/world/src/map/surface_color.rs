@@ -60,7 +60,7 @@ fn cell(p: Vec3) -> IVec3 {
 
 /// A texture's average colour (sRGB 0-1), from its smallest stored level.
 pub fn average_color(t: &MapTexture) -> Vec3 {
-    let data = t.mips.last().filter(|m| !m.is_empty()).unwrap_or(&t.rgba8);
+    let data = t.smallest_level();
     let mut sum = Vec3::ZERO;
     let mut n = 0.0;
     for px in data.chunks_exact(4) {

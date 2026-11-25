@@ -128,26 +128,59 @@ impl MapTexture {
     }
 
     /// This texture with its texels: itself, or (`blocks_only`) a copy
-    /// with level 0 of its blocks decoded (no mip levels: the drawing
-    /// filters them).
+    /// with its blocks decoded: level 0, and the mip levels (its own when
+    /// it kept them, else the blocks' other levels: what a converter
+    /// decodes from the file, so the drawing where the GPU takes no BC
+    /// shows the file's own filtering when the chain is whole, and
+    /// filters its own when it isn't, `render::to_image`).
     pub fn decoded(&self) -> std::borrow::Cow<'_, MapTexture> {
-        let Some(rgba8) = self
+        let Some((bc, rgba8)) = self
             .bc
             .as_ref()
             .filter(|_| self.blocks_only())
-            .and_then(|b| super::texture_serde::decode_level(b, self.width, self.height, 0))
+            .and_then(|b| Some((b, super::texture_serde::decode_level(b, self.width, self.height, 0)?)))
         else {
             return std::borrow::Cow::Borrowed(self);
+        };
+        let mips = if self.mips.is_empty() {
+            (1..bc.levels.len())
+                .map_while(|i| super::texture_serde::decode_level(bc, self.width, self.height, i))
+                .collect()
+        } else {
+            self.mips.clone()
         };
         std::borrow::Cow::Owned(MapTexture {
             name: self.name.clone(),
             srgb: self.srgb,
-            mips: Vec::new(),
+            mips,
             width: self.width,
             height: self.height,
             rgba8,
             bc: self.bc.clone(),
         })
+    }
+
+    /// Decode this texture's blocks in place when it is its blocks only
+    /// (`decoded`): for one the CPU reads again and again.
+    pub fn decode_in_place(&mut self) {
+        if let std::borrow::Cow::Owned(t) = self.decoded() {
+            *self = t;
+        }
+    }
+
+    /// The texture's smallest stored level, RGBA8: its last mip level,
+    /// else its level 0; of its blocks only (`blocks_only`), the same
+    /// level decoded.
+    pub fn smallest_level(&self) -> std::borrow::Cow<'_, [u8]> {
+        if let Some(m) = self.mips.last().filter(|m| !m.is_empty()) {
+            return std::borrow::Cow::Borrowed(m);
+        }
+        if let Some(bc) = self.bc.as_ref().filter(|_| self.blocks_only())
+            && let Some(level) = super::texture_serde::decode_level(bc, self.width, self.height, bc.levels.len() - 1)
+        {
+            return std::borrow::Cow::Owned(level);
+        }
+        std::borrow::Cow::Borrowed(&self.rgba8)
     }
 
     /// The mip levels below `rgba8`'s, box-filtered (each texel the mean
@@ -2050,6 +2083,44 @@ impl Default for MapLook {
 }
 
 impl MapData {
+    /// Which textures the shadows' silhouettes sample (by index): the
+    /// alpha of the alpha-tested and translucent meshes' textures of the
+    /// models that cast (props marked `casts_shadow`, outside the 3D
+    /// skybox). The only texels read again and again after a map is
+    /// spawned (`render::shadows`).
+    pub fn silhouette_textures(&self) -> Vec<bool> {
+        let mut read = vec![false; self.textures.len()];
+        for prop in self.props.iter().filter(|p| p.casts_shadow && !p.skybox) {
+            let Some(model) = self.models.get(prop.model) else { continue };
+            for m in &model.meshes {
+                if m.alpha != MapAlpha::Opaque
+                    && m.alpha != MapAlpha::Add
+                    && let Some(t) = m.texture
+                    && let Some(r) = read.get_mut(t)
+                {
+                    *r = true;
+                }
+            }
+        }
+        read
+    }
+
+    /// Decode the textures the CPU reads again and again
+    /// (`silhouette_textures`) that are their blocks only: a map read
+    /// back from the converted cache keeps its textures as blocks
+    /// (`texture_serde`), and a loader calls this on a hit, on its
+    /// thread, so those are the texels a conversion gives. How many it
+    /// decoded.
+    pub fn decode_read_textures(&mut self) -> usize {
+        let read = self.silhouette_textures();
+        let mut decoded = 0;
+        for (t, _) in self.textures.iter_mut().zip(read).filter(|(t, read)| *read && t.blocks_only()) {
+            t.decode_in_place();
+            decoded += 1;
+        }
+        decoded
+    }
+
     pub fn triangle_count(&self) -> usize {
         self.meshes.iter().map(|m| m.indices.len() / 3).sum()
     }

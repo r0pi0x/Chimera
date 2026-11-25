@@ -295,7 +295,9 @@ fn silhouette_counted(
                         let uv = uvs[0] * w0 + uvs[1] * w1 + uvs[2] * w2;
                         let tx = (uv.x.rem_euclid(1.0) * t.width as f32) as u32 % t.width.max(1);
                         let ty = (uv.y.rem_euclid(1.0) * t.height as f32) as u32 % t.height.max(1);
-                        // A texture without texels (its blocks only) reads opaque.
+                        // A texture without texels (its blocks only: a kept
+                        // guest dressing's; a map's own are decoded by its
+                        // loader, `MapData::decode_read_textures`) reads opaque.
                         t.rgba8.get(((ty * t.width + tx) * 4 + 3) as usize).map_or(1.0, |a| *a as f32 / 255.0)
                     });
                     let cell = &mut out[(py * n + px) as usize];
@@ -789,24 +791,15 @@ pub struct Shed(#[allow(dead_code)] Box<dyn std::any::Any + Send>, #[allow(dead_
 
 /// Drops the texels of every texture the shadows never read: a caster's
 /// silhouette samples the alpha of its alpha-tested and translucent
-/// meshes' textures (`silhouette`), nothing else of `data.textures` is
-/// read after the map is spawned (the images were made from it). The
+/// meshes' textures (`silhouette`; `MapData::silhouette_textures`, which
+/// a loader decodes on a map read back as blocks), nothing else of
+/// `data.textures` is read after the map is spawned (the images were
+/// made from it). The
 /// shadows keep `data` for the map's life (`ShadowSource`), so this is
 /// what keeps the decoded textures from being resident twice. Returns
 /// what it took, to be freed by the caller.
 pub fn shed_unread_textures(data: &mut MapData) -> Vec<Box<dyn std::any::Any + Send>> {
-    let mut read = vec![false; data.textures.len()];
-    for (_, prop) in casters(data) {
-        for m in &data.models[prop.model].meshes {
-            if m.alpha != MapAlpha::Opaque
-                && m.alpha != MapAlpha::Add
-                && let Some(t) = m.texture
-                && let Some(r) = read.get_mut(t)
-            {
-                *r = true;
-            }
-        }
-    }
+    let read = data.silhouette_textures();
     let mut taken: Vec<Box<dyn std::any::Any + Send>> = Vec::with_capacity(data.textures.len());
     for (t, read) in data.textures.iter_mut().zip(read) {
         let mips = std::mem::take(&mut t.mips);

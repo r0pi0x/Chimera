@@ -422,4 +422,43 @@ mod tests {
         let mut odd = MapTexture { width: 6, rgba8: vec![255; 6 * 8 * 4], ..t.clone() };
         assert!(!odd.keep_blocks_only() && !odd.rgba8.is_empty());
     }
+
+    /// A texture a converter decoded from its blocks (level 0 and the
+    /// file's mip levels) and the same one as its blocks only (a map read
+    /// back from the converted cache, `map::texture_serde`) make the same
+    /// image, with BC and without.
+    #[test]
+    fn a_texture_read_back_as_blocks_draws_as_the_one_converted() {
+        use crate::map::texture_serde::decode_level;
+        let block = |c: u16| {
+            let mut b = c.to_le_bytes().to_vec();
+            b.extend(0u16.to_le_bytes());
+            b.extend([0b0001_1011; 4]);
+            b
+        };
+        let bc = MapBc {
+            format: MapBcFormat::Bc1,
+            levels: vec![[0xf800, 0x07e0, 0x001f, 0xffff].iter().flat_map(|&c| block(c)).collect(), block(0x07e0), block(0x001f), block(0xf800)].into(),
+        };
+        let converted = MapTexture {
+            name: "t".into(),
+            srgb: true,
+            mips: (1..4).map(|i| decode_level(&bc, 8, 8, i).unwrap()).collect(),
+            width: 8,
+            height: 8,
+            rgba8: decode_level(&bc, 8, 8, 0).unwrap(),
+            bc: Some(bc),
+        };
+        let mut read = converted.clone();
+        assert!(read.keep_blocks_only());
+        let look = MapLook::default();
+        for bc in [true, false] {
+            let (a, b) = (to_image(&converted, &look, bc), to_image(&read, &look, bc));
+            assert_eq!(a.texture_descriptor, b.texture_descriptor, "bc {bc}");
+            assert!(a.data == b.data, "bc {bc}: the same bytes");
+        }
+        // Without BC it is the file's own mip levels, not filtered ones.
+        let own: Vec<u8> = std::iter::once(&converted.rgba8).chain(&converted.mips).flatten().copied().collect();
+        assert!(to_image(&read, &look, false).data.as_ref() == Some(&own));
+    }
 }

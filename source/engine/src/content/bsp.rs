@@ -233,6 +233,9 @@ pub fn load_level_bytes_in(
         convert_level_bytes(game, mount, name, bytes, file_hash, options)
     })?;
     let Converted { mut data, light } = converted;
+    // A map read back keeps its textures as blocks: the few the CPU reads
+    // are decoded here.
+    data.decode_read_textures();
     if let (Some(light), Some(tree)) = (light, data.sky_vis.clone()) {
         data.light_field = Some(light.field(tree, &data));
     }

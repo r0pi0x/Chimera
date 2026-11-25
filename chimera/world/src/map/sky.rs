@@ -85,7 +85,8 @@ pub fn sky_image(sky: &MapSky, textures: &[MapTexture]) -> Image {
             }
             continue;
         }
-        let t = &textures[tex];
+        // (A face read back from the converted cache is its blocks.)
+        let t = textures[tex].decoded();
         for y in 0..size {
             for x in 0..size {
                 let (sx, sy) = sky_texel(x, y, size, turns, &sky.transforms[face], t.width, t.height);

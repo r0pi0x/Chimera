@@ -870,7 +870,13 @@ fn skyconv(file: &ViewsFile, ref_dir: &Path, out: &Path) -> Result<(), String> {
 
     // 2. With the convention known, fit each face's texture and orientation
     //    to the reference sky on the CPU.
-    let map = cs_source_app::games::load_map(&format!("cs_source:{}", file.map))?;
+    let mut map = cs_source_app::games::load_map(&format!("cs_source:{}", file.map))?;
+    // The faces' texels are read below (a map read back keeps blocks).
+    if let Some(sky) = map.sky.as_ref() {
+        for (t, _) in sky.faces {
+            map.textures[t].decode_in_place();
+        }
+    }
     let sky = map.sky.as_ref().ok_or("map has no sky")?;
     let suffix_textures: Vec<(&str, &cs_source_app::map::MapTexture)> = {
         use cs_source_app::games::cs_source::sky::FACES;
