@@ -208,13 +208,19 @@ pub struct Arming {
 
 /// A weapon the minigame's rules handed out as a life's or a rung's own
 /// (`RulesModule::loadout`, a ladder's rung weapon at each swap), not the
-/// kit's: put on the weapon as it is given, so a game's observer
-/// (`On<Add<LoadoutWeapon>>`) gives it what a rules weapon comes with, by
-/// the weapon's data (HL2:DM's alt-fire rounds: `loadout` in its hooks).
-/// Each life and each rung swap gives a new weapon, so it comes again.
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[component(storage = "SparseSet")]
-pub struct LoadoutWeapon;
+/// kit's: triggered on the weapon as it is given, built and in its owner's
+/// inventory, so a game's observer (`On<LoadoutWeapon>`) gives it what a
+/// rules weapon comes with, by the weapon's data (HL2:DM's alt-fire
+/// rounds: `loadout` in its hooks). Each life and each rung swap gives a
+/// new weapon, so it comes again. An event, not a marker: a marker put on
+/// after the build made one more archetype for every kind of weapon given
+/// (24 of a session's, 40 with every game: docs/performance.md, "A
+/// session's archetypes: the weapons' markers").
+#[derive(EntityEvent, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LoadoutWeapon {
+    #[event_target]
+    pub weapon: Entity,
+}
 
 /// A modifier a definition turns on by name with a value.
 #[derive(Clone, Copy)]

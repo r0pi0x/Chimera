@@ -190,8 +190,8 @@ impl RoundsParams {
 /// A weapon the minigame's rules handed out (`minigame::LoadoutWeapon`):
 /// its own rounds' `loadout` count (at most its `max`), when its data
 /// gives one.
-pub fn loadout_rounds(add: On<Add<chimera_sim::minigame::LoadoutWeapon>>, mut rounds: Query<&mut Hl2Rounds>) {
-    if let Ok(mut r) = rounds.get_mut(add.entity)
+pub fn loadout_rounds(given: On<chimera_sim::minigame::LoadoutWeapon>, mut rounds: Query<&mut Hl2Rounds>) {
+    if let Ok(mut r) = rounds.get_mut(given.weapon)
         && let Some(n) = r.loadout
     {
         r.count = n.min(r.max);

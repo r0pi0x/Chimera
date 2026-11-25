@@ -297,10 +297,12 @@ pub fn respawn(world: &mut World, e: Entity) {
     for id in kit {
         give(world, e, id);
     }
-    // The rules' own weapons, marked (`LoadoutWeapon`).
+    // The rules' own weapons, announced (`LoadoutWeapon`).
     for id in loadout {
         if let Some(w) = give(world, e, id) {
-            world.entity_mut(w).insert(super::LoadoutWeapon);
+            world.trigger(super::LoadoutWeapon { weapon: w });
+            // What the marker's insert did: the queued world work applied.
+            world.flush();
         }
     }
     // Following the weapon: the life starts as the drawn weapon's game.

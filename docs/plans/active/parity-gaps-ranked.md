@@ -32,7 +32,7 @@ hooks build `Hl2Rounds` from the data's `count`, 0 (HL2:DM spawns with
 none: its rounds come from boxes and crates, `ammo::give`); the ladder's
 `refill_ammo` tops up only `Magazine` reserves and thrown grenades, and a
 party has no pickups, so attack2 clicked empty from the first press. Now
-the rules' weapons are `minigame::LoadoutWeapon`s and the SMG1's and
+the rules' weapons are announced (`minigame::LoadoutWeapon`) and the SMG1's and
 AR2's hooks say `loadout = 2`.
 
 Decided (user, 2026-11-12): ladders cross every game (was item 6): each

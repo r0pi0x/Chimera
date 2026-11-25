@@ -943,8 +943,8 @@ that):
 - **HL2:DM's alt fire: 2 rounds on the rung** (user, 2026-11-12): with no
   pickups an HL2:DM rung gives its gun's attack2 rounds itself, 2 SMG1
   grenades with the SMG1, 2 energy balls with the AR2, by the weapon's
-  data (`loadout = 2` in its hook; the rules' weapons are marked
-  `minigame::LoadoutWeapon`), given again with the rung (each life, each
+  data (`loadout = 2` in its hook; the rules' weapons are announced as
+  given, `minigame::LoadoutWeapon`), given again with the rung (each life, each
   swap) and never refilled meanwhile (`refill_ammo` is the reserve's).
 - **Rung extras, the same for everyone on a rung** (`rung_extras`,
   default on): when a ladder is made (each map, each new ladder) a game
