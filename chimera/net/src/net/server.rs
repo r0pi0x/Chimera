@@ -532,6 +532,8 @@ pub fn listen(world: &mut World) -> Result<SocketAddr, String> {
     // credential (`server_assets`; a dedicated server has its own already).
     super::server_assets::for_host(world);
     world.write_message(NetEvent::Listening(addr));
+    // The boot log's (`CHIMERA_BOOT_LOG`): when a host answers joins.
+    chimera_core::metrics::boot::stage("listening");
     Ok(addr)
 }
 

@@ -46,7 +46,7 @@ use bevy::{
 };
 
 use super::{LightmapLayers, source_ldr_bump_texels, source_ldr_texel, world_material};
-use crate::map::{LightStyles, MapLightStyle, MapLightmap};
+use crate::map::{LightStyles, MapLightStyle, MapLightmap, pattern_level};
 
 /// A face block's atlas rectangle and the styles lighting it (style
 /// index, offset of the block in that style's texels).
@@ -67,7 +67,7 @@ pub struct StyledLightmaps {
     /// every style lighting it (index into the atlas's styles, offset of
     /// the block in that style's texels).
     blocks: Vec<Block>,
-    /// Per style: the `blocks` it lights (animated styles only).
+    /// Per style: the `blocks` it lights.
     style_blocks: Vec<Vec<usize>>,
     /// Encoded texels of the states each block has shown (the levels of
     /// the styles lighting it), every layer's in turn: patterns loop
@@ -92,10 +92,11 @@ impl StyledLightmaps {
         bumped: Option<[Handle<Image>; 3]>,
     ) -> Self {
         let levels = atlas.styles.iter().map(MapLightStyle::start).collect();
-        // Blocks animated styles light, with every style sharing them.
+        // Blocks any style lights (animated, or a logic may play a pattern
+        // on: `LightStyles::patterns`), with every style sharing them.
         let mut index: HashMap<[u32; 4], usize> = HashMap::new();
         let mut blocks: Vec<Block> = Vec::new();
-        for s in atlas.styles.iter().filter(|s| !s.pattern.is_empty()) {
+        for s in atlas.styles.iter() {
             for r in &s.rects {
                 index.entry(*r).or_insert_with(|| {
                     blocks.push((*r, Vec::new()));
@@ -109,9 +110,7 @@ impl StyledLightmaps {
             for r in &s.rects {
                 if let Some(&b) = index.get(r) {
                     blocks[b].1.push((k, offset));
-                    if !s.pattern.is_empty() {
-                        style_blocks[k].push(b);
-                    }
+                    style_blocks[k].push(b);
                 }
                 offset += (r[2] * r[3]) as usize;
             }
@@ -246,7 +245,7 @@ pub fn relight(
         .iter()
         .zip(&maps.levels)
         .map(|(s, now)| {
-            if !s.pattern.is_empty() {
+            if !s.pattern.is_empty() || styles.patterns.iter().any(|(n, _)| *n == s.style) {
                 return *now;
             }
             let on = styles
@@ -371,7 +370,12 @@ fn shelf_pack(sizes: &[(u32, u32)], width: u32) -> (Vec<(u32, u32)>, u32) {
 /// the blocks it lights (all styles sharing a block included), packed
 /// into `LightmapUploads`. Block states not seen before are worked out on
 /// the compute task pool and kept (`StyledLightmaps::states`).
-pub fn animate(time: Res<Time>, maps: Option<ResMut<StyledLightmaps>>, mut uploads: ResMut<LightmapUploads>) {
+pub fn animate(
+    time: Res<Time>,
+    styles: Option<Res<LightStyles>>,
+    maps: Option<ResMut<StyledLightmaps>>,
+    mut uploads: ResMut<LightmapUploads>,
+) {
     // What the render world didn't take last frame (no renderer: headless)
     // is stale by now.
     uploads.bytes.clear();
@@ -381,10 +385,13 @@ pub fn animate(time: Res<Time>, maps: Option<ResMut<StyledLightmaps>>, mut uploa
     let atlas = maps.atlas.clone();
     let mut dirty: Vec<usize> = Vec::new();
     for (k, s) in atlas.styles.iter().enumerate() {
-        if s.pattern.is_empty() {
-            continue;
-        }
-        let now = s.at(t);
+        // A logic's pattern on the style first, else the atlas's own.
+        let played = styles.as_ref().and_then(|l| l.patterns.iter().find(|(n, _)| *n == s.style));
+        let now = match played {
+            Some((_, p)) => pattern_level(p, t),
+            None if !s.pattern.is_empty() => s.at(t),
+            None => continue,
+        };
         if now != maps.levels[k] {
             maps.levels[k] = now;
             dirty.extend_from_slice(&maps.style_blocks[k]);
@@ -706,8 +713,9 @@ mod tests {
     #[test]
     fn animated_blocks_follow_every_style_lighting_them() {
         let mut maps = StyledLightmaps::new(Arc::new(atlas()), false, None, None, None);
-        assert_eq!(maps.blocks.len(), 1, "only the animated style's block");
+        assert_eq!(maps.blocks.len(), 2, "the animated style's block and the switchable's other");
         assert_eq!(maps.style_blocks[0], vec![0]);
+        assert_eq!(maps.style_blocks[1], vec![0, 1]);
         // Dark step of the flicker, switchable light off.
         maps.levels = vec![0.0, 0.0];
         let (flat, pages) = maps.block_light(0);
@@ -761,6 +769,29 @@ mod tests {
         // Same step: nothing new (last frame's uploads dropped).
         assert_eq!(step(&mut world, 0.01), 0);
         assert!(world.resource::<LightmapUploads>().bytes.is_empty());
+    }
+
+    /// A logic's pattern on a switchable style (GoldSrc's light `pattern`
+    /// key, a flicker played from the network) steps its blocks like an
+    /// animated style's, and gives the style back when it goes.
+    #[test]
+    fn a_logics_pattern_plays_on_a_switchable_style() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.init_resource::<LightmapUploads>();
+        world.insert_resource(StyledLightmaps::new(Arc::new(atlas()), true, None, Some(Handle::default()), None));
+        let step = |world: &mut World, secs: f32| {
+            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs_f32(secs));
+            world.run_system_once(animate).unwrap();
+            world.resource::<LightmapUploads>().copies.len()
+        };
+        assert_eq!(step(&mut world, 0.05), 0, "no pattern: nothing moves");
+        world.insert_resource(LightStyles::default().with_patterns("t", vec![(32, true)], vec![(32, vec![0.5, 1.0])]).unwrap());
+        assert_eq!(step(&mut world, 0.01), 1, "the style's blocks step to the pattern's first level");
+        assert_eq!(world.resource::<StyledLightmaps>().levels[1], 0.5);
+        assert_eq!(step(&mut world, 0.1), 1, "and on to its second");
+        assert_eq!(world.resource::<StyledLightmaps>().levels[1], 1.0);
     }
 
     #[test]

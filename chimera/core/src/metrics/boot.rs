@@ -7,7 +7,9 @@
 //! fetch beside it) and the wall time (for reading only).
 //! A client app logs its start map and each part it composes
 //! (`chimera_client::client::app`), a party each game's simulation
-//! (`party_kit::PartyPartsPlugin`); the start map's own phases are
+//! (`party_kit::PartyPartsPlugin`), then past the first frame when a host
+//! listens (`listening`) and each map settles (`a map settled`, a hosting
+//! run's start map first); the start map's own phases are
 //! `chimera_world::map::load_report`'s, the frames after are
 //! `--frame-log`'s. docs/performance.md, "Every game installed".
 

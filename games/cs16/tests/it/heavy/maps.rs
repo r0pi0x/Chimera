@@ -228,3 +228,29 @@ fn light_styles_sprites_and_sounds() {
     // Its thunder clap (entities.md's worked example).
     assert!(aztec.sounds.entry("ambience/thunder_clap.wav").is_some(), "{:?}", aztec.sounds.entries.keys().collect::<Vec<_>>());
 }
+
+/// de_torn's style 1 and cs_747's 4 and 10 are the presets' flickers
+/// (entities.md "light styles"): their lightmap shares carry the
+/// preset's pattern, and the lightmap blends them per the spec: style 0's
+/// light plus each style's share scaled by its letter ('m' as baked, 'a'
+/// dark, 'z' about twice).
+#[test]
+fn flickering_styles_blend_by_their_letters() {
+    use chimera_world::map::style_levels;
+    let Some(mount) = mount() else { return };
+    for (name, style, letters) in [
+        ("de_torn", 1u8, "mmnmmommommnonmmonqnmmo"),
+        ("cs_747", 4, "mamamamamama"),
+        ("cs_747", 10, "mmamammmmammamamaaamammma"),
+    ] {
+        let map = convert(&mount, name, false);
+        let atlas = map.lightmap.as_ref().unwrap();
+        let s = atlas.styles.iter().find(|s| s.style == style).unwrap_or_else(|| panic!("{name}: no style {style}"));
+        assert_eq!(s.pattern, style_levels(letters), "{name} style {style}");
+        let t = s.texels[s.rgb.iter().position(|c| c[0] > 0.05).unwrap()] as usize;
+        let at = |level: f32| atlas.relit(&|o| if o.style == style { level } else { o.start() }).0[t][0];
+        let (dark, normal, bright) = (at(0.0), at(1.0), at(25.0 / 12.0));
+        assert!(dark < normal && normal < bright, "{name} style {style}: {dark} {normal} {bright}");
+        assert!((normal - atlas.rgb[t][0]).abs() < 1e-5, "'m' is the baked light");
+    }
+}

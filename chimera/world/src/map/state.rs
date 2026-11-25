@@ -67,14 +67,19 @@ pub struct PropSequence {
 /// undid each other several times a second, every write a whole lightmap
 /// rebuild (feedback b37d546e, roadkill). The map relights the lightmaps
 /// when it changes.
-#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct LightStyles {
     /// Style numbers and whether each is lit, every writer's together (a
     /// later writer's entry for a style an earlier one lists wins);
     /// unlisted styles keep their state at map start.
     pub styles: Vec<(u8, bool)>,
-    /// Each writer's own list, by name, in the order they first wrote.
-    writers: Vec<(&'static str, Vec<(u8, bool)>)>,
+    /// Styles a logic plays a pattern on (a switchable light's own
+    /// pattern, GoldSrc's `pattern` key): the brightness per step
+    /// (`map::style_levels`), looping at `LIGHT_STYLE_STEPS`, in place of
+    /// the style's on or off. Merged like `styles`.
+    pub patterns: Vec<(u8, Vec<f32>)>,
+    /// Each writer's own lists, by name, in the order they first wrote.
+    writers: Vec<(&'static str, Vec<(u8, bool)>, Vec<(u8, Vec<f32>)>)>,
 }
 
 impl LightStyles {
@@ -87,23 +92,41 @@ impl LightStyles {
     /// drops the writer); None when that changes nothing, so a writer
     /// inserts the resource only when its own list changed.
     pub fn with(&self, writer: &'static str, styles: Vec<(u8, bool)>) -> Option<Self> {
-        let at = self.writers.iter().position(|(w, _)| *w == writer);
+        self.with_patterns(writer, styles, Vec::new())
+    }
+
+    /// `with`, and the styles `writer` plays a pattern on.
+    pub fn with_patterns(
+        &self,
+        writer: &'static str,
+        styles: Vec<(u8, bool)>,
+        patterns: Vec<(u8, Vec<f32>)>,
+    ) -> Option<Self> {
+        let at = self.writers.iter().position(|(w, _, _)| *w == writer);
         let mut next = self.clone();
-        match (at, styles.is_empty()) {
-            (Some(i), _) if next.writers[i].1 == styles => return None,
+        let empty = styles.is_empty() && patterns.is_empty();
+        match (at, empty) {
+            (Some(i), _) if next.writers[i].1 == styles && next.writers[i].2 == patterns => return None,
             (None, true) => return None,
             (Some(i), true) => {
                 next.writers.remove(i);
             }
-            (Some(i), false) => next.writers[i].1 = styles,
-            (None, false) => next.writers.push((writer, styles)),
+            (Some(i), false) => next.writers[i] = (writer, styles, patterns),
+            (None, false) => next.writers.push((writer, styles, patterns)),
         }
         next.styles.clear();
-        for (_, list) in &next.writers {
+        next.patterns.clear();
+        for (_, list, plays) in &next.writers {
             for &(n, on) in list {
                 match next.styles.iter_mut().find(|s| s.0 == n) {
                     Some(s) => s.1 = on,
                     None => next.styles.push((n, on)),
+                }
+            }
+            for (n, p) in plays {
+                match next.patterns.iter_mut().find(|s| s.0 == *n) {
+                    Some(s) => s.1 = p.clone(),
+                    None => next.patterns.push((*n, p.clone())),
                 }
             }
         }
@@ -537,5 +560,10 @@ mod tests {
         let d = c.with("source", vec![]).unwrap();
         assert_eq!(d.styles, [(32, false)], "a writer's emptied list drops its styles");
         assert_eq!(d.with("ca", vec![]).unwrap().styles, []);
+        // Patterns merge the same way.
+        let p = d.with_patterns("goldsrc", vec![(33, true)], vec![(33, vec![0.0, 1.0])]).unwrap();
+        assert_eq!(p.patterns, [(33, vec![0.0, 1.0])]);
+        assert!(p.with_patterns("goldsrc", vec![(33, true)], vec![(33, vec![0.0, 1.0])]).is_none());
+        assert_eq!(p.with("goldsrc", vec![]).unwrap().patterns, []);
     }
 }

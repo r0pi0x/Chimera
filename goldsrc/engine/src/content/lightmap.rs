@@ -16,8 +16,9 @@
 //! (`map::LightStyles`) or its pattern plays.
 //!
 //! Known shortcuts:
-//! - A switchable light's own `pattern` key is not played: the style is
-//!   only on (its baked light) or off.
+//! - A switchable light's own `pattern` key is not in the atlas: the style
+//!   starts on (its baked light); the logic plays the pattern at run time
+//!   (`map::LightStyles::patterns`).
 //! - The stored values are used as linear light, byte/255
 //!   (`MapLook::light_scale` 1): the original's brightening is open
 //!   (bsp.md, open question 1), to be matched by captures.

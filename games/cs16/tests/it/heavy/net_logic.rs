@@ -215,3 +215,30 @@ fn de_dust2_broken_crates_are_passable_on_the_client() {
         assert_eq!(w.get::<Visibility>(n), Some(&Visibility::Hidden), "crate {i} drawn on the client");
     }
 }
+
+fn lit(world: &World, style: u8) -> Option<bool> {
+    world.get_resource::<chimera_world::map::LightStyles>()?.styles.iter().find(|s| s.0 == style).map(|s| s.1)
+}
+
+/// cs_militia's `slight` (25 lights, style 32) and `shack` (style 33):
+/// switched on the server, a client's light styles follow
+/// (`NetLightStyles`), and its lightmap atlas carries both styles' shares
+/// to relight (specs/goldsrc/entities.md, the worked example).
+#[test]
+fn cs_militia_switched_lights_reach_the_client() {
+    let Some((mut sim, map)) = net_of("cs_militia") else { return };
+    assert!(!named(&map, "slight").is_empty() && !named(&map, "shack").is_empty());
+    let atlas = map.lightmap.as_ref().expect("the map's lightmaps");
+    assert!(atlas.styles.iter().any(|s| s.style == 32) && atlas.styles.iter().any(|s| s.style == 33));
+    sim.ticks(60);
+    assert_eq!(lit(sim.clients[0].app.world(), 32), Some(true));
+    assert_eq!(lit(sim.clients[0].app.world(), 33), Some(true));
+    sim.server.app.world_mut().write_message(LogicFire("slight".into()));
+    sim.ticks(window(&sim) + 30);
+    assert_eq!(lit(sim.server.app.world(), 32), Some(false), "the server's style 32 is dark");
+    assert_eq!(lit(sim.clients[0].app.world(), 32), Some(false), "the client's too");
+    assert_eq!(lit(sim.clients[0].app.world(), 33), Some(true), "shack's untouched");
+    sim.server.app.world_mut().write_message(LogicFire("slight".into()));
+    sim.ticks(window(&sim) + 30);
+    assert_eq!(lit(sim.clients[0].app.world(), 32), Some(true), "and lit again");
+}

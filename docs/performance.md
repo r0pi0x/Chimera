@@ -5463,19 +5463,51 @@ solid and kept as corners today), or new goldens.
 The host answers a join from its first frame: a map change loads on a
 task and the frames go on (the longest of a level change with every game:
 3.5 G instructions), and a client that joins during one is welcomed with
-the map being left and follows the change. What does not answer is a
-process before its app exists: a tool run's client (`--offscreen`, or
-`--map`) and the dedicated server load their start map before the app is
-built ("the start map is spawned whole before the server listens",
-`dedicated`'s known shortcuts), about 80 G of instructions here with every game
-read back, and the test's client joins 5 s into that. A player's own
-host starts from the menu and listens at once (the lobby first). The
-start is 10 G shorter after this pass; the join's 20 s
-(`client::JOIN_TIMEOUT`) and the test's one retry are as they were. To
-answer during a start: the start map loaded as a level change is (the
-app up on the greybox, listening, the map on a task), which moves the
-first match's start and the server's asset fetch behind the first frame;
-not done here.
+the map being left and follows the change. What did not answer was a
+process before its app existed: a tool run's host (`--offscreen` with
+`+maxplayers 4`) loaded its start map before the app was built and
+spawned it whole in its first frame, and only then listened
+(`chimera_host_if_asked` after the command line). On the post-push box
+(every test binary at once) that was 80 s of a start; the first-view
+test's client, five seconds behind, connected before the host listened,
+timed out (`client::JOIN_TIMEOUT`, 20 s), and its one retry came in after
+the host's match had started, so it never saw the level change it is
+there to check (`heavy::first_view`: "the client didn't load the
+server's ladder behind its loading screen", every post-push run).
+
+**A hosting run's start map loads as a level change (2026-11-25).**
+`client::app::StartMap::Later`: a run whose command line hosts
+(`Args::hosts`) and doesn't look at its start map from the first frame (a
+capture, a placed player, a debug view: `Args::looks_at_start_map`) comes
+up on the greybox; the command line's settings run (`+maxplayers`,
+`+name`), it listens, and `map <id>` loads the start map behind the
+loading screen while it answers (a client that joins meanwhile follows
+it in, `net::maps`). The command line's other lines (`+minigame`,
+`+after ...`) wait for the map to settle (`HeldCommandLine`), as they
+ran after a start map loaded before the app. `CHIMERA_START_MAP_AT_ONCE=1`
+is the old start. The boot log (`CHIMERA_BOOT_LOG=1`) now goes on past
+the first frame: `listening` when a host answers, `a map settled` at each
+map in.
+
+Main thread's instructions (the boot log's "this thread's", summed from
+the process's start; dev profile, six games, `ultimate_gun_game
+--offscreen 320x180 +maxplayers 4 +after 1 ugg_new 7 13
+combat_arms:warehouse`):
+
+| | at once (before) | as a level change |
+|---|---|---|
+| the start map before the app | 698 (11,830 the process's) | 0 |
+| to listening (the host answers) | 42,611 | 18,318 |
+| to the start map settled | (spawned whole before listening) | 36,490 |
+| to warehouse settled (the match) | 64,052 | 51,645 |
+
+The answer comes after under half the main thread's work, and the match
+is up after less: the start map's spawn is a step a frame instead of the
+first frame's whole. Left: the dedicated server still loads its start map
+before it listens ("the start map is spawned whole before the server
+listens", `dedicated`'s known shortcuts); a joiner with its game
+installed still loads its own default map before it connects
+(`party_kit::with_defaults_for`).
 
 ### The first view's bodies
 
@@ -5698,9 +5730,9 @@ model's loose form is the same).
 at every start (30.6 G and 13.0 G here), TF2's and DoD:S's simulations
 (3.4 and 2.5 G); the kept dressings' decodes (TF2 2,580 M: 854 MB of
 arrays; a ladder deals a dozen guns of a whole kit); a join during a
-process's start (the start map still loads before the app exists; not
-done: the first match's start and the server's asset fetch move with
-it); the server's animation sets (457 MB for the five Source games).
+dedicated server's start (its start map still loads before it
+listens; a listen host's loads as a level change since 2026-11-25, "A
+join while the host starts"); the server's animation sets (457 MB for the five Source games).
 
 ## Start cost, third pass (2026-11-25)
 

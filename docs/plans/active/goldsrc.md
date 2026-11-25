@@ -795,7 +795,7 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   cs_havana and cs_militia 32/33, de_survivor 32, de_torn 1), contrary to
   bsp.md's "only style 0" (to correct in the spec). The atlas is the
   start's sum and each style a `MapLightStyle` share; the logic's
-  switches reach `map::LightStyles` (not network clients yet).
+  switches reach `map::LightStyles`. Network clients (2026-11-25): the logic's changed styles replicate as `net::movers::NetLightStyles` (pattern letters; clients play them by their own clock under the writer `net`), a light's own `pattern` key plays at run time through `LightStyles::patterns` (Chimera's `render::light_styles` steps any style's blocks, not only the atlas's animated ones), and the letter scale is Chimera's `map::style_levels` (Source's pattern conversion uses it too). Tests: `cs16` `light_styles` (scenario and `NetSim`), heavy `cs_militia_switched_lights_reach_the_client` and `flickering_styles_blend_by_their_letters`. No converter change.
 - Converter version 3; the cs16 sets republished under builds 12934623
   and 15961496 (`sets cs16 --pack --sign`, `convert cs16 --sign`; the
   manifests snapshotted first): the maps' sets gained their sounds and

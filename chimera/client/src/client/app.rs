@@ -29,6 +29,17 @@
 //! `--lightmap-only` on it (`debug_views`), its dedicated server's binary
 //! for the usage text (`server`), what it adds last (`launch`) and every
 //! game it plays (`games`: the startup fetch's, `start_startup_fetch`).
+//! A run that hosts (`Args::hosts`: `+maxplayers` above 1) and doesn't
+//! look at its start map from the first frame (`Args::looks_at_start_map`)
+//! loads it as a level change (`StartMap::Later`, `StartMapLater`): the
+//! app comes up on the greybox, the command line's settings run and it
+//! listens at once, the map loads behind the loading screen (`map`) and
+//! the command line's other lines run once it has settled
+//! (`HeldCommandLine`, `start_map_settled`), so a client joining during a
+//! host's start is answered and follows the map in
+//! (`CHIMERA_START_MAP_AT_ONCE=1`: the old start, the map loaded before
+//! the app). The dedicated server still loads its start map before it
+//! listens (`chimera_net::dedicated`).
 //! `--offscreen` and the window are `default_plugins`'s, for every app,
 //! and with `--offscreen` and `--dump` the sound recorded into the dump
 //! directory's `audio.wav` instead of played (`audio::record`).
@@ -197,6 +208,53 @@ pub enum StartMap {
     /// (`GameApp::load_context`): the app's from then on, so what its
     /// games read for it (install data, conversions) is the app's too.
     Loaded { id: String, data: MapData, context: LoadContext },
+    /// A map loaded after the app is up, as a level change is (`Later`:
+    /// a run that hosts), in `context` (the app's, as `Loaded`'s).
+    Later { id: String, context: LoadContext },
+}
+
+/// The start map of a run that hosts (`Args::hosts`), loaded as a level
+/// change (`StartMap::Later`): the app comes up on the greybox and
+/// answers a join from its first frames (`chimera_host_if_asked` after the
+/// command line's settings), the map loads on a task behind the loading
+/// screen (`map <id>`) and every client that joined meanwhile follows it
+/// (`net::maps`). The command line's other lines (`HeldCommandLine`) run
+/// once it has settled (`start_map_settled`), as they ran after a start
+/// map loaded before the app. Before: the map loaded and spawned whole
+/// before the first frame, and a client joining a host during its start
+/// got no answer for that long (on a loaded machine, past the join's 20
+/// s; docs/performance.md, "A join while the host starts").
+#[derive(Resource, Clone, Debug)]
+pub struct StartMapLater(pub String);
+
+/// `CHIMERA_START_MAP_AT_ONCE=1`: a hosting run's start map loads before
+/// the app as any other's (the old start, for measuring against).
+pub fn start_map_at_once() -> bool {
+    chimera_core::env::var("CHIMERA_START_MAP_AT_ONCE").is_ok_and(|v| v == "1")
+}
+
+/// The command line's lines held until the start map settles
+/// (`StartMapLater`): every line but the settings (a line whose every
+/// command sets a cvar runs at once).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct HeldCommandLine(pub Vec<String>);
+
+/// The start map came in (`ok`) or failed to (the process ends with 1,
+/// as a start map that doesn't load before the app does): the held
+/// command line runs now.
+pub fn start_map_settled(w: &mut World, ok: bool) {
+    if w.remove_resource::<StartMapLater>().is_none() {
+        return;
+    }
+    if !ok {
+        w.write_message(AppExit::from_code(1));
+        return;
+    }
+    let held = w.remove_resource::<HeldCommandLine>().unwrap_or_default();
+    let mut console = w.resource_mut::<crate::console::Console>();
+    for line in held.0 {
+        console.submit(line);
+    }
 }
 
 impl StartMap {
@@ -220,8 +278,14 @@ impl StartMap {
         };
         // At the HDR level the console will start with (mat_hdr_level);
         // none set: the map's game's own.
-        let level = super::hdr::startup_level(&args.console);
         let context = game.load_context();
+        // A run that hosts answers joins from its first frame: its map
+        // loads as a level change (`StartMapLater`), unless the run looks
+        // at it from the first frame.
+        if args.hosts() && !args.looks_at_start_map() && !start_map_at_once() {
+            return Ok(Self::Later { id: id.to_string(), context });
+        }
+        let level = super::hdr::startup_level(&args.console);
         let options = MapLoadOptions { hdr_level: level, context: context.clone(), ..MapLoadOptions::default() };
         match (game.maps.load)(id, &options) {
             Ok(data) => Ok(Self::loaded_in(id, data, context)),
@@ -438,7 +502,7 @@ pub fn add_engine(app: &mut App, part: Engine<'_>) {
         // The greybox (behind the main menu unless the run starts
         // playing), and map systems without a map, so `map <name>` can
         // load one.
-        Engine::Map(StartMap::Greybox, _) => {
+        Engine::Map(StartMap::Greybox | StartMap::Later { .. }, _) => {
             app.add_plugins((chimera_world::greybox::GreyboxMapPlugin, chimera_present::MapPlugin::empty()));
         }
         Engine::Map(StartMap::Empty, _) => {
@@ -474,9 +538,16 @@ pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMa
     // Its id is the loaded map's name (also when it is the app's
     // `default_map`, not `--map`): without it the map in play read as the
     // greybox, and `sandbox greybox` started on it, saying "on greybox".
-    if let StartMap::Loaded { context, id, .. } = &start {
-        app.insert_resource(context.clone());
-        app.insert_resource(crate::map::LoadedMapName(id.clone()));
+    match &start {
+        StartMap::Loaded { context, id, .. } => {
+            app.insert_resource(context.clone());
+            app.insert_resource(crate::map::LoadedMapName(id.clone()));
+        }
+        StartMap::Later { context, id } => {
+            app.insert_resource(context.clone());
+            app.insert_resource(StartMapLater(id.clone()));
+        }
+        _ => {}
     }
     let view = match &start {
         StartMap::Loaded { .. } if game.hooks.debug_views => debug_view(&args).unwrap_or_else(|e| {

@@ -3134,11 +3134,9 @@ docs/plans/active/sound.md.
   games (TF2's kept dressing still decodes 2.6 G of arrays); (3) on the
   server, the animation sets (457 MB for the five Source games) and what
   a conversion leaves in use (100-350 MB more than a read); (4) a join
-  during a process's start gets no answer (the start map loads before
-  the app exists: load it as a level change, the app listening on the
-  greybox; it moves the first match's start, a `+minigame`'s first map
-  and the server's asset fetch behind the first frame, so the console
-  lines of the command line must wait for the map); (5) the client's
+  during a dedicated server's start gets no answer (its start map loads
+  before it listens; a listen host's loads as a level change since
+  2026-11-25: performance.md, "A join while the host starts"); (5) the client's
   peak while every dressing loads side by side (2-3 GB over the settled
   bytes); (6) a many-sided collision piece's brush still tries every
   triple of its planes (`plane_corners`: 1.7 G instructions for 337
