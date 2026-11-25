@@ -13,6 +13,7 @@ the game's code, no keys, no assets or extracted files.
 | [weapons.md](weapons.md) | every gun: numbers, accuracy and spread, recoil kicks, fire modes, zoom, silencers, reloads, knife, grenades | draft |
 | [damage.md](damage.md) | hit zones, armour by weapon, range falloff, wall penetration, blasts, flinch | draft |
 | [view_and_hud.md](view_and_hud.md) | view heights, zoom, punch, flash fade, HUD sprites (layout and crosshair still to capture) | draft |
+| [hud.md](hud.md) | the HUD: health, armour, ammunition, money (unused), timer, crosshair, weapon menu, kill feed icons, damage direction; 640 layout, colour and fades | draft |
 
 Add one file per topic (sounds, a format, the round rules) as the
 work needs it, from the template in [specs/README.md](../README.md).

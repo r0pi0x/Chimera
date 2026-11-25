@@ -72,7 +72,8 @@ and ammunition icons in the same line format.
 
 ## Open questions
 
-1. HUD layout (positions, colours, the health/armour/money/ammo
+1. (Layout, colours and fades now in [hud.md](hud.md), partly "(ref.)".)
+   HUD layout (positions, colours, the health/armour/money/ammo
    placement, fades) and the dynamic crosshair (gap growing with
    movement, firing and the `cl_dynamiccrosshair` 1 default; colour
    `cl_crosshair_color` "50 250 50", size "auto", translucent) live in
