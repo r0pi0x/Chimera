@@ -741,8 +741,16 @@ impl StartingWeapons {
 /// Give `owner` the weapon `id`; draws it if they hold nothing. Returns the
 /// weapon entity.
 pub fn give(world: &mut World, owner: Entity, id: &str) -> Option<Entity> {
+    give_with(world, owner, id, ())
+}
+
+/// `give`, the weapon spawned with `extra` (a marker such as
+/// `minigame::passives::RungPassive`): in its first archetype, not put on
+/// after its build, which made one more archetype for every kind of weapon
+/// given with it.
+pub fn give_with(world: &mut World, owner: Entity, id: &str, extra: impl Bundle) -> Option<Entity> {
     world.get_entity(owner).ok()?;
-    let weapon = spawn_weapon(world, id, owner)?;
+    let weapon = spawn_weapon_with(world, id, owner, extra)?;
     let Ok(mut o) = world.get_entity_mut(owner) else {
         world.despawn(weapon);
         return None;
@@ -759,8 +767,13 @@ pub fn give(world: &mut World, owner: Entity, id: &str) -> Option<Entity> {
 /// A new weapon entity `id` (built from the registry) belonging to
 /// `owner`, not yet in its inventory.
 pub fn spawn_weapon(world: &mut World, id: &str, owner: Entity) -> Option<Entity> {
+    spawn_weapon_with(world, id, owner, ())
+}
+
+/// `spawn_weapon` with `extra` in the spawn (`give_with`).
+pub fn spawn_weapon_with(world: &mut World, id: &str, owner: Entity, extra: impl Bundle) -> Option<Entity> {
     let build = world.resource::<WeaponRegistry>().find(id)?.build.clone();
-    let mut e = world.spawn((Name::new(id.to_string()), WeaponState::default()));
+    let mut e = world.spawn((Name::new(id.to_string()), WeaponState::default(), extra));
     build(&mut e);
     let weapon = e.id();
     if let Some(mut w) = world.get_mut::<Weapon>(weapon) {

@@ -68,7 +68,7 @@ use super::{
     auto::Rng,
     ladder::{RungDraw, RungOptions},
 };
-use crate::weapon::{Inventory, Weapon, WeaponRegistry, give};
+use crate::weapon::{Inventory, Weapon, WeaponRegistry, give_with};
 
 /// The option key (`rung_extras = { passives = ... }`).
 pub const OPTION: &str = "passives";
@@ -419,7 +419,8 @@ pub fn registered(world: &World, id: &str) -> bool {
     world.get_resource::<WeaponRegistry>().is_some_and(|r| r.find(id).is_some())
 }
 
-/// On a weapon a rung passive gave (`wear`).
+/// On a weapon a rung passive gave (`wear`), from its spawn
+/// (`weapon::give_with`).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RungPassive;
 
@@ -449,11 +450,14 @@ pub fn wear(world: &mut World, e: Entity, game: &str, ids: &[String]) {
     }
     for id in ids.iter().filter(|i| ours(i) && !have.iter().any(|(_, h)| h == i)) {
         let wanted = world.get::<Inventory>(e).and_then(|i| i.wanted);
-        let Some(w) = give(world, e, id) else {
+        // Marked in its spawn: put on after the build, one more archetype
+        // for every kind of item.
+        let Some(_) = give_with(world, e, id, RungPassive) else {
             warn!("rung passive {id}: no such weapon");
             continue;
         };
-        world.entity_mut(w).insert(RungPassive);
+        // What the marker's insert did: the queued world work applied.
+        world.flush();
         if let Some(mut inv) = world.get_mut::<Inventory>(e) {
             inv.wanted = wanted;
         }
