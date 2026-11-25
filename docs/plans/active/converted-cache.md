@@ -320,6 +320,19 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   set's parsed tables (`weapon::data::kept_docs`, keyed by the texts;
   3.1 G to 1.0 G). The `WeaponData` made from the tables still aren't
   kept (0.9 G). docs/performance.md, "Start cost, third pass".
+  **Entries that name no build, and values kept without their mount
+  (2026-11-25).** Those three entries name no build (they read in every
+  build), and eviction took them for another build's, first to go: on
+  a full cache they never read back. They now go by their use, with
+  the running builds' (`MapCache::evict_for`). `map_cache::
+  cached_unopened` keeps a value read through a mount that costs much
+  to open (a Source game's: every VPK directory) keyed by the archives'
+  files' sizes and times, its inputs checked against the mount's loose
+  folders and the store: TF2's and DoD:S's guns' numbers from their
+  scripts (`NUMBERS_READER`, each game's build.rs) come back with no
+  archive opened. Combat Arms' install UI keeps its string table and
+  decoded art (`install::strings_and_art`, `UI_READER`).
+  docs/performance.md, "Start cost, fourth pass".
   **Halo, not moved (no disc image here).** How its donors would sit
   behind the same API: one `Dressing` for `audio::GUEST`'s whole chain
   (game `halo_ce`, converter `maps::CONVERTER`, mount `maps::mount_for`

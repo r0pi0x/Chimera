@@ -5813,6 +5813,144 @@ republishing.
   in parts, neither a small change) and the server's animation sets
   (457 MB): not touched in this pass.
 
+## Start cost, fourth pass (2026-11-25)
+
+What "Start cost, third pass" left at every start, in its order: the two
+Source games' mounts made again for their scripts, the weapon records,
+Combat Arms' install UI. Same run (`ultimate_gun_game --offscreen 320x180
+--frames 20 +after 1 ugg_new 7 13 combat_arms:warehouse`, dev profile,
+six games, read back), the boot log's own-thread counts (the starting
+thread's; the same to the M between runs).
+
+**The third pass's entries never read back on a full cache.** Measured
+first, main as it was: the base game's simulation took 19.4 G, not the
+6.1 G the third pass left. Its three entries (the attribute records, the
+merged weapon documents, the set's tables) are keyed without a build
+(`map_cache::Key`'s `format` part: they read in every build until their
+own version changes), and eviction took an entry that names no build for
+another build's: first to go, before every entry of the builds in use.
+The dev box's cache stays at its cap (40 GB: agents' test runs), so each
+write there evicted them and every start read, parsed and merged the
+install's data again (`ls` of the cache between two runs: none of the
+three). Entries that name no build now go by their use, with the
+running builds' (`MapCache::evict_for`). A cache under its cap kept
+them (the third pass's numbers); one at its cap, as agents' and tests'
+is, never did. Until every checkout on the box runs this eviction, an older build's
+write still evicts them (the measurements below used a cache folder of
+their own, `CHIMERA_MAP_CACHE`).
+
+**Before and after** (this thread's, M instructions):
+
+| | main as found (full cache) | the third pass's entries kept | after |
+|---|---|---|---|
+| Combat Arms' install data and weapon set (`CaDataPlugin`): the attribute records and the merged documents read back (230), the set's tables read back (969), then merged over their bases, 2,363 `WeaponData` made and the copies freed (1,492 to 370) | 18,403 | 2,727 | 1,602 |
+| the set registered (`CaWeaponsPlugin`, `add_weapon_set`: each weapon's hooks' parameters, 780 to 398) | 816 | 827 | 444 |
+| TF2's guns (`Tf2GunsPlugin`): the mount made again for its scripts (1,415) | 1,563 | 1,564 | 52 |
+| DoD:S's guns: the mount (612) | 626 | 624 | 14 |
+| the other plugins of the simulation, the other games' | 337 | 328 | 318 |
+| **physics and the game's simulation** | **21,748** | **6,073** | **2,433** |
+| Combat Arms' HUD (`CaHudPlugin`, the install's UI): the string table (572), the art decoded (552), the layouts (300) | 1,487 | 1,485 | 434 |
+| the window and Bevy's plugins | 782 | 780 | 781 |
+| **the whole start before the first frame** (the start map's 698 on this thread included) | **25,010** | **9,330** | **4,640** |
+
+**What was cut.**
+
+- **A value read through a mount is kept without opening it**
+  (chimera_assets' `map_cache::cached_unopened`). A Source game's mount
+  reads every VPK directory (TF2's: 1.4 G; DoD:S's twice, once to see
+  whether an archive is whole: 0.6 G), and the guns' plugins made one
+  only to read some forty small scripts. The entry's key names the
+  archives the mount would open by path, size and modification time (a
+  look at a folder), and its inputs are checked against the mount's
+  other layers, which open for nothing: the loose folders
+  (`SearchPath::unopened`) and the asset store, layered as the game's
+  `open` layers them (`tf2`'s and `dods`' `mount::unopened`). A hit
+  opens no archive; a file dropped into `custom/`, a new store manifest
+  or a patched archive reads the scripts again. TF2's numbers
+  (`GunNumbers::from_scripts_kept`: the documents, each gun's source,
+  the unlocks made from the item pack) 1,563 to 52 M; DoD:S's
+  (`dods::game::numbers`, a plugin before the guns' that hands them
+  the numbers) 626 to 14 M. Numbers with a script missing (no `.ctx`
+  key, a file not fetched yet) aren't kept, and the key itself is never
+  written, hashed or not (only whether one is configured). The
+  mechanism is any game's: a loader that needs a few files of a costly
+  mount at start names the mount unopened and tracks what it asks.
+- **The weapon set's tables are moved, not copied.** `WeaponSet::parse`
+  copied each document's table into the merged set and copied that
+  again to read the `WeaponData` from it; a document with no base is
+  now the merged table itself (taken out of the parsed list), and a
+  weapon's hooks, most of a Combat Arms document, are taken out of the
+  copy and put into the record as the tables they are instead of
+  going through the deserializer, which built every value of them
+  again. 2,727 to 1,602 M (merging, making the records and freeing
+  the copies: 1,492 to 370).
+- **Weapons with the same hook parameters share one reading**
+  (`weapon::data::ParamMemo`). Registering a set read each hook's
+  table as its typed parameters, weapon by weapon: 24,335 tables for
+  Combat Arms' 2,363 weapons, of which 2,899 differ (the install's
+  weapons are mostly variants: `combat_arms:timing` has one table for
+  2,230 weapons, `combat_arms:inventory` 18 for 2,363). A table equal
+  to one read before (hashed, then compared value by value, floats by
+  their bits) takes that reading. 780 to 398 M: hashing and comparing
+  a table of forty values costs about a third of reading it at the dev
+  profile's opt-level 1.
+- **The install's string table and art are an entry**
+  (`install::strings_and_art`): 37,329 strings parsed a character at a
+  time and 935 textures decoded (34 MB of RGBA) at every start, now a
+  39 MB entry keyed by the reader's sources (`UI_READER`, the ui
+  crate's build.rs), the language and the textures' names, its inputs
+  the 961 files asked for. 1,487 to 434 M. The layouts and the small
+  attribute files are still read (below).
+
+**The mission index, read behind the start.** The third pass left
+Combat Arms' mission index (0.65 G) to the first match that looks a
+mission up, and that is a tick: a level change to a Combat Arms map cost
+a 662 M frame (`FixedUpdate step_phases` 649 M; ultimate_gun_game's
+`heavy::server_map_change`, limit 250 M). It is now read on a thread of
+its own from the rules' start (`rules::settings::read_missions_behind`):
+the start doesn't wait for it, a tick that asks early waits for the
+thread instead of reading, and the read is made once
+(combat_arms `heavy::missions::the_mission_index_is_read_behind_the_start`).
+The process's total pays the 0.65 G again at every start with an
+install; the main thread doesn't.
+
+Guards: chimera_assets' `other_builds_entries_go_before_this_ones` (an
+entry that names no build stays as this build's do), source_engine's
+`a_value_read_through_the_mount_is_kept_without_opening_it` (a hit
+doesn't open the archive; a changed loose file, a file that appears and
+a changed archive each read again), tf2's and dods'
+`the_numbers_read_back_from_the_cache_as_read` and, on the installs,
+`heavy::scripts::the_numbers_kept_between_starts_are_the_mounts`;
+chimera_sim's `weapons_with_the_same_hook_parameters_share_one_reading`
+(one reading per different table, each weapon's hook run with its own
+parameters, 0.0 apart from -0.0 and from 0) and
+`hooks_are_the_documents_tables_as_merged`; combat_arms_ui's
+`the_strings_and_art_read_back_from_the_cache_as_read` and, on the
+install, `heavy::install_ui::install_ui_reads_back_from_the_cache_as_read`.
+
+No file of a game's converter version changed (the kept numbers and the
+UI entry have versions of their own: `NUMBERS_READER`, `UI_READER`):
+nothing published needs republishing.
+
+**Left, measured.**
+
+- **The set's tables read back** (969 M: 624 decoding the entry into
+  its own value type, 345 turning those into TOML tables) and the
+  records made from them (370 M with the merge): the entry could decode straight
+  into TOML tables; past that the records themselves would have to
+  serialize (thirty types, an untagged enum, hooks as TOML).
+- **Registering** (398 M): about 300 of it is hashing and comparing
+  24,335 tables through `BTreeMap` iterators at opt-level 1 (2,899
+  readings at the 32 k instructions each one took before are 93 M); a
+  document that named its variants' shared tables once would need
+  neither.
+- **The install's layouts** (300 M: thirteen XML files parsed into
+  widget trees): keeping them needs `Layout` and the shell's `Tree` to
+  serialize. The rest of the 434 M is the entry's read (37,329 strings
+  back into a map), the names resolved and the fonts.
+- The offscreen sound thread, the kept dressings' decodes and the
+  server's animation sets: as the third pass left them.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset
