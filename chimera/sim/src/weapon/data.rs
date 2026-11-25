@@ -42,12 +42,17 @@
 //! in its place (`replace_weapon_set`, `server_docs`): same registry
 //! position, so indices match the server's.
 //!
+//! A big set's parsed tables are kept on disk (`kept_docs`: Combat Arms'
+//! install is 2,363 documents).
+//!
 //! Known shortcuts (docs/tech-debt.md): Weapon data: loaded sets are leaked
 //! (one allocation per load; IDs are `&'static str` throughout the weapon
 //! code); a game's map loader loads held and view models for its own set only, so
 //! a weapon added by an app draws no model unless the game loads it. Why
 //! it's OK for now: Loads happen at start;
 //! weapons from data play (buy, fire, network) without models.
+
+mod kept_docs;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -776,10 +781,20 @@ impl WeaponSet {
     /// Parse `docs` ((name for errors, TOML text)); `base` and `ammo` may
     /// name entries of `known` (later ones first).
     pub fn parse(docs: &[(&str, &str)], known: &[&WeaponSet]) -> Result<Self, String> {
+        Self::parse_kept(docs, known, kept_docs::disk(docs).as_ref())
+    }
+
+    /// `parse`, with `disk` as the converted cache its documents' tables
+    /// are read back from (`kept_docs`; None: parsed).
+    pub fn parse_kept(
+        docs: &[(&str, &str)],
+        known: &[&WeaponSet],
+        disk: Option<&chimera_core::mount::assets::map_cache::MapCache>,
+    ) -> Result<Self, String> {
         let mut raw: Vec<(String, toml::Table)> = Vec::new();
+        let mut ids: BTreeMap<String, usize> = BTreeMap::new();
         let mut ammo = BTreeMap::new();
-        for (name, text) in docs {
-            let mut doc: toml::Table = toml::from_str(text).map_err(|e| format!("{name}: {e}"))?;
+        for ((name, _), mut doc) in docs.iter().zip(kept_docs::tables(docs, disk)?) {
             let doc_units: Option<Units> = match doc.get("units") {
                 Some(u) => Some(u.clone().try_into().map_err(|e| format!("{name}: units: {e}"))?),
                 None => None,
@@ -800,7 +815,7 @@ impl WeaponSet {
                 let Some(toml::Value::String(id)) = doc.get("id").cloned() else {
                     return Err(format!("{name}: `id` is not a string"));
                 };
-                if raw.iter().any(|(i, _)| *i == id) {
+                if ids.insert(id.clone(), raw.len()).is_some() {
                     return Err(format!("{name}: {id} defined twice"));
                 }
                 raw.push((id, doc));
@@ -810,7 +825,7 @@ impl WeaponSet {
         }
         let mut tables = BTreeMap::new();
         for (id, _) in &raw {
-            merged(id, &raw, known, &mut tables, &mut Vec::new())?;
+            merge(id, &raw, &ids, known, &mut tables, &mut Vec::new())?;
         }
         let mut weapons = Vec::new();
         for (id, _) in &raw {
@@ -861,22 +876,20 @@ impl WeaponSet {
 
 /// `id`'s table merged over its bases' (`abstract` and `class` aren't
 /// inherited: a launcher's stun variant isn't a gun of a ladder).
-fn merged(
+fn merge(
     id: &str,
     raw: &[(String, toml::Table)],
+    ids: &BTreeMap<String, usize>,
     known: &[&WeaponSet],
     done: &mut BTreeMap<String, toml::Table>,
     stack: &mut Vec<String>,
-) -> Result<toml::Table, String> {
-    if let Some(t) = done.get(id) {
-        return Ok(t.clone());
+) -> Result<(), String> {
+    if done.contains_key(id) {
+        return Ok(());
     }
-    let Some((_, own)) = raw.iter().find(|(i, _)| i == id) else {
-        return known
-            .iter()
-            .rev()
-            .find_map(|s| s.tables.get(id).cloned())
-            .ok_or_else(|| format!("unknown base {id}"));
+    let Some(own) = ids.get(id).map(|i| &raw[*i].1) else {
+        // A base from an earlier set: its table there.
+        return Ok(());
     };
     if stack.iter().any(|s| s == id) {
         return Err(format!("{id}: its bases loop ({})", stack.join(" -> ")));
@@ -884,8 +897,13 @@ fn merged(
     let out = match own.get("base") {
         Some(toml::Value::String(base)) => {
             stack.push(id.to_string());
-            let mut t = merged(base, raw, known, done, stack).map_err(|e| format!("{id}: {e}"))?;
+            merge(base, raw, ids, known, done, stack).map_err(|e| format!("{id}: {e}"))?;
             stack.pop();
+            let mut t = done
+                .get(base.as_str())
+                .or_else(|| known.iter().rev().find_map(|s| s.tables.get(base.as_str())))
+                .cloned()
+                .ok_or_else(|| format!("{id}: unknown base {base}"))?;
             t.remove("abstract");
             t.remove("class");
             deep_merge(&mut t, own);
@@ -894,8 +912,8 @@ fn merged(
         Some(_) => return Err(format!("{id}: `base` is not a string")),
         None => own.clone(),
     };
-    done.insert(id.to_string(), out.clone());
-    Ok(out)
+    done.insert(id.to_string(), out);
+    Ok(())
 }
 
 /// `over`'s keys into `base`; tables merge, everything else replaces.
