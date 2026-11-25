@@ -285,10 +285,10 @@ fn the_receiver_limits_accounts_and_addresses_and_mutes() {
     inbox.set_muted("alpha", true).unwrap();
     let (id, bytes) = report("troll");
     let ip: IpAddr = "127.0.0.1".parse().unwrap();
-    assert_eq!(inbox.receive("internal:alpha#1", Some(ip), Some(&id), &bytes).status, 202);
+    assert_eq!(inbox.receive("internal:alpha#1", false, Some(ip), Some(&id), &bytes).status, 202);
     assert!(inbox.find(&id).is_none());
     inbox.set_muted("alpha", false).unwrap();
-    assert_eq!(inbox.receive("internal:alpha#1", Some(ip), Some(&id), &bytes).status, 201);
+    assert_eq!(inbox.receive("internal:alpha#1", false, Some(ip), Some(&id), &bytes).status, 201);
 }
 
 #[test]
@@ -483,7 +483,7 @@ fn on_report_runs_the_hosts_command_with_a_cleaned_summary() {
         out.display()
     )));
     let (id, bytes) = report("@everyone `rm -rf` <b>broken</b>");
-    assert_eq!(inbox.receive("internal:tester#2", None, Some(&id), &bytes).status, 201);
+    assert_eq!(inbox.receive("internal:tester#2", false, None, Some(&id), &bytes).status, 201);
     let start = Instant::now();
     while !out.is_file() || fs::read_to_string(&out).unwrap().is_empty() {
         assert!(start.elapsed() < Duration::from_secs(10), "the command didn't run");
@@ -552,7 +552,7 @@ fn the_inbox_keeps_its_reports_under_the_cap() {
     let dir = scratch("feedback_retention");
     let (first, bytes) = report("first");
     let open = |keep_bytes| Inbox::open(dir.join("feedback")).with_limits(FeedbackLimits { keep_bytes, ..FeedbackLimits::default() });
-    assert_eq!(open(0).receive("internal:tester#1", None, Some(&first), &bytes).status, 201);
+    assert_eq!(open(0).receive("internal:tester#1", false, None, Some(&first), &bytes).status, 201);
     let first_dir = open(0).find(&first).unwrap();
     fs::write(first_dir.join("report.zip"), &bytes).unwrap();
     let one = feedback_dir_bytes(&first_dir) - bytes.len() as u64;
@@ -563,15 +563,49 @@ fn the_inbox_keeps_its_reports_under_the_cap() {
     let (second, bytes) = report("second");
     // Room for one report and a half: the first goes.
     let inbox = open(one * 3 / 2);
-    assert_eq!(inbox.receive("internal:tester#1", None, Some(&second), &bytes).status, 201);
+    assert_eq!(inbox.receive("internal:tester#1", false, None, Some(&second), &bytes).status, 201);
     assert!(inbox.find(&first).is_none(), "the oldest went");
     let kept = inbox.find(&second).unwrap();
     assert!(kept.join("report.json").is_file() && !kept.join("report.zip").exists());
     // A cap below one report still keeps the new one.
     let (third, bytes) = report("third");
     let inbox = open(1);
-    assert_eq!(inbox.receive("internal:tester#1", None, Some(&third), &bytes).status, 201);
+    assert_eq!(inbox.receive("internal:tester#1", false, None, Some(&third), &bytes).status, 201);
     assert_eq!(inbox.list().iter().map(|m| m.id.clone()).collect::<Vec<_>>(), [third]);
+}
+
+/// The hub's owner isn't limited per account or address (their own
+/// reports must not be refused); size and validation still apply.
+#[test]
+fn the_owner_is_not_rate_limited() {
+    let dir = scratch("feedback_owner");
+    let limits = FeedbackLimits { per_account_hour: 2, per_account_day: 2, per_address_hour: 2, max_body: 4096, ..FeedbackLimits::default() };
+    let inbox = Inbox::open(dir.join("feedback")).with_limits(limits);
+    let ip: std::net::IpAddr = "10.1.2.3".parse().unwrap();
+    for i in 0..5 {
+        let (id, bytes) = report(&format!("owner {i}"));
+        assert_eq!(inbox.receive("account:boss#0", true, Some(ip), Some(&id), &bytes).status, 201, "report {i}");
+    }
+    // The same address and limits refuse an ordinary account after two.
+    let codes: Vec<u16> = (0..3)
+        .map(|i| {
+            let (id, bytes) = report(&format!("tester {i}"));
+            inbox.receive("account:other#0", false, Some(ip), Some(&id), &bytes).status
+        })
+        .collect();
+    assert_eq!(codes, [201, 201, 429]);
+    // The owner's checks still hold: too big, not a bundle.
+    let (id, _) = report("bad");
+    assert_eq!(inbox.receive("account:boss#0", true, Some(ip), Some(&id), &vec![0; 5000]).status, 413);
+    assert_eq!(inbox.receive("account:boss#0", true, Some(ip), Some(&id), b"not a zip").status, 400);
+}
+
+#[test]
+fn a_429_reason_names_the_wait() {
+    use chimera_assets::feedback::outbox::{RATE_LIMITED, rate_limit_minutes};
+    assert_eq!(rate_limit_minutes(&format!("{RATE_LIMITED} (retry in 1500 s): slow down")), Some(Some(25)));
+    assert_eq!(rate_limit_minutes(&format!("{RATE_LIMITED}: slow down")), Some(None));
+    assert_eq!(rate_limit_minutes("connection refused"), None);
 }
 
 fn feedback_dir_bytes(dir: &std::path::Path) -> u64 {

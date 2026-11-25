@@ -229,7 +229,11 @@ uses `chimera_assets`; `party_kit` is an app crate.
   add`.)
 - Limits (new `Limits` fields, CLI flags): body 8 MB; per account 10 an
   hour and 40 a day; per address 30 an hour; the existing bad-token ban.
-  Past a limit: 429, logged.
+  Past a limit: 429, logged. The hub's owner (the ticket's `owner` role)
+  is exempt from the per-account and per-address limits (2026-11-25: the
+  owner's own reports were refused); size and validation still apply, the
+  role counts as of the ticket, so a demotion bites when it expires. The
+  client's notice for a 429 reads "Rate limit reached, retries in N min".
 - Validation: a real zip, only allow-listed names (no folders, no
   `..`), each entry under its cap, `report.json` parses, text at most
   2000 characters. Anything else is 400 and not stored.

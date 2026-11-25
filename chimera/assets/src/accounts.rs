@@ -85,6 +85,8 @@ pub struct Principal {
     /// Which token (for the log): its number on the account.
     pub token: u32,
     pub games: Games,
+    /// The hub's owner (the ticket's role; the feedback limits skip it).
+    pub owner: bool,
 }
 
 impl Principal {
@@ -259,6 +261,7 @@ impl Accounts {
                     name: a.name.clone(),
                     token: t.id,
                     games: Games::from_list(&a.games),
+                    owner: false,
                 })
             })
         })
@@ -474,6 +477,7 @@ impl Authenticator for TicketAuth {
             name: claims.username.clone(),
             token: 0,
             games: Games::from_content(&claims.content),
+            owner: claims.role == "owner",
         }))
     }
 }

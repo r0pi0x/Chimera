@@ -365,8 +365,10 @@ impl Inbox {
         Ok(())
     }
 
-    /// Take an upload from `account` (`kind:name#token`) at `ip`.
-    pub fn receive(&self, account: &str, ip: Option<IpAddr>, header_id: Option<&str>, body: &[u8]) -> Answer {
+    /// Take an upload from `account` (`kind:name#token`) at `ip`. The hub's
+    /// `owner` isn't counted against the rate limits (size and validation
+    /// still apply).
+    pub fn receive(&self, account: &str, owner: bool, ip: Option<IpAddr>, header_id: Option<&str>, body: &[u8]) -> Answer {
         if body.len() > self.limits.max_body {
             return Answer::new(413, format!("a report is at most {} bytes\n", self.limits.max_body));
         }
@@ -380,7 +382,7 @@ impl Inbox {
             return Answer::new(202, "thanks\n");
         }
         let now = now_secs();
-        if let Err(wait) = self.admit(account_of(account), ip, now) {
+        if let Err(wait) = if owner { Ok(()) } else { self.admit(account_of(account), ip, now) } {
             return Answer {
                 status: 429,
                 body: "too many reports from this account or address: try again later\n".into(),

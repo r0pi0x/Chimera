@@ -89,7 +89,7 @@ use bevy::{
 
 use chimera_core::mount::assets::feedback::{
     CvarValue, Feedback as OutboxThread, ImageFormat, Kind, OutboxConfig, ReportState, Screenshot as ShotBytes, Target, Targets,
-    outbox::{SIGN_IN, SIGN_IN_AGAIN},
+    outbox::{SIGN_IN, SIGN_IN_AGAIN, rate_limit_minutes},
 };
 
 use super::widgets::{Edit, TextKey};
@@ -1203,6 +1203,11 @@ fn deliveries(outbox: Res<FeedbackOutbox>, time: Res<Time<Real>>, mut feedback: 
                 id.clone(),
                 if reason == SIGN_IN || reason == SIGN_IN_AGAIN {
                     format!("{}{} ({waiting} waiting)", reason[..1].to_uppercase(), &reason[1..])
+                } else if let Some(minutes) = rate_limit_minutes(&reason) {
+                    match minutes {
+                        Some(m) => format!("Rate limit reached, retries in {m} min ({waiting} waiting)"),
+                        None => format!("Rate limit reached, retries later ({waiting} waiting)"),
+                    }
                 } else {
                     format!("Saved, sends when the service answers ({waiting} waiting)")
                 },

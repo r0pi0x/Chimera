@@ -102,6 +102,18 @@ pub struct Targets {
 
 /// Why a report waits when sending needs an account (none, or a service
 /// that refused the token as unknown).
+/// A queued report's reason when the service answered 429; the retry wait
+/// follows as `(retry in N s)` (`rate_limit_minutes`).
+pub const RATE_LIMITED: &str = "the service is limiting reports";
+
+/// The minutes to the retry when `reason` is a 429's (`Some(None)`: rate
+/// limited, wait unknown), else `None`.
+pub fn rate_limit_minutes(reason: &str) -> Option<Option<u64>> {
+    let rest = reason.strip_prefix(RATE_LIMITED)?;
+    let secs = rest.strip_prefix(" (retry in ").and_then(|r| r.split_once(" s)")).and_then(|(n, _)| n.parse::<u64>().ok());
+    Some(secs.map(|s| s.div_ceil(60).max(1)))
+}
+
 pub const SIGN_IN: &str = "sign in to send reports; kept on this PC, sent once you're signed in";
 
 /// Why a report waits when the hub refused the account's ticket.
@@ -503,7 +515,13 @@ fn upload(destination: &Destination, session: Option<&Session>, id: &str, bytes:
     match remote.post_raw("/feedback", "application/zip", &[("X-Chimera-Report-Id", id)], bytes) {
         Ok((200..=299, ..)) => Outcome::Sent,
         Ok((429, retry, body)) => Outcome::Later(
-            format!("the service is limiting reports: {}", body.trim()),
+            {
+                let secs = retry.as_ref().and_then(|r| r.trim().parse::<u64>().ok());
+                match secs {
+                    Some(s) => format!("{RATE_LIMITED} (retry in {s} s): {}", body.trim()),
+                    None => format!("{RATE_LIMITED}: {}", body.trim()),
+                }
+            },
             retry.and_then(|r| r.trim().parse::<u64>().ok()).map(Duration::from_secs),
         ),
         Ok((401, ..)) => Outcome::Auth(if destination.account { SIGN_IN_AGAIN } else { SIGN_IN }.into()),
