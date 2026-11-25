@@ -758,9 +758,21 @@ pub struct CaGearKey {
     infected: bool,
 }
 
-/// Raised ammunition: what a weapon was given (11).
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CaAmmoRaised(pub u32);
+/// Raised ammunition: what a weapon was given (11), `None` until its first
+/// raise. On every weapon from its build (a component `Weapon` requires,
+/// `CaGearPlugin`): put on at the raise, it made one more archetype for
+/// every kind of weapon a Combat Arms character held (24 of a session's,
+/// 37 with every game: docs/performance.md, "A session's archetypes: the
+/// weapons' markers").
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CaAmmoRaised(pub Option<u32>);
+
+impl CaAmmoRaised {
+    /// What the raise gave (none before it).
+    pub fn given(&self) -> u32 {
+        self.0.unwrap_or(0)
+    }
+}
 
 /// Combat Arms' gear (a part of the network, `combat_arms_gear`).
 pub struct CaGearPlugin;
@@ -781,6 +793,7 @@ impl Plugin for CaGearPlugin {
                 super::data::served::gear_format,
             ),
         );
+        app.register_required_components::<Weapon, CaAmmoRaised>();
         app.init_resource::<CaGearQuirks>()
             .init_resource::<CaOwnGear>()
             .net_part("combat_arms_gear", register)
@@ -1018,23 +1031,22 @@ fn armour(
 fn ammo(
     data: Res<CaGearData>,
     owners: Query<&CaGearEffects>,
-    mut weapons: Query<(Entity, &Weapon, &mut Magazine, Option<&CaAmmoRaised>)>,
-    mut commands: Commands,
+    mut weapons: Query<(&Weapon, &mut Magazine, &mut CaAmmoRaised)>,
 ) {
-    for (e, w, mut mag, raised) in &mut weapons {
+    for (w, mut mag, mut raised) in &mut weapons {
         let Some(owner) = w.owner else { continue };
         let Ok(effects) = owners.get(owner) else { continue };
         let total = mag.reserve_max + mag.size;
         let magazines = effects.set.weapon_magazines(&data.0, w.id);
-        let delta = match raised {
+        let delta = match raised.0 {
             Some(r) => {
                 // A change while the weapon is held: the cap moves, the
                 // total waits for the next spawn or refill.
-                let base = total - r.0.min(total);
+                let base = total - r.min(total);
                 let want = max_total(base, mag.size, effects.fighting_chance, magazines) - base;
-                if want != r.0 {
-                    mag.reserve_max = (mag.reserve_max + want).saturating_sub(r.0);
-                    commands.entity(e).insert(CaAmmoRaised(want));
+                if want != r {
+                    mag.reserve_max = (mag.reserve_max + want).saturating_sub(r);
+                    raised.0 = Some(want);
                 }
                 continue;
             }
@@ -1049,7 +1061,7 @@ fn ammo(
         let start = max_total(held, mag.size, effects.fighting_chance, 0.0).min(total + delta).saturating_sub(held);
         mag.reserve_max += delta;
         mag.reserve += start;
-        commands.entity(e).insert(CaAmmoRaised(delta));
+        raised.0 = Some(delta);
     }
 }
 

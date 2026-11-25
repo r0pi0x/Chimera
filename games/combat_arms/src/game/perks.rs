@@ -1218,7 +1218,7 @@ fn supplies(world: &mut World) {
 /// raise (Corrections 2026-10-22, 3).
 fn record_max(world: &World, w: Entity) -> Option<u32> {
     let m = world.get::<Magazine>(w)?;
-    let raised = world.get::<super::gear::CaAmmoRaised>(w).map_or(0, |r| r.0);
+    let raised = world.get::<super::gear::CaAmmoRaised>(w).map_or(0, |r| r.given());
     Some((m.reserve_max + m.size).saturating_sub(raised))
 }
 
