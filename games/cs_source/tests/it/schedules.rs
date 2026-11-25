@@ -38,17 +38,26 @@ const RATCHET: &[ScheduleRatchet] = &[
     // ambiguous pairs away but reshuffled how Bevy sorts the unordered
     // rest, and 8 more of those pairs (none of them hitboxes': grenades,
     // equipment, the logic bridge) now sort differently on the two sides.
+    // 198 and 39 opposite from 217 and 45 (2026-11-25: fallen since
+    // d73557b08, lowered here).
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 217,
-        client: 217,
-        opposite: 45,
+        server: 198,
+        client: 198,
+        opposite: 39,
     },
+    // 190 and 192 from 187 and 189 (2026-11-25): d73557b08's three
+    // transform-marking systems (`map::transform_marks`, in Avian's
+    // `PhysicsTransformSystems::Propagate` beside the propagation they
+    // gate) are each unordered against the hint triggers `buy_zone` and
+    // `zones`, as every system of that set already was (the triggers read
+    // places, the set writes them after the step: either order reads this
+    // tick's); six pairs came, three others went. 27 opposite from 30.
     ScheduleRatchet {
         schedule: "FixedPostUpdate",
-        server: 187,
-        client: 189,
-        opposite: 30,
+        server: 190,
+        client: 192,
+        opposite: 27,
     },
     ScheduleRatchet {
         schedule: "FixedLast",
