@@ -314,7 +314,10 @@ about 0.2-0.3 MB stored each), published under build 15961496 and the
 client's 12934623 (the newest, 15961496, is what clients take), the guest
 dressing converted again with the guns; republished 2026-11-25 with
 converter version 3 (the maps' sets carry the waves and sprites their
-entities name, the HE's and smoke's sets their look sprites). Its install is loose files, so it
+entities name, the HE's and smoke's sets their look sprites); the guest
+dressing converted again on 2026-11-26 with converter version 4 (the
+masked textures' hole fill, the water volumes, the bodies' gesture a
+sparse set: 13.4 and 9.5 MB stored). Its install is loose files, so it
 is packed from what its pieces read (`chimera_pack sets cs16 --pack`
 starts the manifest), not whole: 175 files, 324 MB plain, 142 MB stored
 (the WADs maps share, such as `halflife.wad` and `cstrike.wad`, are one

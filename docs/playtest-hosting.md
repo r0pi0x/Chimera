@@ -549,7 +549,8 @@ checks it against its manifest, then the entry. Sizes stored (a client's
 entry and a server's, the republish of 2026-11-25 after the map format
 changed): CS:S 62 and 39 MB, HL2:DM 53 and 36, DoD:S 75 and 58, CS 1.6
 13 and 10, Combat Arms 57 and 36, TF2 562 and 350 MB (1.6 GB plain;
-`--list` prints them). Halo: CE has no guest dressing to convert, and
+`--list` prints them; CS 1.6's and TF2's converted again on 2026-11-26
+with their new converter versions, the same sizes). Halo: CE has no guest dressing to convert, and
 each game's entries go in its newest manifest only (CS 1.6: 15961496,
 the build clients take). It needs memory for the largest entry twice
 (TF2's, about 1.6 GB) and a few minutes per game (zstd level 19; TF2

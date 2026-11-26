@@ -118,8 +118,8 @@ module list is `docs/modules.md`.
 - 252: Where an install is found (no config needed) | A game's install (what its tests and `GameInfo::install()` read) is the first of these that holds the files the game needs...
 - 282: Day of Defeat: Source: an install of your own | DoD:S (docs/plans/active/dods.md) is served from 2026-11-23 (the dedicated server's build 25338204, published with `--build`: the...
 - 305: Counter-Strike 1.6: an install of your own, or the service | CS 1.6 (docs/plans/active/goldsrc.md) is served from 2026-11-24 (the Half-Life Dedicated Server's build 15961496, published with `--build`):
-- 335: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
-- 380: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
+- 338: Team Fortress 2: an install of your own, or the service | TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+- 383: When something goes wrong | was revoked (or, with a service of no hub, the token is mistyped or revoked); ask the owner for a new invite
 
 ## docs/backlog.md
 
@@ -349,20 +349,20 @@ module list is `docs/modules.md`.
 - 227: TF2 (2026-11-15) | TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md), which are encrypted in the install: the host packs them...
 - 294: A lean `base`, `common`, music tracks and level 19 (2026-11-15) | every run reads (docs/performance.md, "First join download"): after a
 - 521: Converted guest dressings (step 7 of docs/plans/active/converted-cache.md) | Each game's players and guns on other games' maps are converted from its files at a client's first load (0.5-2.6 s and 3-21 G...
-- 567: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
-- 594: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
-- 611: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
-- 685: Starting it | reach, not localhost)
-- 844: Ports to open | On the router and the host's firewall:
-- 868: Download speed and your upload | What a tester without the games downloads from the asset service:
-- 920: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer; a dedicated server uses the...
-- 968: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
-- 1085: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
-- 1107: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
-- 1212: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
-- 1235: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
-- 1280: After | Revoke the session's test accounts (`chimera_accounts account revoke
-- 1287: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
+- 568: The asset service (each session) | It serves this machine's server store (`--store <dir>` serves another; then see "Starting it" for the fingerprint)
+- 595: Building or updating the server | Easiest: the server from the release zip (`ultimate_gun_game_server` or
+- 612: The server's own game files (no install, no keys) | A game server reads each game it has no install of from the asset store, as a player does, and fetches what it needs from the asset...
+- 686: Starting it | reach, not localhost)
+- 845: Ports to open | On the router and the host's firewall:
+- 869: Download speed and your upload | What a tester without the games downloads from the asset service:
+- 921: Accounts and invites | Everyone gets in with an account on the hub (the services in the next section): a tester, a developer; a dedicated server uses the...
+- 969: Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2) | The hub runs as separate services over the same server store, each its own binary, restarted on its own:
+- 1086: Pre-flight smoke test (the evening before, and an hour before) | map loaded without `error:`
+- 1108: During the session | Linux `./ultimate_gun_game_server ... 2>&1 | tee -a ugg-server.log` (stdin stays on the terminal); Windows PowerShell
+- 1213: Admins (the Escape menu's Host settings from a player's game) | On a dedicated server nobody is the host, so the Escape menu's **Host settings** (bots, the ladder's rules, the map rotation, spawn...
+- 1236: Surprises (host only; don't tell the testers) | Two console commands on the server shake a match up
+- 1281: After | Revoke the session's test accounts (`chimera_accounts account revoke
+- 1288: Rehearsal | A dress rehearsal on one Linux machine (2026-11-11), everything on
 
 ## docs/playtest.md
 
