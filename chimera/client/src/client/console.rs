@@ -28,7 +28,8 @@
 //! colliders, which follow the map's frame, are all in),
 //! `map::prepare::begin_map_change`, `SPAWN_BUDGET` a frame and the GPU's
 //! uploads capped, `LOAD_UPLOAD_BYTES`; then the map's `MapHooks::settle` work
-//! a slice a frame, at most `SETTLE_MAX_SECS`, nothing of the match ticking
+//! a slice a frame, at most `SETTLE_MAX_SECS` once it has had `SETTLE_MIN_STEPS`
+//! frames, nothing of the match ticking
 //! meanwhile (`map::MapSettling`: the physics alone steps once a frame), before
 //! the game is entered; `map greybox` puts the
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
@@ -2273,6 +2274,17 @@ pub fn loading_map(w: &World) -> Option<String> {
 /// install's conversions can take longer than the map's own settling.
 const SETTLE_MAX_SECS: f32 = 20.0;
 
+/// The frames a settle has before `SETTLE_MAX_SECS` may end it: its work
+/// goes a slice a frame (the spawn spots' floods, `nav_gen::CELLS_PER_LOAD_FRAME`
+/// cells; the props' shadows once they rest; the uploads), so on a loaded
+/// box, its frames 60-70 ms, 20 s of wall time ran out with the work still
+/// due, not stuck: de_dust2's spawn spots took about 290 settle frames, 19.4 s
+/// there (ultimate_gun_game's heavy::first_view, a listen host's start map
+/// behind the loading screen, "still pending: nothing"). The longest a stuck
+/// settle holds the screen is then the later of 20 s and these frames
+/// (10 s at 60 fps, so a box at speed sees no change).
+const SETTLE_MIN_STEPS: u32 = 600;
+
 /// Physics steps a spawned map takes before its settle hooks start: the
 /// collision is in the spatial queries' trees after the first physics steps.
 const SETTLE_AFTER_STEPS: u32 = 3;
@@ -2608,12 +2620,17 @@ fn settle_map(w: &mut World) {
     let hooks: Vec<fn(&mut World) -> bool> =
         w.get_resource::<crate::map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
     let mut done = true;
+    // Which hooks say not done this frame (the timeout names them by place).
+    let mut not_done: Vec<usize> = Vec::new();
     let mut seen = std::mem::take(&mut w.resource_mut::<Settling>().done);
     seen.resize(hooks.len(), false);
-    for (hook, seen) in hooks.into_iter().zip(&mut seen) {
+    for (i, (hook, seen)) in hooks.into_iter().zip(&mut seen).enumerate() {
         let d = hook(w);
         *seen |= d;
         done &= d;
+        if !d {
+            not_done.push(i);
+        }
     }
     // The physics stage: after the colliders, the settle hooks done of all
     // (each counted from the first time it said done: the bar never goes
@@ -2625,7 +2642,7 @@ fn settle_map(w: &mut World) {
         let colliders = work.colliders;
         work.set_if_neq(crate::map::loading::LoadWork::physics(colliders, colliders, hooks_done, hooks_n));
     }
-    if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
+    if !done && (started.elapsed().as_secs_f32() < SETTLE_MAX_SECS || steps < SETTLE_MIN_STEPS) {
         return;
     }
     // The boot log's (`CHIMERA_BOOT_LOG`): each map in, the start map's first.
@@ -2636,9 +2653,10 @@ fn settle_map(w: &mut World) {
         // Out of time: into the game anyway, naming what wasn't ready (one
         // missing asset never holds the load for good).
         warn!(
-            "map settled behind the loading screen in {:.2} s, out of time; still pending: {}",
+            "map settled behind the loading screen in {:.2} s ({} frames), out of time; still pending: {} (settle hooks not done, by place in `MapHooks::settle`: {not_done:?})",
             started.elapsed().as_secs_f32(),
-            super::first_view::pending_words(w)
+            steps + 1,
+            super::first_view::pending_words(w),
         );
     }
     w.remove_resource::<Settling>();

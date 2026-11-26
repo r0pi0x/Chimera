@@ -1815,8 +1815,11 @@ prepared, pipeline not specialized or still compiling) and the pipelines
 compiling anywhere; the main world's builders register theirs
 (`map::loading::LoadPending`: late bodies, held and view models, Combat
 Arms' ladder). The settle waits for all of it (`first_view_ready`, two
-clear render frames), at most `SETTLE_MAX_SECS` (now 20 s), and a timeout
-names what was pending.
+clear render frames), at most `SETTLE_MAX_SECS` (now 20 s) once it has had
+`SETTLE_MIN_STEPS` frames (600: its work goes a slice a frame, and on a
+loaded box at 60-70 ms a frame de_dust2's spawn spots, about 290 settle
+frames, took 19.4 s and the 20 s ran out with nothing stuck), and a timeout
+names what was pending and which settle hooks weren't done.
 
 What was missing, by deterministic counts (`CHIMERA_FIRST_VIEW_LOG`; dev
 build offscreen 640x360, from the greybox, box at load 45-70):
