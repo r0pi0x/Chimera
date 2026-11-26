@@ -8,16 +8,33 @@ use crate::{
     units::{METERS_PER_UNIT, to_engine},
 };
 
+/// How far the line down from the origin looks for the step surface
+/// (units; specs/cs16/footsteps.md "texture_probe").
+const SURFACE_PROBE: f32 = 64.0;
+
 impl Mover<'_, '_, '_, '_> {
     /// The surface under the feet: the ground trace's own (a prop's), else
     /// the world face below (sound spec 3: the ground trace's surface).
+    /// GoldSrc's (`QuakeConfig::goldsrc_steps`, footsteps.md "The surface
+    /// type"): the face a line from the origin (the box's middle) straight
+    /// down `SURFACE_PROBE` units hits, 28 under the feet standing and 46
+    /// ducked; none: concrete (`goldsrc_surface`).
     pub(crate) fn record_surface(&mut self, hit: Option<String>) {
         if hit.is_some() {
             self.me.surface = hit;
-        } else if let Some(grid) = self.trace.surfaces
-            && let Some(s) = grid.below(to_engine(self.feet + Vec3::Z), 6.0 * METERS_PER_UNIT)
-        {
-            self.me.surface = Some(s.to_string());
+        } else if let Some(grid) = self.trace.surfaces {
+            let (from, reach) = if self.cfg.goldsrc_steps {
+                let height = if self.me.ducked { self.trace.heights.1 } else { self.trace.heights.0 };
+                (self.feet + Vec3::Z * (height / 2.0), SURFACE_PROBE)
+            } else {
+                (self.feet + Vec3::Z, 6.0)
+            };
+            let found = grid.below(to_engine(from), reach * METERS_PER_UNIT);
+            if let Some(s) = found {
+                self.me.surface = Some(s.to_string());
+            } else if self.cfg.goldsrc_steps {
+                self.me.surface = None;
+            }
         }
     }
 

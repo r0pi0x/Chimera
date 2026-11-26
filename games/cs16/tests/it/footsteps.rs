@@ -244,3 +244,60 @@ fn mp_footsteps_0_silences_but_the_foot_alternates() {
         "the foot flips with every step, heard or not"
     );
 }
+
+/// A world face named `name` as the only surface, `below` units under
+/// the feet of `p` (the greybox has no surface names): the step surface
+/// is read from it by the probe, not by the ground trace.
+fn name_floor(sim: &mut Sim, p: Entity, name: &str, below: f32) {
+    use chimera_world::map::{MapData, MapMesh, sound::SurfaceGrid};
+    let y = sim.position(p).y - to_engine(Vec3::new(0.0, 0.0, 36.0 + below)).y.abs();
+    let data = MapData {
+        meshes: vec![MapMesh {
+            positions: vec![[-500.0, y, -500.0], [-500.0, y, 500.0], [500.0, y, 500.0], [500.0, y, -500.0]],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            surface: Some(name.to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    sim.app.world_mut().insert_resource(SurfaceGrid::new(&data));
+}
+
+/// The steps' entries heard running 100 commands.
+fn run_steps(sim: &mut Sim, p: Entity) -> Vec<String> {
+    sim.intent(p).move_axis = Vec2::Y;
+    step_commands(sim, 100).into_iter().map(|(_, (e, _))| e).collect()
+}
+
+#[test]
+fn the_step_surface_is_the_face_64_units_under_the_origin() {
+    // 20 units under the feet (the old probe reached 6): the metal face
+    // is found, as 28 under the feet standing is the line's end.
+    let (mut sim, p) = standing();
+    name_floor(&mut sim, p, "metal", 20.0);
+    let (left, right) = step_entries("metal", "pl_metal");
+    let heard = run_steps(&mut sim, p);
+    assert!(!heard.is_empty());
+    assert!(heard.iter().all(|e| *e == left || *e == right), "{heard:?}");
+    // 30 under the feet: out of the line's reach, the step is concrete.
+    let (mut sim, p) = standing();
+    name_floor(&mut sim, p, "metal", 30.0);
+    let (left, right) = concrete();
+    let heard = run_steps(&mut sim, p);
+    assert!(!heard.is_empty());
+    assert!(heard.iter().all(|e| *e == left || *e == right), "{heard:?}");
+}
+
+#[test]
+fn a_ducked_step_surface_reaches_46_under_the_feet() {
+    let (mut sim, p) = standing();
+    sim.intent(p).crouch = true;
+    sim.ticks(80);
+    // Ducked the origin is 18 over the feet: 40 under them is in reach.
+    name_floor(&mut sim, p, "metal", 40.0);
+    sim.ticks(1);
+    assert_eq!(me(&sim, p).surface.as_deref(), Some("metal"));
+    name_floor(&mut sim, p, "wood", 50.0);
+    sim.ticks(1);
+    assert_eq!(me(&sim, p).surface, None, "50 under the feet ducked: nothing hit");
+}
