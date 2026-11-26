@@ -328,3 +328,56 @@ fn the_flames_damage_and_interval_are_ignored() {
     assert_eq!(d["hooks"]["tf2:flame"]["damage"].as_float(), Some(13.0));
     assert_eq!(d["trigger"]["cycle"].as_float(), Some(0.08));
 }
+
+/// The numbers read back from the converted cache are the numbers read
+/// (`GunNumbers::kept`): the first start reads the scripts and writes
+/// the entry, the second reads it back without the reader run (so with
+/// no mount opened); another archive file is another entry, a changed
+/// loose file the reader asked for reads again, and numbers with a
+/// script missing aren't kept.
+#[test]
+fn the_numbers_read_back_from_the_cache_as_read() {
+    use chimera_core::mount::{Access, LooseDir, Mount, assets::map_cache::{MapCache, Outcome}};
+    let dir = std::env::temp_dir().join(format!("chimera-tf2-kept-numbers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("loose/scripts")).unwrap();
+    std::fs::write(dir.join("pak_dir.vpk"), b"an archive").unwrap();
+    std::fs::write(dir.join("loose/scripts/tf_weapon_scattergun.ctx"), b"one").unwrap();
+    let cache = MapCache::at(dir.join("cache"), 1 << 30);
+    let archives = [dir.join("pak_dir.vpk")];
+    let light = || {
+        let mut m = Mount::default();
+        m.push(LooseDir::new(dir.join("loose")));
+        m
+    };
+    let script = |clip: u32| plain("tf_weapon_made_up", &format!("\"WeaponData\" {{ \"clip_size\" \"{clip}\" \"TimeFireDelay\" \"0.5\" }}"));
+    let runs = std::cell::Cell::new(0);
+    let asked = || std::collections::BTreeSet::from([Access::File("scripts/tf_weapon_scattergun.ctx".into())]);
+    let read = |clip: u32, whole: bool| {
+        GunNumbers::kept(Some(&cache), &light(), &archives, true, || {
+            runs.set(runs.get() + 1);
+            (GunNumbers::with_scripts(|_| script(clip)), asked(), whole)
+        })
+    };
+    let plain_read = GunNumbers::with_scripts(|_| script(7));
+    assert!(!plain_read.is_builtin(), "the made-up script set numbers");
+    assert_eq!(read(7, true), (plain_read.clone(), Outcome::Miss));
+    // Read back: the same numbers and sources, the reader not run.
+    assert_eq!(read(9, true), (plain_read.clone(), Outcome::Hit));
+    assert_eq!(runs.get(), 1);
+    assert_eq!(plain_read.parse().unwrap().weapons.len(), read(9, true).0.parse().unwrap().weapons.len());
+    // With no key configured: another entry.
+    let unkeyed = GunNumbers::kept(Some(&cache), &light(), &archives, false, || (GunNumbers::with_scripts(|_| script(8)), asked(), true));
+    assert_eq!(unkeyed.1, Outcome::Miss);
+    // A loose file the reader asked for changed: read again.
+    std::fs::write(dir.join("loose/scripts/tf_weapon_scattergun.ctx"), b"two").unwrap();
+    assert_eq!(read(9, true), (GunNumbers::with_scripts(|_| script(9)), Outcome::Miss));
+    // The archive changed: read again.
+    std::fs::write(dir.join("pak_dir.vpk"), b"another archive").unwrap();
+    assert_eq!(read(10, true).1, Outcome::Miss);
+    // A script missing: given, not kept.
+    std::fs::write(dir.join("pak_dir.vpk"), b"a third archive, some script missing").unwrap();
+    assert_eq!(read(11, false), (GunNumbers::with_scripts(|_| script(11)), Outcome::Off));
+    assert_eq!(read(12, true).1, Outcome::Miss, "nothing was kept for it");
+    let _ = std::fs::remove_dir_all(&dir);
+}

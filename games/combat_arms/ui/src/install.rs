@@ -46,6 +46,10 @@
 //!   record index, lobby.md "Item numbers"; `ItemName` a string id the
 //!   table resolves), by our weapon id; they fill the HUD's `ItemNames`.
 //!
+//! The string table and the decoded art are kept in the converted cache
+//! between starts (`strings_and_art`); the layouts and the attribute
+//! files are read each time.
+//!
 //! Known shortcuts: the per-user override file isn't read, nor the client
 //! event attributes' event table (the one texture-name swap the game
 //! has: no events are configured); the language comes
@@ -59,7 +63,13 @@ use std::{collections::HashMap, sync::Arc};
 use bevy::{log::info, math::IVec2};
 
 use super::layout::{Font, FontList, Kind, Layout, Strings, xml};
+use crate::map::cache::{Key, MapCache, Outcome, cached};
 use crate::mount::Mount;
+
+/// The version of what `strings` and `decode` give, for their entry in
+/// the converted cache (`strings_and_art`): the hash of their sources
+/// (build.rs).
+pub const UI_READER: &str = env!("CHIMERA_CA_UI_SOURCES");
 
 /// The main HUD layout (H: `character`, `weaponRoot`, `KillDeath`, ...).
 pub const HUD_FILE: &str = "xml/hud_main.xml";
@@ -520,6 +530,52 @@ fn layout(mount: &Mount, path: &str) -> Option<Layout> {
     }
 }
 
+/// The string table and the art as the converted cache holds them
+/// (`strings_and_art`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct KeptUi {
+    strings: Option<Strings>,
+    art: Vec<KeptArt>,
+}
+
+/// One decoded texture of `KeptUi`: its key, size and pixels (as bytes,
+/// not element by element).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct KeptArt {
+    key: String,
+    size: [i32; 2],
+    #[serde(with = "crate::map::pod_serde::pod")]
+    rgba: Vec<u8>,
+}
+
+/// The string table of `language` (`strings`) and the textures `keys`
+/// name that are there, decoded (`decode`), and how the cache went. Read
+/// at every start they were 1.1 G instructions (37,000 strings parsed a
+/// character at a time, 935 textures decoded; docs/performance.md,
+/// "Start cost, fourth pass"): with `disk` (the kept dressings' disk
+/// layer, `map::kept::disk_cache`) they are an entry of the converted
+/// cache, keyed by `UI_READER`, the language and the keys and checked
+/// against the files asked for (found or not), so a hit reads no file.
+pub fn strings_and_art(mount: &Mount, language: &str, keys: &[String], disk: Option<&MapCache>) -> (Option<Strings>, HashMap<String, Art>, Outcome) {
+    let read = || KeptUi {
+        strings: strings(mount, language),
+        art: keys
+            .iter()
+            .filter_map(|key| decode(mount, key).map(|a| KeptArt { key: key.clone(), size: a.size.to_array(), rgba: a.rgba }))
+            .collect(),
+    };
+    let key = Key::new("combat_arms:install_ui", UI_READER).part("language", language).part("art", keys.join("\n"));
+    let (kept, outcome) = match disk {
+        None => (read(), Outcome::Off),
+        Some(_) => cached(disk, mount, key, || Ok(read())).unwrap_or_else(|e| {
+            bevy::log::warn!("combat_arms ui: the install's strings and art aren't kept on disk: {e}");
+            (read(), Outcome::Off)
+        }),
+    };
+    let art = kept.art.into_iter().map(|a| (a.key, Art { size: IVec2::from_array(a.size), rgba: a.rgba })).collect();
+    (kept.strings, art, outcome)
+}
+
 /// Read the install's UI data through `mount`; None when its layouts
 /// can't be read (no install, or XML.rez locked without the V1 key).
 pub fn load(mount: &Mount, extra_art: &[String]) -> Option<InstallUi> {
@@ -532,13 +588,27 @@ pub fn load(mount: &Mount, extra_art: &[String]) -> Option<InstallUi> {
 /// parsed a second time for the names; docs/performance.md, "Start cost,
 /// third pass"). A list it lacks is read from `mount` as `load` does.
 pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game::data::attributes::ItemNameKeys>) -> Option<InstallUi> {
+    // Never kept while the reads are recorded (`CHIMERA_VFS_LOG`: a read
+    // back reads no file, and the record is what the asset store packs).
+    let disk = if crate::mount::assets::Recorder::from_env().is_some() { None } else { crate::map::kept::disk_cache() };
+    load_kept(mount, extra_art, names, disk.as_ref()).map(|(ui, _)| ui)
+}
+
+/// `load_with`, with `disk` as the converted cache the string table and
+/// the art are read back from (`strings_and_art`; None: read), and how
+/// that went.
+pub fn load_kept(
+    mount: &Mount,
+    extra_art: &[String],
+    names: Option<&crate::game::data::attributes::ItemNameKeys>,
+    disk: Option<&MapCache>,
+) -> Option<(InstallUi, Outcome)> {
     let hud = layout(mount, HUD_FILE);
     let menu = layout(mount, MENU_FILE);
     if hud.is_none() && menu.is_none() {
         return None;
     }
     let language = language();
-    let strings = strings(mount, &language);
     let (indicator, result) = (layout(mount, INDICATOR_FILE), layout(mount, RESULT_FILE));
     let (team_list, no_team_list) = (layout(mount, TEAM_LIST_FILE), layout(mount, NO_TEAM_LIST_FILE));
     let loading = layout(mount, LOADING_FILE);
@@ -546,6 +616,46 @@ pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game
     let options: Option<Vec<Layout>> = OPTION_FILES.iter().map(|f| layout(mount, f)).collect();
     let hud_layout = hud_layout(mount);
     let fonts = font_list(mount);
+    let mut names_of_art: Vec<String> = [&hud, &menu, &indicator, &result, &team_list, &no_team_list, &loading, &kill_cam]
+        .into_iter()
+        .flatten()
+        .chain(options.iter().flatten())
+        .flat_map(layout_textures)
+        .collect();
+    names_of_art.extend(EXTRA_ART.iter().map(|s| s.to_string()));
+    names_of_art.extend(HUD_LAYOUT_ART.iter().filter_map(|k| hud_layout.get(*k).cloned()));
+    names_of_art.extend(DEATH_LAYOUT_ART.iter().filter_map(|k| hud_layout.get(*k).cloned()));
+    // The death screen's tips' banners.
+    if let Ok(bytes) = mount.read(crate::game::death_cam::GUIDE_FILE)
+        && let Ok(doc) = lithtech_formats::attributes::Document::parse(&bytes)
+    {
+        names_of_art.extend(crate::game::death_cam::screen::parse_guide(&doc).into_iter().map(|t| t.icon).filter(|i| !i.is_empty()));
+    }
+    // The gauge sight's images: each prefix with 0, 10, ... 100.
+    for k in GAUGE_SIGHT_PREFIXES {
+        if let Some(prefix) = hud_layout.get(*k) {
+            names_of_art.extend((0..=10).map(|n| format!("{}{}.dtx", prefix.trim(), n * 10)));
+        }
+    }
+    names_of_art.extend(extra_art.iter().cloned());
+    // The radar's and the full map's icons and art (radar_minimap.md).
+    names_of_art.extend(super::hud::radar::art_names());
+    let legend = legend(mount);
+    for l in &legend {
+        for i in &l.items {
+            names_of_art.push(i.icon.clone());
+            names_of_art.extend(i.view.clone());
+        }
+    }
+    // Each texture once, by its key; the map pictures aren't decoded
+    // here (module doc).
+    let mut seen = std::collections::HashSet::new();
+    let keys: Vec<String> = names_of_art
+        .iter()
+        .map(|n| texture_key(n))
+        .filter(|key| !key.contains("/mapimage/") && seen.insert(key.clone()))
+        .collect();
+    let (strings, art, outcome) = strings_and_art(mount, &language, &keys, disk);
     let weapon_names = strings
         .as_ref()
         .map(|t| match names.and_then(|n| n.weapons.as_ref()) {
@@ -560,49 +670,8 @@ pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game
             None => part_names(mount, t),
         })
         .unwrap_or_default();
-    let mut names: Vec<String> = [&hud, &menu, &indicator, &result, &team_list, &no_team_list, &loading, &kill_cam]
-        .into_iter()
-        .flatten()
-        .chain(options.iter().flatten())
-        .flat_map(layout_textures)
-        .collect();
-    names.extend(EXTRA_ART.iter().map(|s| s.to_string()));
-    names.extend(HUD_LAYOUT_ART.iter().filter_map(|k| hud_layout.get(*k).cloned()));
-    names.extend(DEATH_LAYOUT_ART.iter().filter_map(|k| hud_layout.get(*k).cloned()));
-    // The death screen's tips' banners.
-    if let Ok(bytes) = mount.read(crate::game::death_cam::GUIDE_FILE)
-        && let Ok(doc) = lithtech_formats::attributes::Document::parse(&bytes)
-    {
-        names.extend(crate::game::death_cam::screen::parse_guide(&doc).into_iter().map(|t| t.icon).filter(|i| !i.is_empty()));
-    }
-    // The gauge sight's images: each prefix with 0, 10, ... 100.
-    for k in GAUGE_SIGHT_PREFIXES {
-        if let Some(prefix) = hud_layout.get(*k) {
-            names.extend((0..=10).map(|n| format!("{}{}.dtx", prefix.trim(), n * 10)));
-        }
-    }
-    names.extend(extra_art.iter().cloned());
-    // The radar's and the full map's icons and art (radar_minimap.md).
-    names.extend(super::hud::radar::art_names());
-    let legend = legend(mount);
-    for l in &legend {
-        for i in &l.items {
-            names.push(i.icon.clone());
-            names.extend(i.view.clone());
-        }
-    }
-    let mut art = HashMap::new();
-    for n in names {
-        let key = texture_key(&n);
-        if art.contains_key(&key) || key.contains("/mapimage/") {
-            continue;
-        }
-        if let Some(a) = decode(mount, &key) {
-            art.insert(key, a);
-        }
-    }
     info!(
-        "combat_arms ui: the install's layouts (HUD {}, menu {}, score panels {}, scoreboard {}, loading {}), {} strings ({language}), {} fonts, {} textures",
+        "combat_arms ui: the install's layouts (HUD {}, menu {}, score panels {}, scoreboard {}, loading {}), {} strings ({language}), {} fonts, {} textures ({} MB)",
         hud.is_some(),
         menu.is_some(),
         indicator.is_some(),
@@ -610,9 +679,10 @@ pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game
         loading.is_some(),
         strings.as_ref().map_or(0, |s| s.values.len()),
         fonts.len(),
-        art.len()
+        art.len(),
+        art.values().map(|a| a.rgba.len()).sum::<usize>() >> 20
     );
-    Some(InstallUi {
+    let ui = InstallUi {
         hud,
         menu,
         indicator,
@@ -632,7 +702,8 @@ pub fn load_with(mount: &Mount, extra_art: &[String], names: Option<&crate::game
         weapon_names,
         part_names,
         kill_icons: Arc::default(),
-    })
+    };
+    Some((ui, outcome))
 }
 
 /// The shop item file (display data, attribute_data.md).

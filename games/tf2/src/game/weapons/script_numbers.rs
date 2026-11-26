@@ -30,6 +30,9 @@
 //!   fallback). The documents are also the set's server documents
 //!   (`Tf2GunsPlugin`, `server_docs`): a client whose own differ (no
 //!   scripts yet, an older store) plays with the server's numbers.
+//!   `from_scripts` reads them back from the converted cache when the
+//!   same mount gave them before (`from_scripts_kept`, `kept`), without
+//!   opening it.
 //! - `note_sources`, at each load of TF2's guns (a map's kit, another
 //!   game's map dressed with them), logs again what the scripts read
 //!   through that load's mount would give.
@@ -43,7 +46,15 @@ use source_formats::keyvalues::Kv;
 use toml::{Table, Value};
 
 use super::super::scripts::{self, CtxKey, KvView, Script, ScriptSource};
-use crate::mount::Mount;
+use crate::mount::{
+    Mount,
+    assets::map_cache::{Key, MapCache, Outcome, cached_unopened},
+};
+
+/// The version of what `GunNumbers::from_mount` gives, for its entry in
+/// the converted cache (`GunNumbers::kept`): the hash of its sources and
+/// the documents' (build.rs, `NUMBERS`).
+pub const NUMBERS_READER: &str = env!("CHIMERA_TF2_NUMBER_SOURCES");
 
 /// What applying one script did to a gun's document.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -403,7 +414,7 @@ fn apply_melee(data: KvView, doc: &mut Table, mut out: Applied) -> Applied {
 }
 
 /// One gun's numbers' source, as the log says it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GunSource {
     pub gun: String,
     /// Whether the script set any of its numbers.
@@ -448,7 +459,7 @@ pub fn gun_doc(gun: &str, text: &str, script: &Script) -> (String, GunSource) {
 
 /// The documents TF2's guns register from, and each gun's source (a
 /// resource: one an app has before `Tf2GunsPlugin` is the one used).
-#[derive(bevy::prelude::Resource, Clone, Debug, PartialEq)]
+#[derive(bevy::prelude::Resource, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GunNumbers {
     pub docs: Vec<(String, String)>,
     pub sources: Vec<GunSource>,
@@ -491,31 +502,101 @@ impl GunNumbers {
     /// The documents with each gun's script read through `mount` (None:
     /// every gun's the spec fallback) and applied.
     pub fn from_mount(mount: Option<&Mount>, key: Option<&CtxKey>) -> Self {
-        let numbers = Self::with_scripts_of(mount, key);
-        match mount.and_then(crate::game::items::read_pack) {
-            Some(pack) => numbers.with_pack(&pack),
-            None => numbers,
-        }
+        Self::from_mount_whole(mount, key).0
     }
 
-    fn with_scripts_of(mount: Option<&Mount>, key: Option<&CtxKey>) -> Self {
-        Self::with_scripts(|name| match mount {
-            Some(m) => scripts::read(m, name, key),
-            None => Script {
-                name: name.into(),
-                source: ScriptSource::Missing,
-                root: Kv::Block(Vec::new()),
-                note: Some("no TF2 mount (no install, no asset store)".into()),
-            },
-        })
+    /// `from_mount`, and whether every script asked for was read (none
+    /// `ScriptSource::Missing`: what is read again at the next start
+    /// rather than kept, `kept`).
+    fn from_mount_whole(mount: Option<&Mount>, key: Option<&CtxKey>) -> (Self, bool) {
+        let missing = std::cell::Cell::new(false);
+        let numbers = Self::with_scripts(|name| {
+            let script = match mount {
+                Some(m) => scripts::read(m, name, key),
+                None => Script {
+                    name: name.into(),
+                    source: ScriptSource::Missing,
+                    root: Kv::Block(Vec::new()),
+                    note: Some("no TF2 mount (no install, no asset store)".into()),
+                },
+            };
+            if script.source == ScriptSource::Missing {
+                missing.set(true);
+            }
+            script
+        });
+        let numbers = match mount.and_then(crate::game::items::read_pack) {
+            Some(pack) => numbers.with_pack(&pack),
+            None => numbers,
+        };
+        (numbers, !missing.get())
     }
 
     /// `from_mount` with TF2's mount (`INFO.mount()`: the store and/or
-    /// the install) and the configured key.
+    /// the install) and the configured key; read back from the converted
+    /// cache when they were read before through the same mount
+    /// (`from_scripts_kept`), never while the reads are recorded
+    /// (`CHIMERA_VFS_LOG`: a read back reads no file, and the record is
+    /// what the asset store packs).
     pub fn from_scripts() -> Self {
-        let mount = super::super::INFO.mount();
-        let key = if mount.is_some() { scripts::key_or_warn() } else { None };
-        Self::from_mount(mount.as_ref(), key.as_ref())
+        let disk = if crate::mount::assets::Recorder::from_env().is_some() { None } else { chimera_world::map::kept::disk_cache() };
+        Self::from_scripts_kept(disk.as_ref()).0
+    }
+
+    /// `from_scripts` with `disk` as the cache, and how it went. Mounting
+    /// TF2 reads every archive's directory (1.4 G instructions at every
+    /// start, for some forty small scripts; docs/performance.md, "Start
+    /// cost, fourth pass"), so the entry is keyed by the mount unopened
+    /// (`mount::unopened`: the archives by their files' sizes and times,
+    /// the loose folders and the store checked for each file asked) and
+    /// a hit opens nothing.
+    pub fn from_scripts_kept(disk: Option<&MapCache>) -> (Self, Outcome) {
+        let read = || {
+            let mount = super::super::INFO.mount();
+            let key = if mount.is_some() { scripts::key_or_warn() } else { None };
+            let tracking = mount.as_ref().map(|m| m.track());
+            let (numbers, whole) = Self::from_mount_whole(mount.as_ref(), key.as_ref());
+            (numbers, tracking.map(|t| t.finish()).unwrap_or_default(), whole)
+        };
+        let unopened = disk.and_then(|_| super::super::INFO.install()).and_then(|i| super::super::mount::unopened(&i).ok());
+        let Some((light, archives)) = unopened else { return (read().0, Outcome::Off) };
+        let keyed = scripts::key().ok().flatten().is_some();
+        Self::kept(disk, &light, &archives, keyed, read)
+    }
+
+    /// `read`'s numbers (with what it asked of the mount and whether
+    /// every script was read), kept in `disk` for the mount `light` and
+    /// `archives` name (`map_cache::cached_unopened`) and for whether a
+    /// `.ctx` key is configured (`keyed`; the key itself is never
+    /// written, hashed or not). Numbers with a script missing (no key, a
+    /// key that doesn't decrypt, a file not fetched yet) aren't kept:
+    /// they are read again at the next start.
+    pub fn kept(
+        disk: Option<&MapCache>,
+        light: &Mount,
+        archives: &[std::path::PathBuf],
+        keyed: bool,
+        read: impl FnOnce() -> (Self, std::collections::BTreeSet<crate::mount::Access>, bool),
+    ) -> (Self, Outcome) {
+        let key = Key::new("tf2:gun_numbers", NUMBERS_READER).part("ctx key", [keyed as u8]);
+        let mut unkept = None;
+        let kept = cached_unopened(disk, light, archives, key, || {
+            let (numbers, asked, whole) = read();
+            if whole {
+                Ok((numbers, asked))
+            } else {
+                unkept = Some(numbers);
+                Err(String::new())
+            }
+        });
+        match (kept, unkept) {
+            (Ok(kept), _) => kept,
+            (Err(_), Some(numbers)) => (numbers, Outcome::Off),
+            (Err(e), None) => {
+                bevy::log::warn!("tf2: the guns' numbers weren't read ({e}): the spec's");
+                (Self::builtin(), Outcome::Off)
+            }
+        }
     }
 
     /// The documents with each gun's script from `script` (by name).

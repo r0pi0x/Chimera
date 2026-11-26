@@ -51,7 +51,8 @@
 //!   original's are not solid and hold a player whose box is in them.
 //! - Swimming is the shared code's (jump held adds the player's speed to
 //!   the wish; the spec's up key, slime and lava speeds, and currents are
-//!   not modelled), and GoldSrc maps hand over no water volumes yet.
+//!   not modelled). GoldSrc maps hand over their liquids as water
+//!   volumes (`goldsrc_engine::content::water`).
 //! - The walk key follows the spec's letter (the keys' amounts x 0.52:
 //!   208 units/s with a 250 gun), not checked in the game.
 //! - Moving brush entities are box sweeps (`goldsrc_engine::hulls`). A

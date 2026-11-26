@@ -48,6 +48,30 @@ pub fn open_install(install: &Path) -> io::Result<Mount> {
     Ok(mount)
 }
 
+/// The install's loose layers alone, as `open_install` orders them
+/// (`unopened`).
+fn open_install_loose(install: &Path) -> io::Result<Mount> {
+    let (mut mount, _) = search_path(install)?.unopened();
+    if let Some(cache) = crate::mount::config::content_dir(GAME) {
+        mount.push(LooseDir::new(cache).hiding(&["vpk"]));
+    }
+    Ok(mount)
+}
+
+/// What `open` would mount, named without opening an archive
+/// (`SearchPath::unopened`: a VPK's directory is read whole when it is
+/// opened, 1.4 G instructions for the install's): its loose folders and
+/// the asset store, layered as `open` layers them, and the archive files
+/// it would open (none when the store serves the game alone). What an
+/// entry of the converted cache is keyed by when its value should come
+/// back without the mount (chimera_assets' `map_cache::cached_unopened`:
+/// the guns' numbers, `weapons::script_numbers`).
+pub fn unopened(install: &Path) -> io::Result<(Mount, Vec<std::path::PathBuf>)> {
+    let light = crate::mount::served::open(GAME, install, open_install_loose)?;
+    let archives = if crate::mount::served::alone(GAME, install) { Vec::new() } else { search_path(install)?.unopened().1 };
+    Ok((light, archives))
+}
+
 /// Whether the install at `install` is the retail client's full content
 /// (its texture and sound archives there), not the dedicated server's
 /// (install.md 1.3).

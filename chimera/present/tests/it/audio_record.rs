@@ -21,7 +21,7 @@ fn frames_time_the_recording() {
     let dir = std::env::temp_dir().join(format!("chimera-audio-record-{}", std::process::id()));
     let path = dir.join("audio.wav");
     let mut app = App::new();
-    app.add_plugins((MinimalPlugins, AssetPlugin::default(), RecordAudioPlugin { path: path.clone() }))
+    app.add_plugins((MinimalPlugins, AssetPlugin::default(), RecordAudioPlugin { path: Some(path.clone()) }))
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs(1) / FPS));
     let frames = 30u64;
     let per_frame = u64::from(RATE / FPS);
@@ -58,4 +58,23 @@ fn frames_time_the_recording() {
     // Its first sample frames: the tone starts right at `started`.
     assert!(peak(started, started + 100) > 0, "no gap before the tone");
     assert_eq!(peak(started + RATE as u64 / 4, len), 0, "silent after the tone's 0.2 s");
+}
+
+/// With no file (`--offscreen` without `--dump`) the mixer is still clocked
+/// by the frames and a sound still ends (its sink empties, a despawning
+/// player goes), with nothing written and no device.
+#[test]
+fn no_file_still_times_the_mixer() {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, AssetPlugin::default(), RecordAudioPlugin { path: None }))
+        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs(1) / FPS));
+    let tone = app.world_mut().resource_mut::<Assets<Pitch>>().add(Pitch::new(440.0, Duration::from_millis(100)));
+    let player = app.world_mut().spawn((AudioPlayer(tone), PlaybackSettings::DESPAWN)).id();
+    for _ in 0..30 {
+        app.update();
+    }
+    let rec = app.world().resource::<AudioRecording>();
+    assert!(rec.path().is_none());
+    assert_eq!(rec.position(), 29 * u64::from(RATE / FPS), "the clock advances a frame's samples per frame");
+    assert!(app.world().get_entity(player).is_err(), "the 0.1 s tone ended and its player despawned");
 }

@@ -25,7 +25,7 @@ Force) is a small port on the same loader.
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Polish (2026-11-25): the maps' sounds (doors, buttons, ambients, breakables: `content::sounds::add_map`), `env_sprite`/`env_glow` drawn and switched (`content::sprites`), light styles in the lightmap atlas (switchable 32+ and the animated presets, `content::lightmap`; converter version 3). Left: the lightmap brightening against captures (a spec session: bsp.md question 1 lists what the implementation needs); debris; sentences |
 | M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Left: shells, measurements (weapons.md open questions) |
-| M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Left: water volumes from GoldSrc maps, the ladder volumes' own rule, measurement in the game |
+| M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Water volumes (2026-11-25, Log): the world's liquid leaves and the liquid brush entities (`goldsrc_engine::content::water`; converter version 4). Left: the ladder volumes' own rule, the spec's swim details (up key, slime and lava speeds, currents), measurement in the game |
 | M3 party rungs | in progress | §5. The guns are rungs since M1. HUD (2026-11-25): `cs16_ui::hud` from specs/cs16/hud.md (health with the cross and bar, armour with the suit lit by armour, ammunition with its icon, fades, the damage arcs; the install's `640hud` sprites added at their pixel size), the `d_` kill icons and headshot mark in every app's kill feed, the HUD's sprites in `players` (Log). Second part (2026-11-25, Log): CS 1.6's dynamic crosshair, the weapon menu (bucket list), the round timer, the 320 layout. The HUD follows hud.md's second part (2026-11-25, Log: the spec's numbers for the crosshair, timer, menu and 320 layout). Left: hud.md questions 2-3 (money; the pistols' speed threshold and fastswitch cycling), the 320/320hud files in the served `players` set (republish) |
 
 ## 1. Rules for this port
@@ -414,11 +414,17 @@ an implementation session):
   645.79 (scale 0.8773). Ours follows the rule; which is the game's?
   "About 31 % after 10 commands" is the penalty's share alone (friction
   takes it to about 19 %): say so.
-- movement.md: the walk key. By the text it scales the keys' amounts by
+- (answered 2026-11-25 in movement.md "Units and conventions": the
+  client clips to the maximum speed first, then × 0.52: 130 with a 250
+  gun) movement.md: the walk key. By the text it scales the keys' amounts by
   0.52 before the clamp to the max speed, which walks at 208 units/s
   with a 250 gun (ours); is CS 1.6's walk not 0.52 of the max speed
   (130), as CS:S's is?
-- movement.md: ladders. "The player is on it when the origin, tested
+- (answered 2026-11-25 in movement.md "Ladders", "Water" and
+  "Currents": the face trace is a point trace against the ladder brush,
+  the origin inside the brush itself gives no ladder velocity; the up
+  key is `+moveup`, `cl_upspeed` 320, not jump; no stock map has a
+  current) movement.md: ladders. "The player is on it when the origin, tested
   against the ladder model's hull for the box, is not empty" and the
   trace toward the model's centre: what the trace returns when the origin
   is already inside the grown hull (ours keeps the shared rule: the
@@ -861,3 +867,28 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
 - **Served**: `players` (both builds) now carries the lists, the atlases
   their 640 entries name and the pain sprite (`sets::load_players` reads
   them: 53 files, 0.3 MB stored more); manifests snapshotted first.
+
+### 2026-11-25: M2, water volumes
+
+- **Water** (`goldsrc/engine/src/content/water.rs`, bsp.md "Contents",
+  entities.md "func_water"): the world's hull 0 paths to a water, slime
+  or lava leaf as convex regions (`solids::convex_regions_where` with
+  `hull::liquid`), and each `func_water` or `func_illusionary` whose
+  `skin` is a liquid's contents as its model's filled hull 0 regions at
+  its origin (`hull::filled`); a named `func_water` (a mover) is a
+  `MapData::water_movers` entry, so its volumes follow its node. Every
+  game's movement swims in them (`MapWater`). Slime and lava are both
+  slime volumes. The stock maps: 51 liquid entities (the 50 `func_water`
+  and `cs_italy`'s `*13`) and 6 world liquid regions, on 10 maps; most is
+  shallow (de_aztec's river 16 units: a wade), as_oilrig's sea 192 and
+  de_survivor's 160 deep. Converter version 4: the served `map/<name>`
+  entries need packing again.
+- Tests: `goldsrc_engine` unit tests (a built tree's water leaf, a
+  `func_water` at its origin and a named one moving), `cs16` `water`
+  (a converted water leaf as the greybox tank: level 3, the 48 units/s
+  sink, 100 up with jump, dry outside), heavy `water` (every stock
+  liquid entity's centre in a volume; a player swims in as_oilrig's sea).
+- Not drawn: the view under water (no spec says what GoldSrc shows);
+  the spec's swim details beyond the shared swim (movement.md's up key,
+  slime and lava speeds, currents) stay `cs16::game::movement`'s
+  shortcuts.

@@ -31,17 +31,62 @@ pub fn open(install: &Path) -> io::Result<Mount> {
 /// The install's search path (the folder holding `dod/`, `hl2/` and
 /// `platform/`), from `dod/gameinfo.txt`.
 pub fn search_path(install: &Path) -> io::Result<SearchPath> {
+    let mut path = listed(install)?;
+    for note in path.borrow_incomplete_archives(&hl2_donors(install)) {
+        bevy::log::debug!("dods: {note}");
+    }
+    Ok(path)
+}
+
+/// The search path as `dod/gameinfo.txt` lists it, no archive opened or
+/// borrowed.
+fn listed(install: &Path) -> io::Result<SearchPath> {
     if !install.join(CONTENT_DIR).is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("{}: no {CONTENT_DIR}/ folder; is this a DoD:S install?", install.display()),
         ));
     }
-    let mut path = SearchPath::read_gameinfo(install, CONTENT_DIR)?;
-    for note in path.borrow_incomplete_archives(&hl2_donors(install)) {
-        bevy::log::debug!("dods: {note}");
+    SearchPath::read_gameinfo(install, CONTENT_DIR)
+}
+
+/// The install's loose layers alone, as `open_install` orders them
+/// (`unopened`).
+fn open_install_loose(install: &Path) -> io::Result<Mount> {
+    let (mut mount, _) = listed(install)?.unopened();
+    if let Some(cache) = crate::mount::config::content_dir(GAME) {
+        mount.push(LooseDir::new(cache).hiding(&["vpk"]));
     }
-    Ok(path)
+    Ok(mount)
+}
+
+/// What `open` would mount, named without opening an archive
+/// (`SearchPath::unopened`; `search_path` opens each one twice, to see
+/// whether it is whole and to mount it: 0.6 G instructions): its loose
+/// folders and the asset store, layered as `open` layers them, and the
+/// archive files it would open or borrow (the listed ones, and the same
+/// archive in each of `hl2_donors`, there or not; none when the store
+/// serves the game alone). What an entry of the converted cache is keyed
+/// by when its value should come back without the mount (chimera_assets'
+/// `map_cache::cached_unopened`: the weapons' numbers, `numbers`).
+///
+/// Known shortcut: an archive's numbered parts aren't named, so parts
+/// added beside an unchanged directory file (which ends a borrow) keep
+/// the entry; what is kept by it reads DoD:S's own archive.
+pub fn unopened(install: &Path) -> io::Result<(Mount, Vec<std::path::PathBuf>)> {
+    let light = crate::mount::served::open(GAME, install, open_install_loose)?;
+    if crate::mount::served::alone(GAME, install) {
+        return Ok((light, Vec::new()));
+    }
+    let mut archives = listed(install)?.unopened().1;
+    let donors = hl2_donors(install);
+    let lent: Vec<_> = archives
+        .iter()
+        .filter_map(|a| Some((a.parent()?.file_name()?, a.file_name()?)))
+        .flat_map(|(folder, file)| donors.iter().map(move |d| d.join(folder).join(file)))
+        .collect();
+    archives.extend(lent);
+    Ok((light, archives))
 }
 
 /// Other Source installs whose `hl2/` archives may stand in for missing

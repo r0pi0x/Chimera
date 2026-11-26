@@ -3104,7 +3104,7 @@ docs/plans/active/sound.md.
 
 - **Every game installed, what's left (2026-11-25).** Measured in
   performance.md, "Every game installed", "Load cost, second pass" and
-  "Start cost, third pass" (a
+  "Start cost, third pass" and "Start cost, fourth pass" (a
   start with six games read back: the start map 39.6 to 24.2 G
   instructions; the server 2.4-3.0 GB to 1.6-2.1 GB). **Done in the
   second pass:** a map read back keeps its DXT textures as blocks
@@ -3118,12 +3118,18 @@ docs/plans/active/sound.md.
   and 1.5 G: Combat Arms' attribute records and its weapon set's
   parsed tables kept on disk, the display names' keys read with the
   records instead of the files parsed again, the mission index left to
-  the first mission. **Left,** by size: (1) at every start, TF2's and
-  DoD:S's mounts made again for their scripts (1.4 and 0.6 G), the
-  2,363 weapon records made from their tables and registered (0.9 and
-  0.8 G) and their tables read back (1.0 G), Combat Arms' install UI
-  (1.4 G); and an offscreen run's sound thread, which takes a core for
-  the whole run (the null ALSA device never waits); (2) a guest dressing is the whole game's kit though
+  the first mission. **Done in the fourth pass** ("Start cost, fourth
+  pass"): those entries were evicted at every write of a full cache
+  (keys that name no build went first: 19.4 G a start on the dev box,
+  not 6.1), fixed; TF2's and DoD:S's script numbers kept without
+  mounting the game (1.6 and 0.6 G to 0.05 and 0.01), the weapon set's
+  tables moved instead of copied and equal hook tables read once (3.5
+  to 2.0 G), the install UI's strings and art kept (1.5 to 0.4 G): the
+  simulation and HUD 6.1 and 1.5 G to 2.4 and 0.4. **Left,** by size:
+  (1) at every start, the weapon set's tables read back (1.0 G), its
+  records made (0.35 G) and registered (0.4 G), the install UI's
+  layouts (0.3 G); and an offscreen run's sound thread, which takes a
+  core for the whole run (the null ALSA device never waits); (2) a guest dressing is the whole game's kit though
   a ladder deals a dozen guns: dress by the ladder's models, not its
   games (TF2's kept dressing still decodes 2.6 G of arrays); (3) on the
   server, the animation sets (457 MB for the five Source games) and what
@@ -3131,7 +3137,13 @@ docs/plans/active/sound.md.
   main thread reads Combat Arms' install data while its app builds
   (7.2 G) that the start map's load read on the task pool before its
   start map came in as a level change (2026-11-25: performance.md, "A
-  join while the host starts"); (5) the client's
+  join while the host starts"; not measured again on the server since
+  "Start cost, fourth pass", where the same read on a client's main
+  thread is 18.4 G with its kept entries evicted, 2.7 G with them kept
+  and 1.6 G now: check which of these the 7.2 G was. A background task
+  alone moves little: the app's build registers the weapon set right
+  after reading it, so the main thread would wait for the task; the set
+  would have to register after the server listens); (5) the client's
   peak while every dressing loads side by side (2-3 GB over the settled
   bytes); (6) a many-sided collision piece's brush still tries every
   triple of its planes (`plane_corners`: 1.7 G instructions for 337

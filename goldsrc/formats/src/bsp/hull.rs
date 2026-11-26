@@ -36,6 +36,18 @@ pub fn blocks(contents: i32) -> bool {
     contents == CONTENTS_SOLID || contents == CONTENTS_SKY
 }
 
+/// Whether a contents value is a liquid a player swims in: water, slime
+/// or lava (bsp.md, "Contents"; specs/cs16/movement.md, "Water").
+pub fn liquid(contents: i32) -> bool {
+    matches!(contents, CONTENTS_WATER | CONTENTS_SLIME | CONTENTS_LAVA)
+}
+
+/// Whether a contents value is anything but empty (a brush entity's
+/// volume: `func_water`'s model, whose own contents may be water or solid).
+pub fn filled(contents: i32) -> bool {
+    contents != CONTENTS_EMPTY
+}
+
 /// A step in one hull's tree: an inner node (by index) or an end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HullRef {

@@ -31,6 +31,8 @@
 //! missing folder is an empty layer, a missing archive an error). The
 //! map's own pak (mounted in front while a map loads) and Chimera's
 //! content cache (after the game's layers) are the game's to add.
+//! `SearchPath::unopened` is the same mount named without opening an
+//! archive: its loose folders and its archives' files.
 //!
 //! Known shortcuts:
 //! - The language: Source inserts a `_<language>` copy above each search
@@ -328,6 +330,24 @@ impl SearchPath {
         }
         Ok(mount)
     }
+
+    /// The mount in two parts, with no archive opened (a VPK's directory
+    /// is read whole when it is opened: TF2's are 1.4 G instructions):
+    /// the loose folders `mount` would have, in their order, and the
+    /// archive files it would open. What chimera_assets' `map_cache::
+    /// cached_unopened` keys an entry by, so that a value read through
+    /// the mount (a game's weapon scripts) comes back without it.
+    pub fn unopened(&self) -> (Mount, Vec<PathBuf>) {
+        let mut light = Mount::default();
+        let mut archives = Vec::new();
+        for layer in self.mounted() {
+            match layer.kind {
+                Kind::Loose => light.push(LooseDir::new(&layer.path).hiding(&["vpk"])),
+                Kind::Vpk => archives.push(layer.path.clone()),
+            }
+        }
+        (light, archives)
+    }
 }
 
 impl SearchPath {
@@ -611,6 +631,54 @@ mod tests {
         assert_eq!(mount.read("maps/fetched.bsp").unwrap(), b"VBSP");
         // The loose folders hide their archives.
         assert!(!mount.contains("custom/a_pack_dir.vpk"));
+    }
+
+    /// A value read through the mount comes back from the converted
+    /// cache with no archive opened (`unopened`, `cached_unopened`), the
+    /// same as read; a loose file it read, or an archive, changing makes
+    /// it be read again.
+    #[test]
+    fn a_value_read_through_the_mount_is_kept_without_opening_it() {
+        use chimera_core::mount::assets::map_cache::{Key, MapCache, Outcome, cached_unopened};
+        let s = Scratch::new("unopened");
+        s.write("g/g_pak_dir.vpk", &vpk_with("scripts/thing.txt", b"from the pak"));
+        s.write("g/scripts/thing.txt", b"loose, behind the pak");
+        s.write("g/scripts/only_loose.txt", b"only loose");
+        let specs = [Spec::vpk("g/g_pak_dir.vpk"), Spec::loose("g")];
+        let path = SearchPath::from_specs(&s.0, &specs);
+        let cache = MapCache::at(s.0.join("cache"), 1 << 30);
+        let opened = std::cell::Cell::new(0);
+        // The two files and one that isn't there, through the whole mount.
+        let read = || {
+            let (light, archives) = path.unopened();
+            assert_eq!((light.layers().count(), archives.len()), (1, 1));
+            cached_unopened(Some(&cache), &light, &archives, Key::new("test:scripts", "v1"), || {
+                opened.set(opened.get() + 1);
+                let mount = path.mount().map_err(|e| e.to_string())?;
+                let tracking = mount.track();
+                let text = |f: &str| mount.read(f).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+                let value = vec![text("scripts/thing.txt"), text("scripts/only_loose.txt"), text("scripts/none.txt")];
+                Ok((value, tracking.finish()))
+            })
+            .unwrap()
+        };
+        let first = read();
+        assert_eq!(first.0, ["from the pak", "only loose", ""]);
+        assert_eq!((first.1, opened.get()), (Outcome::Miss, 1));
+        assert_eq!(read(), (first.0.clone(), Outcome::Hit), "read back the same");
+        assert_eq!(opened.get(), 1, "a hit opens no archive");
+        // A loose file it read changes: read again.
+        s.write("g/scripts/only_loose.txt", b"changed");
+        assert_eq!(read(), (vec!["from the pak".to_string(), "changed".into(), String::new()], Outcome::Miss));
+        // One that wasn't there appears.
+        s.write("g/scripts/none.txt", b"now here");
+        assert_eq!(read().0[2], "now here");
+        assert_eq!(opened.get(), 3);
+        assert_eq!(read().1, Outcome::Hit);
+        // The archive changes (another size): another entry.
+        s.write("g/g_pak_dir.vpk", &vpk_with("scripts/thing.txt", b"from the new pak"));
+        assert_eq!(read(), (vec!["from the new pak".to_string(), "changed".into(), "now here".into()], Outcome::Miss));
+        assert_eq!(opened.get(), 4);
     }
 
     #[test]

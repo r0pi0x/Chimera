@@ -65,3 +65,23 @@ fn the_hl2_textures_the_maps_borrow_are_whole() {
     }
     assert!(!vpk.is_empty(), "{}", textures.path.display());
 }
+
+/// On the install: the numbers the app starts with, read back from the
+/// converted cache (`numbers::from_scripts_kept`), are the numbers the
+/// mount gives (`GunNumbers::from_mount`), on the miss that writes them
+/// and on the hit that opens no archive.
+#[test]
+fn the_numbers_kept_between_starts_are_the_mounts() {
+    use chimera_core::mount::assets::map_cache::{MapCache, Outcome};
+    let Some(m) = install_mount() else { return };
+    let direct = GunNumbers::from_mount(Some(&m));
+    let dir = std::env::temp_dir().join(format!("chimera-dods-kept-numbers-heavy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cache = MapCache::at(&dir, 1 << 30);
+    let (first, o1) = dods::game::numbers::from_scripts_kept(Some(&cache));
+    let (second, o2) = dods::game::numbers::from_scripts_kept(Some(&cache));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(first, direct, "the numbers on the miss");
+    assert_eq!((o1, o2), (Outcome::Miss, Outcome::Hit));
+    assert_eq!(second, direct, "the numbers read back");
+}

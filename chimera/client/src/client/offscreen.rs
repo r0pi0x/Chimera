@@ -33,11 +33,15 @@
 //! render world: percentiles over the whole run) when it ends;
 //! `--frame-log` has each frame (`frame_metrics`).
 //!
-//! No sound device either (`silence_audio_device`, called by `app::run`
-//! before anything starts a thread): on Linux ALSA's default device is
+//! No sound device either: `app::default_plugins` swaps Bevy's `AudioPlugin`
+//! for `RecordAudioPlugin` (a WAV with `--dump`, else no file), mixed by
+//! the frames, so no output thread runs (on ALSA's null device it spun a
+//! whole core). The rest, for what still opens a device (voice chat's
+//! cpal output): `silence_audio_device`, called by `app::run`
+//! before anything starts a thread: on Linux ALSA's default device is
 //! its null one for the run, unless `ALSA_CONFIG_PATH` is set. Bevy's
-//! audio opens the default output while its plugin builds, on the main
-//! thread, and where that fails (no `XDG_RUNTIME_DIR`, as in agents'
+//! audio opened the default output while its plugin built, on the main
+//! thread, and where that failed (no `XDG_RUNTIME_DIR`, as in agents'
 //! and tools' shells: PipeWire's and Pulse's plugins can't reach the
 //! server) rodio tries every ALSA device in turn; PipeWire's JACK one
 //! then sometimes never returns from closing its client

@@ -622,3 +622,45 @@ fn the_move_penalty_starts_over_45_units_a_second() {
     assert!(moving(Vec3::X * 45.1 * U));
     assert!(!moving(Vec3::Y * 300.0 * U), "vertical speed doesn't count");
 }
+
+/// The weapons' numbers read back from the converted cache are the
+/// numbers read (`numbers::kept`): the first start reads the scripts and
+/// writes the entry, the second reads it back without the reader run (no
+/// mount opened); a changed archive file reads again, and numbers with a
+/// script missing aren't kept.
+#[test]
+fn the_numbers_read_back_from_the_cache_as_read() {
+    use chimera_core::mount::{Access, Mount, assets::map_cache::{MapCache, Outcome}};
+    use dods::game::{numbers, weapons::script_numbers::GunNumbers};
+    let dir = std::env::temp_dir().join(format!("chimera-dods-kept-numbers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("pak_dir.vpk"), b"an archive").unwrap();
+    let cache = MapCache::at(dir.join("cache"), 1 << 30);
+    let archives = [dir.join("pak_dir.vpk")];
+    // Made-up scripts (invented numbers): every weapon's the same.
+    let script = |damage: u32| format!("WeaponData\n{{\n\"Damage\" \"{damage}\"\n\"clip_size\" \"9\"\n}}\n");
+    let made = |damage: u32| GunNumbers::with_scripts(|_| Some(script(damage)));
+    let runs = std::cell::Cell::new(0);
+    let read = |damage: u32, whole: bool| {
+        numbers::kept(Some(&cache), &Mount::default(), &archives, || {
+            runs.set(runs.get() + 1);
+            (made(damage), std::collections::BTreeSet::from([Access::File("scripts/weapon_garand.txt".into())]), whole)
+        })
+    };
+    assert_ne!(made(41), GunNumbers::builtin(), "the made-up script set numbers");
+    assert_eq!(read(41, true), (made(41), Outcome::Miss));
+    // Read back: the same documents and sources, the reader not run.
+    assert_eq!(read(42, true), (made(41), Outcome::Hit));
+    assert_eq!(runs.get(), 1);
+    // The archive changed: read again.
+    std::fs::write(dir.join("pak_dir.vpk"), b"another archive").unwrap();
+    assert_eq!(read(43, true), (made(43), Outcome::Miss));
+    // A script missing: given, not kept.
+    std::fs::write(dir.join("pak_dir.vpk"), b"a third archive, a script missing").unwrap();
+    assert_eq!(read(44, false), (made(44), Outcome::Off));
+    assert_eq!(read(45, true).1, Outcome::Miss, "nothing was kept for it");
+    // `read` through a mount is `from_mount`: with none, the spec's.
+    assert_eq!(numbers::read(None), (GunNumbers::from_mount(None), false));
+    let _ = std::fs::remove_dir_all(&dir);
+}
