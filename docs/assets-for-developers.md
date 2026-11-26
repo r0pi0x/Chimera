@@ -317,7 +317,7 @@ converter version 3 (the maps' sets carry the waves and sprites their
 entities name, the HE's and smoke's sets their look sprites); the guest
 dressing converted again on 2026-11-26 with converter version 4 (the
 masked textures' hole fill, the water volumes, the bodies' gesture a
-sparse set: 13.4 and 9.5 MB stored). Its install is loose files, so it
+sparse set: 13.4 and 9.5 MB stored), and again the same day with converter version 5 (v5-de350ab6: the surfaces and sounds of the served maps, the water's currents and lava, the drawn light; the same sizes; build 15961496's manifest only, the newest; older versions kept). Its install is loose files, so it
 is packed from what its pieces read (`chimera_pack sets cs16 --pack`
 starts the manifest), not whole: 175 files, 324 MB plain, 142 MB stored
 (the WADs maps share, such as `halflife.wad` and `cstrike.wad`, are one
