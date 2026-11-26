@@ -4,8 +4,11 @@ Source basis: public format documentation and community write-ups of the
 Half-Life map format; the installed maps (all 25 in `cstrike/maps/` and
 the 125 BSP files in `valve/maps/` of the HLDS install, read with
 throwaway scripts outside the repository); Valve's Half-Life SDK as
-spec-session reference for the shared player movement's trace results.
-No engine source, no decompiled or leaked code.
+spec-session reference for the shared player movement's trace results;
+for the drawn light ("Drawn light"), a GPL community reimplementation of
+the engine and its OpenGL renderer (spec-session reference), checked
+against the CS 1.6 client's shipped `config.cfg` and the maps' stored
+lightmaps. No engine source, no decompiled or leaked code.
 Status: draft
 
 ## Summary
@@ -202,9 +205,8 @@ the four nearest samples.
 Styles: 0 is the always-on light; 1-63 are switchable or animated light
 styles (lights with a name or a pattern); 255 ends the list, and the
 slots after the first 255 are 255 too. Stored values are the compiler's
-linear result; the original renderer brightens them with gamma settings
-before display. The brightening is a presentation matter, measured
-against captures (open question 1).
+linear result; the original renderer sums the styles and brightens the
+sum with its gamma settings before display ("Drawn light" below).
 
 Most faces are (0, 255, 255, 255) or unlit (255, 255, 255, 255)
 (de_dust2: 4 002 and 1 381 faces), but 88 of the 150 stock maps have
@@ -318,6 +320,128 @@ Worked example: de_dust2 face 0: plane 1776, side 0, surfedges 0-3,
 texinfo 8, styles (0, 255, 255, 255), lightmap offset 0. Its s extents
 are −1952 to −1856 and t −64 to −32, so w = −116 − (−122) + 1 = 7 and h =
 −2 − (−4) + 1 = 3: 21 samples, 63 bytes.
+
+### Drawn light (the lightmap brightening)
+
+A stored byte is not the light drawn. CS 1.6's renderer (OpenGL, the
+default) turns each lightmap sample into an 8-bit light L, per channel,
+when it builds the face's lightmap, and the GPU then multiplies the
+texture by L / 255. The rule reads these console variables:
+
+| Cvar | CS 1.6 value | Range kept (per the reference) | Role |
+|---|---|---|---|
+| `gamma` | 2.5 (the shipped `config.cfg`) | 1.8 to 3 | γ, the display gamma |
+| `brightness` | 1 (the shipped `config.cfg`; the reference defaults to 0) | 0 to 3 | b, lifts the dark end |
+| `lightgamma` | 2.5 (engine default; not saved in `config.cfg`) | 1.8 to 3 | λ, the lightmaps' gamma |
+| `texgamma` | 2.0 (engine default; not saved in `config.cfg`) | 1.8 to 3 | τ, the textures' gamma |
+| `gl_overbright` | 0 (the shipped `config.cfg`) | 0 or 1 | overbright mode, off |
+
+The shipped `cstrike/config.cfg` and `valve/config.cfg` hold `gamma
+"2.500000"`, `brightness "1.000000"` and `gl_overbright "0"`; there is
+no `userconfig.cfg`. Use these values; a player who moved the sliders
+has others.
+
+**Per sample, per channel (R, G, B separately):**
+
+1. **Style sum.** Each style's current letter gives a value
+   v = 22 × (letter − `a`): `a` 0, `m` 264, `z` 550 (entities.md, light
+   styles; a letter holds for its whole tenth of a second, no blending
+   between letters). S = Σ stored × v over the face's styles. Dynamic
+   lights (muzzle flashes and the like) add into S here too.
+2. **Index.** k = floor(S × s / 16 384) with s = round(256 × 2^(1/λ)),
+   which is 338 at λ = 2.5; k is clamped to 1023. For one style at `m`,
+   k = floor(stored × 5.4463), and k reaches 1023 at stored 188: every
+   stored value from 188 to 255 draws as full light. This clamp is the
+   only one before the curve.
+3. **Curve.** With x = k / 1023:
+   1. f = x^λ (back to linear light).
+   2. If b > 1, f is multiplied by b.
+   3. Dark lift: a knee g, 0.125 for b ≤ 0, 0.125 − 0.075 × b² for
+      0 < b ≤ 1 (so 0.05 at CS 1.6's b = 1), 0.05 for b > 1. At or
+      below the knee f′ = f × 0.125 / g; above it
+      f′ = 0.125 + 0.875 × (f − g) / (1 − g). At b = 0 this is the
+      identity; at b = 1 the dark part is scaled ×2.5 in linear light
+      and the rest is squeezed into 0.125 to 1.
+   4. out = floor(1023 × f′^(1/γ)), kept within 0 to 1023, and
+      L = floor(out / 4).
+4. **Draw.** L is the lightmap texel. The GPU blends the four nearest
+   texels bilinearly (bsp.md's sample placement above) and multiplies:
+   drawn = T × L / 255 per channel, T being the texture's colour after
+   texgamma (below). The product is not brightened again and cannot
+   exceed T.
+
+At λ = γ and b = 0, steps 3.1 and 3.4 cancel and L ≈ stored × 1.36
+(the 2^(1/λ) factor times 264/256), capped at 255.
+
+**At CS 1.6's values** (λ = γ = 2.5, b = 1, one style at `m`):
+k = floor(5.4463 × stored), x = k / 1023, f = x^2.5; f′ = 2.5 f when
+f ≤ 0.05 (k ≤ 308, stored ≤ 56), else f′ = 0.125 + 0.92105 × (f − 0.05);
+L = floor(floor(1023 × f′^0.4) / 4).
+
+| Stored | k | L (CS 1.6: b = 1) | L at b = 0 | byte / 255 as linear light would give |
+|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 |
+| 8 | 43 | 15 | 10 | 8 |
+| 16 | 87 | 31 | 21 | 16 |
+| 23 | 125 | 45 | 31 | 23 |
+| 29 | 157 | 56 | 39 | 29 |
+| 32 | 174 | 62 | 43 | 32 |
+| 45 | 245 | 88 | 61 | 45 |
+| 50 | 272 | 98 | 67 | 50 |
+| 64 | 348 | 116 | 86 | 64 |
+| 96 | 522 | 146 | 130 | 96 |
+| 128 | 697 | 182 | 174 | 128 |
+| 160 | 871 | 221 | 217 | 160 |
+| 187 | 1018 | 254 | 254 | 187 |
+| 188 to 255 | 1023 | 255 | 255 | 188 to 255 |
+
+Worked, stored 50: k = floor(50 × 264 × 338 / 16 384) = floor(272.3) =
+272; x = 0.26588; f = 0.03645, under the knee, so f′ = 0.09113;
+f′^0.4 = 0.3836; out = 392; L = 98 (0.384, about twice the 0.196 of
+byte / 255). Stored 128: k = 697; x = 0.68133; f = 0.38317; f′ = 0.125
++ 0.875 × 0.33317 / 0.95 = 0.43186; f′^0.4 = 0.71473; out = 731; L = 182
+(0.714 against 0.502).
+
+**When it runs.** Once per sample when the face's lightmap is built, not
+per pixel: at map load; again for a face whenever the value of one of
+its styles changes (an animated pattern's next letter, a switched light)
+or a dynamic light touches it, rebuilt from the stored bytes; and for
+every face when one of the four cvars changes. The curve is applied to
+the styles' **sum**, never to each style: stored 40 under style 0 plus
+60 under style 33, both at `m`, is k = 544 and L = 151 (curving each
+and adding would give 78 + 113 = 191); with style 33 at `a`, k = 217
+and L = 78. Bilinear filtering works on the curved bytes.
+
+**Textures (texgamma).** Every opaque texture of the map and its WADs
+has its palette corrected once at load, each channel
+T = floor(255 × (c / 255)^(τ / γ)): exponent 0.8 at CS 1.6's values,
+so 16 → 27, 32 → 48, 64 → 84, 128 → 146, 192 → 203, 255 → 255
+(textures get brighter, most in the dark tones). The reference leaves
+the palettes of masked `{` textures (de_aztec's vines, fences) and of
+decals uncorrected (open question 1). A change of `texgamma` or `gamma`
+reaches textures only when they are loaded again.
+
+**Overbright.** Off in CS 1.6 (`gl_overbright 0`): the drawn colour
+never exceeds the texture's; the only gain above the mid-tones is step
+2's factor 2^(1/λ) (×1.32), which saturates at stored 188 (the clamp of
+k at 1023), and L itself is at most 255. In the reference's emulation of
+`gl_overbright 1`, s is 256 instead (saturation at stored 248) and the
+lightmap is applied as 4/3 × T × L / 255, the framebuffer clamping each
+channel at 255; whether GoldSrc's own mode matches is not confirmed and
+not needed at the default.
+
+**The dark end.** Lifted, not floored: stored 0 stays black, but at
+b = 1 every sample under stored 57 is scaled by 2.5 in linear light, so
+L is about 1.9 to 2 × stored there (8 → 15, 23 → 45, 50 → 98). The stock maps'
+compiler already keeps lit samples at 8 or more (cs_militia's darkest
+corners are 8), so nothing lit draws below L = 15.
+
+**Faces without a lightmap** (offset −1, sky and `aaatrigger`; also a
+map with no lighting lump) draw at full light, L = 255. Studio models
+are lit separately (mdl.md, "Lighting"), with the same curve table but
+without step 2's factor.
+
+The software renderer (`-soft`) is not covered here (open question 1).
 
 ### Textures lump
 
@@ -662,6 +786,16 @@ engine), 25 `sky`, 9 with `!`.
 | de_dust2.bsp | textures | 44, 15 embedded; texture 8 `-0SandRock2` 128 × 256, mip offsets 40, 32 808, 41 000, 43 048 |
 | de_dust2.bsp | face 0 lightmap | 7 × 3 samples, style 0 only, offset 0 |
 | every stock map | size every lit face's lightmap | blocks packed from 0 with no gaps; they end at the lump's end except `disposal` (837 bytes after), `pool_party` (855), `rocket_frenzy` (822) |
+| the drawn-light rule at CS 1.6's values (γ = λ = 2.5, b = 1), one style at `m` | stored 0, 8, 50, 128, 187, 188, 255 | L = 0, 15, 98, 182, 254, 255, 255 |
+| same, `brightness 0` | stored 8, 50, 128 | L = 10, 67, 174 |
+| two styles, both at `m` | stored 40 (style 0) and 60 (style 33) | k = 544, L = 151; style 33 at `a`: L = 78 |
+| one style at `z` | stored 100 | k clamped to 1023, L = 255 |
+| texgamma at τ = 2, γ = 2.5 | palette 16, 64, 128, 192 | 27, 84, 146, 203 |
+| opaque texture palette 128 on stored 50 | draw | T 146 × L 98 / 255 = 56 (byte / 255 with no curve gives 25) |
+| de_aztec.bsp face 5450 (`{vine1`, centre (−600, 44, 40), style 0, 15 × 9 samples) | stored 37 to 51, mean 45.6 | L 72 to 99 (45 → 88); drawn = palette colour × L / 255, the palette uncorrected (open question 1) |
+| de_aztec.bsp face 5457 (`{vine1`, back of the vines, (−896, 36, 40)) | stored 18 to 28, mean 23.2 | L 35 to 54 (23 → 45) |
+| cs_militia.bsp face 2350 (`crete4_flr02`, the hostage room's floor, centre (454, 862, −160), style 0, 4 × 15 samples) | stored (R, G, B) from (22, 23, 25) to (34, 35, 38), mean (28.4, 29.0, 31.9) | L from (42, 45, 49) to (66, 68, 74); 29 → 56 |
+| cs_militia.bsp face 2366 (same floor, (586, 1008, −160)) | stored 8 everywhere | L 15 |
 | de_dust2.bsp model 1 | hull heads | 2513, 7358, 7364, 7370 |
 | de_dust2.bsp model 1 | point contents hull 1 at (−1400, 2620, 99) / (−1400, 2620, 101) | solid / empty |
 | de_dust2.bsp model 1 | point contents hull 3 at (−1400, 2620, 81) / (−1400, 2620, 83) | solid / empty |
@@ -674,27 +808,13 @@ engine), 25 `sky`, 9 with `!`.
 
 ## Open questions
 
-1. The lightmap brightening (the original's gamma and brightness
-   settings and their defaults) for refcmp: measure from captures of the
-   client (not on this box). An implementation needs, for the software
-   and OpenGL renderers at the stock settings:
-   a. The function from a stored lightmap byte (0-255, after the style
-      scale) to the light that multiplies the texture: a table or a
-      formula, with the cvars it reads (`gamma`, `brightness`,
-      `lightgamma`, `texgamma`, `lambert`, any others) and their
-      defaults in CS 1.6.
-   b. Whether the brightening is applied once to the lightmap at upload
-      (per sample, before the bilinear blend) or to the drawn result
-      (after texture × light), and whether the texture's own colours
-      get a gamma correction too (`texgamma`).
-   c. Overbright: whether light above the stored 255 is reachable
-      (a factor such as 2 between the lightmap and the drawn colour),
-      and where the result is clamped.
-   d. Whether dark samples are lifted (a floor, or a curve steeper near
-      0): stock de_aztec's vine faces and cs_militia's interior are the
-      cases that draw nearly black with byte / 255 as linear light.
-   e. Whether the same curve applies to the light styles' sum (entities.md
-      question 11) and to studio models' lighting.
+1. The drawn light's remainder: whether GoldSrc's own OpenGL renderer
+   corrects the palettes of masked `{` textures and decals with
+   texgamma (the reference does not; de_aztec's vines show it: a vine
+   pixel of palette 128 on stored 45 draws 44 uncorrected, 50
+   corrected), whether its `gl_overbright 1` matches the reference's
+   4/3, and the software renderer's rule. Settle with a capture of
+   de_aztec's vines at the stock settings.
 2. The engine's hull choice thresholds for boxes other than the player's
    (8 and 36 units above) come from public engine write-ups; confirm by
    measurement before relying on them (CS 1.6's own player uses hulls 1
