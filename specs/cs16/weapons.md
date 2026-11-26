@@ -491,7 +491,8 @@ grenades use `models/shield/v_shield_<id>.mdl`. Fire sounds are
 `sound/weapons/<id>-1.wav` (and `-2`), e.g. `ak47-1.wav`; the knife's are
 `knife_slash1.wav`, `knife_slash2.wav`, `knife_hit1..4.wav`,
 `knife_hitwall1.wav`, `knife_stab.wav`. Shell models: `rshell` (rifle
-shells), `pshell` (pistol), `shotgunshell`.
+shells), `pshell` (pistol), `shotgunshell`, `rshell_big`; which gun
+throws which, when and how: [shells.md](shells.md).
 
 ## Test cases
 

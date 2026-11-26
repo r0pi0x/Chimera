@@ -414,11 +414,17 @@ an implementation session):
   645.79 (scale 0.8773). Ours follows the rule; which is the game's?
   "About 31 % after 10 commands" is the penalty's share alone (friction
   takes it to about 19 %): say so.
-- movement.md: the walk key. By the text it scales the keys' amounts by
+- (answered 2026-11-25 in movement.md "Units and conventions": the
+  client clips to the maximum speed first, then × 0.52: 130 with a 250
+  gun) movement.md: the walk key. By the text it scales the keys' amounts by
   0.52 before the clamp to the max speed, which walks at 208 units/s
   with a 250 gun (ours); is CS 1.6's walk not 0.52 of the max speed
   (130), as CS:S's is?
-- movement.md: ladders. "The player is on it when the origin, tested
+- (answered 2026-11-25 in movement.md "Ladders", "Water" and
+  "Currents": the face trace is a point trace against the ladder brush,
+  the origin inside the brush itself gives no ladder velocity; the up
+  key is `+moveup`, `cl_upspeed` 320, not jump; no stock map has a
+  current) movement.md: ladders. "The player is on it when the origin, tested
   against the ladder model's hull for the box, is not empty" and the
   trace toward the model's centre: what the trace returns when the origin
   is already inside the grown hull (ours keeps the shared rule: the
