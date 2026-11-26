@@ -184,6 +184,9 @@ pub fn skin_of(team: Option<Team>) -> i32 {
 
 /// A body whose skin TF2 set (`wear_bodies`), taken off with it.
 #[derive(Component, Clone, Copy, Debug)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct Tf2Skin;
 
 /// Players whose identity is TF2's wear their gun's class's body by name

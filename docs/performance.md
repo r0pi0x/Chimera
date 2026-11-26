@@ -3782,11 +3782,12 @@ and off characters with their body's game as table components: the
 characters' tables went from 80 to 165. Those four are sparse sets now
 (DESIGN.md, "ECS style"): 120 characters' tables, 718 in all (weapons 194
 -> 206 and map parts 358 -> 367 with the guns and maps since). What still
-varies is TF2's class and movement parts (one move), its skin marker
-(`Tf2Skin`) and CS 1.6's gesture; the last two are in their games'
-converter sources (`bodies.rs`), so a change there is a new converter
-version and a republish. The test caps the characters' tables (160) apart
-from all of them (770).
+varied was TF2's class and movement parts (one move), its skin marker
+(`Tf2Skin`) and CS 1.6's gesture (`Gesture`); the last two, in their
+games' converter sources (`bodies.rs`, so a new converter version and a
+republish), are sparse sets too since the CS 1.6 republish after the
+masked-texture hole fill: 93 characters' tables, 692 in all. The test
+caps the characters' tables (130) apart from all of them (770).
 
 ### A ragdoll's cost (2026-11-12)
 

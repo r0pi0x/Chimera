@@ -161,6 +161,9 @@ fn find(anims: &AnimSet, what: &str, set: &str, crouching: bool) -> Option<usize
 
 /// A body's gesture over its aim (module doc).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+// Comes and goes with the game's body on a character: a sparse set, or
+// each combination with the rest makes a table (docs/DESIGN.md, "ECS style").
+#[component(storage = "SparseSet")]
 pub struct Gesture {
     /// The sequence and how far in (0-1); None: none playing.
     pub playing: Option<(usize, f32)>,
