@@ -736,7 +736,7 @@ fn a_crate_floats_in_water() {
             );
             data.water.push(crate::stack::core::MapWaterVolume {
                 brush: MapBrush::from_box(a.min(b), a.max(b)),
-                slime: false,
+                slime: false, lava: false, current: None,
             });
         }
         let mut sim = sim(data);
@@ -786,7 +786,7 @@ fn an_oil_drum_floats_at_its_depth_and_stops_bobbing() {
     let (a, b) = (to_engine(Vec3::new(-512.0, -512.0, 0.0)), to_engine(Vec3::new(512.0, 512.0, 128.0)));
     data.water.push(crate::stack::core::MapWaterVolume {
         brush: MapBrush::from_box(a.min(b), a.max(b)),
-        slime: false,
+        slime: false, lava: false, current: None,
     });
     let surface = to_engine(Vec3::new(0.0, 0.0, 128.0)).y;
     let mut sim = sim(data);

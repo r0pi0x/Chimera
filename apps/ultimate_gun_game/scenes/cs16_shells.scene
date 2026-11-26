@@ -1,0 +1,21 @@
+# CS 1.6's spent cases (specs/cs16/shells.md; game::weapons::shells): an
+# AK-47 fired on its own map, the cases in the air a moment after.
+#   CHIMERA_CS16_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 \
+#       +sandbox cs16:de_dust2 --scene apps/ultimate_gun_game/scenes/cs16_shells.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+rung cs16:weapon_ak47
+wait 120
++attack
+wait 14
+shot cs16_shells_a
+wait 4
+shot cs16_shells_b
+wait 4
+shot cs16_shells_c
+-attack
+wait 30
+shot cs16_shells_rest

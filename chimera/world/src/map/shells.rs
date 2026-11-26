@@ -106,6 +106,21 @@ impl MapShellPhysics {
     }
 }
 
+/// A shell thrown into the world (engine space, meters) by a game's own
+/// rule, not from a view model's ejection port (CS 1.6's cases: others'
+/// guns' too, and the late ones of its pump and bolt guns): game `game`'s
+/// shell type `key`, starting at `position` with `velocity`, its model's
+/// +X along `rotation`'s -Z turned a quarter (the shooter's yaw as
+/// `render::shells` places the port's). `render::shells::throw` makes it.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct ThrowShell {
+    pub game: String,
+    pub key: String,
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub rotation: Quat,
+}
+
 /// A flying (or resting) shell.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShellState {

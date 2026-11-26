@@ -3651,6 +3651,14 @@ pub struct MapTerrainCollider;
 pub struct MapWaterVolume {
     pub brush: MapBrush,
     pub slime: bool,
+    /// Lava (GoldSrc's): a `slime` volume that burns harder
+    /// (`QuakeConfig::liquid_hazards`).
+    #[serde(default)]
+    pub lava: bool,
+    /// A current's direction (engine space, unit): a liquid whose contents
+    /// push (GoldSrc's current values; none in the stock maps).
+    #[serde(default)]
+    pub current: Option<Vec3>,
 }
 
 /// The loaded map's water volumes (`MapData::water`).

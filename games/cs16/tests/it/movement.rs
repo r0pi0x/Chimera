@@ -486,8 +486,9 @@ fn the_walk_key_scales_the_keys() {
     sim.intent(p).move_axis = Vec2::Y;
     sim.intent(p).walk = true;
     sim.ticks(150);
-    // 400 x 0.52 = 208, under the 250 cap.
-    assert!((flat_speed(&sim, p) - 208.0).abs() < 0.05, "{}", flat_speed(&sim, p));
+    // The keys' 400 clipped to the 250 cap, then x 0.52 (movement.md
+    // "Frame inputs"): 130, not 0.52 x 400.
+    assert!((flat_speed(&sim, p) - 130.0).abs() < 0.05, "{}", flat_speed(&sim, p));
 }
 
 /// CS 1.6's golden run (docs/plans/active/shared-movement.md, section 7;
@@ -499,13 +500,14 @@ fn the_walk_key_scales_the_keys() {
 /// velocity, flags, eye, view roll, health and jump penalty hashed. The
 /// hash was taken when the movement landed: a change of one float
 /// operation changes it; a behaviour change re-takes it in its own
-/// commit, saying why. `CHIMERA_GOLDEN_TRACE=1` prints every tick's row.
+/// commit, saying why (re-taken 2026-11-26: the walk key's 0.52 after the
+/// keys' clip, then the swim's GoldSrc rules: the sink, the up key). `CHIMERA_GOLDEN_TRACE=1` prints every tick's row.
 /// Asserted on Linux x86-64 only. It prints the step's and the tick's
 /// instructions a tick.
 #[test]
 fn golden_run() {
     use chimera_world::harness::own_process;
-    const GOLDEN: u64 = 0x455e_b29c_0bc0_87e4;
+    const GOLDEN: u64 = 0x011d_7d69_31be_3384;
     const TICKS: u64 = 1620;
     if !own_process("movement::golden_run") {
         return;

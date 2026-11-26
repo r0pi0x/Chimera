@@ -166,6 +166,11 @@ Matching a face's texture name:
 4. Compare case-insensitively with each entry's name, itself cut to 12
    characters; the first match gives the type; none gives `C`.
 
+That is Half-Life's rule. Counter-Strike 1.6's game and client
+libraries match differently (more entries, longer names, a sorted
+search); CS 1.6's rule is in its own spec,
+[../cs16/footsteps.md](../cs16/footsteps.md) "The surface type".
+
 Quirks to keep:
 
 - Entries written with a prefix never match, since names are stripped
@@ -207,9 +212,10 @@ Quirks to keep:
 
 1. WAD precedence when two listed WADs hold the same texture name: first
    listed is assumed; check on a map where it matters (none found yet).
-2. The 512-entry limit on `materials.txt`: entry 512 is `OUT_SLAT01` (W)
-   and 513 `OUT_WD` (W); walk on a surface textured past entry 512 on the
-   server and see whether it sounds as listed or as concrete.
+2. The 512-entry limit on `materials.txt` (Half-Life's rule): entry 512
+   is `OUT_SLAT01` (W) and 513 `OUT_WD` (W). For CS 1.6 see
+   [../cs16/footsteps.md](../cs16/footsteps.md), which also says how to
+   check it in the game.
 3. The client's language folders and anything else the client has that
    the server lacks: checked when a client install is available
    (`specs/cs16/install.md`).

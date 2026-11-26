@@ -62,7 +62,7 @@ fn app(m: MapWaterMaterial, settings: WaterSettings) -> (App, Entity, Entity) {
         .insert_resource(settings)
         .insert_resource(MapWater(vec![MapWaterVolume {
             brush: MapBrush::from_box(min, max),
-            slime: false,
+            slime: false, lava: false, current: None,
         }]))
         .insert_resource(MapWaterRender {
             materials: vec![m],

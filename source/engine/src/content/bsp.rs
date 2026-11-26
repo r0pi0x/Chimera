@@ -1986,7 +1986,7 @@ pub fn water_volumes(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<crate::map::MapWaterV
         .into_iter()
         .map(|(i, points, planes)| crate::map::MapWaterVolume {
             brush: map_brush(points, planes, false),
-            slime: !bsp.brushes[i].flags.contains(BrushFlags::WATER),
+            slime: !bsp.brushes[i].flags.contains(BrushFlags::WATER), lava: false, current: None,
         })
         .collect()
 }
@@ -2038,7 +2038,7 @@ pub fn analog_water_volumes(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<(crate::map::M
             (
                 crate::map::MapWaterVolume {
                     brush: map_brush(points, planes, false),
-                    slime: !bsp.brushes[i].flags.contains(BrushFlags::WATER),
+                    slime: !bsp.brushes[i].flags.contains(BrushFlags::WATER), lava: false, current: None,
                 },
                 index,
             )

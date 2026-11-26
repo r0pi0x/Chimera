@@ -15,13 +15,15 @@
 //! their sounds GoldSrc's waves by path
 //! (`goldsrc_engine::content::sounds`: the data's entries, the view
 //! models' sound events, the melee swings' and the grenades'); the HE's
-//! and smoke's looks from the install's sprites (`looks`).
+//! and smoke's looks from the install's sprites (`looks`) and each shot's
+//! spent case (`shells`: data/shells.toml, the cases' models from the
+//! install).
 //!
 //! Each gun's speed is its data's `max_speed` (units/s; a scope's zoomed
 //! speed its `[alt] max_speed`), what the movement reads.
 //!
 //! Known shortcuts (beside `gun`'s, `grenades`' and `view`'s):
-//! - Shells are not ejected.
+//! - The cases' flight and the late shells' origin: `shells`' own.
 //! - The bodies' sequence set per weapon (`[hooks."cs16:body_anim"]`,
 //!   `bodies::BodyAnim`) is ours (`bodies`).
 
@@ -38,6 +40,7 @@ pub mod grenades;
 pub mod gun;
 pub mod looks;
 pub mod penetration;
+pub mod shells;
 pub mod view;
 
 macro_rules! data_file {
@@ -225,6 +228,25 @@ pub fn add_guns(mount: &Mount, wants: &dyn Fn(&str) -> bool, skeleton: &[&str], 
             map.kit.muzzle_flash_kinds.push((kind, flash));
         }
     }
+    // The spent cases of the guns wanted (`shells`).
+    let mut types = Vec::new();
+    shells::kit(
+        wants,
+        |model| match weapon_models::shell(mount, &format!("models/{model}.mdl"), decode) {
+            Ok((mut m, textures)) => {
+                offset(&mut m, map.textures.len());
+                map.textures.extend(textures);
+                Some(m)
+            }
+            Err(e) => {
+                map.warnings.push(e);
+                None
+            }
+        },
+        &mut entries,
+        &mut types,
+    );
+    map.kit.shells.extend(types);
     let table = std::sync::Arc::make_mut(&mut map.sounds);
     for e in entries {
         if !sounds::add_entry(mount, &e, table) {
@@ -309,6 +331,7 @@ impl Plugin for Cs16GunsPlugin {
             panic!("Counter-Strike 1.6 weapon data: {e}");
         }
         app.add_plugins(looks::Cs16GrenadeLooksPlugin);
+        shells::add(app);
         app.add_message::<chimera_sim::weapon::WeaponEvent>()
             .predicted_part::<gun::Cs16Gun>()
             .view_anim_rules(super::GAME, view::rules())

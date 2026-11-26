@@ -18,7 +18,9 @@
 //! - `sounds`: waves under `sound/` as sound entries named by path, and
 //!   the ones a map's entities play;
 //! - `sprites`: the map's `env_sprite`s and `env_glow`s, and a sprite's
-//!   frames as a particle material's sheet.
+//!   frames as a particle material's sheet;
+//! - `water`: the world's liquid leaves and the liquid brush entities
+//!   (`func_water`, `func_illusionary` by `skin`) as water volumes.
 //!
 //! Space: GoldSrc's axes and unit are Source's (bsp.md, "Units and
 //! conventions"), so a point (x, y, z) in units is the engine's
@@ -35,6 +37,7 @@ pub mod sounds;
 pub mod sprites;
 pub mod studio;
 pub mod textures;
+pub mod water;
 pub mod weapon_models;
 
 use bevy::math::Vec3;

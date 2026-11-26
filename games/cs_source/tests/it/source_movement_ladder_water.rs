@@ -75,7 +75,7 @@ fn test_map(mut commands: Commands) {
     });
     let water = |lo: Vec3, hi: Vec3| MapWaterVolume {
         brush: brush(lo, hi, false),
-        slime: false,
+        slime: false, lava: false, current: None,
     };
     commands.insert_resource(MapBrushes(brushes));
     commands.insert_resource(MapWater(vec![

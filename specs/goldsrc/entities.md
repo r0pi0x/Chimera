@@ -980,10 +980,11 @@ only **switchable** lights matter.
 - A face's lightmap has up to four styles (bsp.md "Lightmaps"). Each
   style number has a **pattern**: a string of letters `a`..`z`, played
   at 10 letters a second on the client and looping, each letter giving
-  a brightness: `a` dark, `m` normal, `z` about twice normal (the scale
-  is linear in the letter; exact factor in Open questions). The face's
-  light is the sum of its style lightmaps, each scaled by its style's
-  current letter.
+  a brightness: 22 × (letter − `a`) in 256ths, so `a` 0, `m` 264
+  (1.031 × the stored byte), `z` 550 (2.148 ×); no blending between
+  letters. The face's light is the sum of its style lightmaps, each
+  scaled by its style's current letter, and the sum goes through the
+  brightening once (bsp.md, "Drawn light").
 - Styles 0-12 have fixed patterns set by the game at map start (data
   the server sends to every client): 0 `m`; 1
   `mmnmmommommnonmmonqnmmo`; 2
@@ -1304,10 +1305,10 @@ One server frame, Half-Life lineage (to confirm for CS 1.6):
 10. Trigger overlap test: confirm the clip-hull check against a sloped
     trigger (none in stock maps is sloped; use a test map) versus a plain
     box overlap.
-11. Light style brightness scale per letter (`a` 0 to `z`), and how it
-    combines with the lightmap brightening (bsp.md question 1);
-    `light_environment`'s sky colour for model lighting (a power curve
-    of the `_light` values; belongs to the studio lighting spec).
+11. Answered: the letter scale and its combination with the
+    brightening are in "light, light_spot, light_environment" and
+    bsp.md's "Drawn light"; `light_environment`'s sky colour for model
+    lighting is in mdl.md's "Lighting".
 12. `func_water` `WaveHeight` drawing (amplitude, wavelength, speed) and
     the `!` warp: already bsp.md's; capture `de_aztec` water.
 13. `cycler_sprite` holding a studio model: does it react to `+use` or

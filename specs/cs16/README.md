@@ -13,6 +13,9 @@ the game's code, no keys, no assets or extracted files.
 | [weapons.md](weapons.md) | every gun: numbers, accuracy and spread, recoil kicks, fire modes, zoom, silencers, reloads, knife, grenades | draft |
 | [damage.md](damage.md) | hit zones, armour by weapon, range falloff, wall penetration, blasts, flinch | draft |
 | [view_and_hud.md](view_and_hud.md) | view heights, zoom, punch, flash fade, HUD sprites (layout and crosshair still to capture) | draft |
+| [footsteps.md](footsteps.md) | step sounds: surface types from `materials.txt` (CS 1.6's lookup), sets and files, intervals, volumes, ducked, ladder, wading, jumps and landings, who hears them | draft |
+| [shells.md](shells.md) | spent cases: model per gun, on the shot or late (M3, Scout, AWP), start offsets per gun and handedness, velocities, life, bounce sounds | draft |
+| [water.md](water.md) | water, slime and lava: damage per command, air and drowning, recovery, bubbles, splashes, the view near and under the surface (fog from the texture's palette) | draft |
 | [hud.md](hud.md) | the HUD: health, armour, ammunition, money (unused), timer, crosshair, weapon menu, kill feed icons, damage direction; 640 layout, colour and fades | draft |
 
 Add one file per topic (sounds, a format, the round rules) as the

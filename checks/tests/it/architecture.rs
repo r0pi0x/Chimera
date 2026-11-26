@@ -102,6 +102,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // movement's casts pass, the observed bodies of the other movements.
     ("props", &["core", "map", "slots", "config", "pushaway", "shadow", "state", "units"]),
     ("drown", &["core", "slots", "config", "state"]),
+    ("liquids", &["core", "slots", "config", "state", "map"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
     ("gameplay", &["core", "game_registry"]),

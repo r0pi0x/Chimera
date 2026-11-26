@@ -334,4 +334,11 @@ impl<'a> Tracer<'a, '_, '_> {
             .and_then(|w| w.0.iter().find(|w| w.brush.contains(at)).map(|w| w.slime))
             .or_else(|| self.water_zones.iter().any(|z| z.contains(at)).then_some(false))
     }
+
+    /// The map's liquid volume at `p`, if any (lava, and a current's
+    /// direction in engine space).
+    pub(crate) fn point_volume(&self, p: Vec3) -> Option<&chimera_core::core::MapWaterVolume> {
+        let at = to_engine(p);
+        self.water.and_then(|w| w.0.iter().find(|w| w.brush.contains(at)))
+    }
 }

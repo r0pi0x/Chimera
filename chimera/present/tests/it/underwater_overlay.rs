@@ -54,7 +54,7 @@ fn app(eye: Vec3) -> (App, Entity, Entity) {
         .insert_resource(Assets::<ScreenWarpMaterial>::default())
         .insert_resource(MapWater(vec![MapWaterVolume {
             brush: MapBrush::from_box(min, max),
-            slime: false,
+            slime: false, lava: false, current: None,
         }]))
         .insert_resource(MapWaterRender {
             materials: vec![MapWaterMaterial {

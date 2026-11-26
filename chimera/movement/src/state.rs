@@ -57,7 +57,7 @@ pub struct QuakeMovement {
     /// Footsteps (sound spec 3): time to the next step (ms), which foot
     /// steps next, the surface last stood on, swim-stroke timer (ms).
     pub step_timer: f32,
-    pub(crate) step_left: bool,
+    pub step_left: bool,
     pub surface: Option<String>,
     pub(crate) swim_timer: f32,
     /// The punch angle's roll (degrees) and its velocity: hard landings
@@ -105,6 +105,10 @@ pub struct QuakeMovement {
     /// (`QuakeConfig::command_msec`), ms: added to the next tick's time.
     #[serde(default)]
     pub msec_carry: f32,
+    /// The liquid under the feet is lava (`QuakeConfig::liquid_hazards`;
+    /// `in_slime` is set with it).
+    #[serde(default)]
+    pub in_lava: bool,
 }
 
 impl Default for QuakeMovement {
@@ -151,6 +155,7 @@ impl Default for QuakeMovement {
             stance_low: false,
             stance_crouch: false,
             msec_carry: 0.0,
+            in_lava: false,
         }
     }
 }

@@ -21,9 +21,16 @@ impl Mover<'_, '_, '_, '_> {
         let (dir, speed) = self.wish(f, s, forward, right, max_speed);
         self.wish = dir * speed;
         self.air_accelerate(dir, speed, self.cfg.airaccelerate);
-        let base = Vec3::new(self.base.x, self.base.y, 0.0);
+        let mut base = Vec3::new(self.base.x, self.base.y, 0.0);
+        if self.cfg.liquid_hazards {
+            base += Vec3::new(self.current.x, self.current.y, 0.0);
+        }
         self.v += base;
         self.slide();
+        if self.cfg.liquid_hazards {
+            self.water_check();
+            base += Vec3::new(self.current.x, self.current.y, 0.0);
+        }
         self.v -= base;
     }
 

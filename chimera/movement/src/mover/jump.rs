@@ -20,6 +20,7 @@ impl Mover<'_, '_, '_, '_> {
                 self.v *= cap / speed * self.cfg.bunnyhop_cut;
             }
         }
+        let speed = self.v.length();
         let impulse = self.cfg.jump_impulse * self.ground_factors().1;
         self.set_ground(false, None);
         if self.me.ducked || self.me.ducking || self.cfg.jump_sets_speed {
@@ -34,10 +35,6 @@ impl Mover<'_, '_, '_, '_> {
         self.half_gravity();
         self.me.jump_held = true;
         // A full-volume step on the surface jumped from.
-        if self.cfg.model_footsteps {
-            self.model_step(1.0);
-        } else if let Some(s) = self.me.surface.clone() {
-            self.play_step(&s, 1.0);
-        }
+        self.jump_step(speed);
     }
 }

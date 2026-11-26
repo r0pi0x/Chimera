@@ -5,8 +5,10 @@ the Half-Life model format; Valve's Half-Life SDK (spec-session
 reference only) for the meaning of fields and the animation sampling;
 every `.mdl` in the HLDS install's `cstrike/models/` and
 `valve/models/` (502 files: 467 models, 35 sequence files), read with
-throwaway scripts outside the repository. No engine source, no
-decompiled or leaked code.
+throwaway scripts outside the repository; for "Lighting", a GPL
+community reimplementation of the engine's renderer and the community
+reimplementation of CS 1.6's game library (spec-session references).
+No engine source, no decompiled or leaked code.
 Status: draft
 
 ## Summary
@@ -421,6 +423,80 @@ offsets are relative to its own start). Example `valve/models/barneyt.mdl`:
 v_ak47: attachment 0 on bone 20 (`Bone 04`) at (2.75, −22.5, 2.9), the
 muzzle; attachment 1 on bone 41 at (0, −3, 0), the shell ejection.
 
+## Lighting
+
+A model is not lightmapped: the engine works out one light for the
+whole model each frame from the world at its origin, then shades each
+vertex from its normal. The numbers go through the same curve as the
+map's lightmaps (bsp.md, "Drawn light", step 3) but without that rule's
+2^(1/λ) factor, so a model is darker than the floor it stands on.
+
+**The model's light** (per model, per frame):
+
+1. **Sample point**: the origin raised 8 units. A model whose entity
+   has the "light from the ceiling" effect samples upward instead.
+2. **Sky**: when the map's sky colour (below) is not black, trace from
+   the sample point toward origin − 8192 × the sky direction. If the
+   first world surface hit is sky, the light colour C is the sky colour
+   and the light's direction is the sky direction (the way the light
+   travels, downward).
+3. **Floor** otherwise: trace 2048 units straight down through the
+   render tree; on the first lit face hit, take the lightmap sample
+   nearest the hit point (rounded, not blended), sum it over the face's
+   styles with the letter values (bsp.md, step 1), divide by 256
+   (rounding down) and cap each channel at 255: that is C. Nothing hit:
+   C = 0. The direction is straight down, tilted toward the brighter
+   side: four more floor samples at (−16, −16), (+16, −16), (+16, +16)
+   and (−16, +16) from the point, each as (R + G + B) / 768, give the x
+   part as the −x pair minus the +x pair and the y part as the −y pair
+   minus the +y pair, with z = −1, normalized.
+4. **Total** T = the largest channel of C (1 when C is black). Each
+   dynamic light within its radius r of the origin, at distance d, adds
+   r − d to T, a vector of that length from the light toward the model to
+   the direction (the direction having first been scaled to length T),
+   and its colour × (r − d) / 256 to C.
+5. **Shade and ambient**: shade = the direction's length × `direct`
+   (0.9; kept within 0.75 to 1), ambient = T − shade. Without dynamic
+   lights shade = 0.9 T and ambient = 0.1 T. Then ambient is capped at
+   128 and shade at 255 − ambient.
+6. **Colour**: C divided by its largest channel (the brightest channel
+   is 1; white when C is black).
+
+An entity drawn fullbright (or the map unlit) gets ambient 192, shade
+0, white, light from straight above.
+
+**Per vertex**, with n the vertex normal (smoothed per bone) and l the
+light direction, cos = n · l (−1 when the vertex faces the light):
+
+- texture flag 4 (fullbright): light 1.
+- texture flag 1 (flat-shaded): illum = ambient + 0.8 × shade.
+- otherwise illum = ambient + shade − shade × max(0, (cos + w − 1) / w)
+  with w = 1.4953 (the engine's `lambert` setting, shown as 1.5 in its
+  cvar list; open question 4): facing the light, ambient + shade;
+  side-on, ambient + 0.669 shade; facing away, ambient. Kept within 0
+  to 255.
+- The vertex light is curve(floor(4 × illum)) / 1023, the curve being
+  bsp.md's step 3 on the index k = floor(4 × illum) (no style scale, no
+  2^(1/λ)), its output kept as 0 to 1023 and not cut to a byte.
+- The drawn colour is the texture (palette corrected by texgamma as
+  bsp.md says, except masked textures, flag 64) × colour × vertex light.
+
+**Sky colour and direction**: the map's `light_environment` sets them
+when the map starts. Its `_light` "r g b v": with four numbers each
+channel is multiplied by v / 255 (rounded down to an integer), with one
+number it is grey; then each channel becomes
+floor(264 × (c / 114)^0.6) (so 114 → 264, a channel can exceed 255).
+The direction is the forward vector of the entity's angles, its pitch
+key giving the pitch (pitch −60 points 60° down from the horizontal).
+
+Worked, at CS 1.6's settings (bsp.md):
+
+| Where | C | T, shade, ambient | Facing the light | Side-on | Facing away |
+|---|---|---|---|---|---|
+| on cs_militia's hostage-room floor, stored 29 at `m` | 29 (29 × 264 / 256 = 29.9, rounded down) | 29, 26.1, 2.9 | illum 29, light 0.163 | 20.4, 0.113 | 2.9, 0.015 |
+| on a floor of stored 50 | 51 | 51, 45.9, 5.1 | 51, 0.287 (the floor itself draws 0.384) | 35.8, 0.201 | 5.1, 0.027 |
+| under cs_militia's sky: `_light` "255 255 128 90" | (90, 90, 45) → (229, 229, 151); colour (1, 1, 0.659) | 229, 206.1, 22.9 | 229, 0.904 | 160.8, 0.670 | 22.9, 0.128 |
+
 ## Edge cases
 
 - Names (sequence, bone) may repeat (gign's `crouch_aim_dualpistols`
@@ -451,10 +527,14 @@ muzzle; attachment 1 on bone 41 at (0, −3, 0), the shell ejection.
 
 ## Open questions
 
-1. Normal smoothing and the original's model lighting (ambient and
-   shade from the floor's lightmap, chrome) are presentation work, to be
-   matched by captures.
+1. Normal smoothing and chrome are presentation work, to be matched by
+   captures (the lighting is in "Lighting").
 2. CS 1.6's client picks among 9 aim blends by the view pitch; whether it
    blends the two neighbours or snaps is to be confirmed by captures.
 3. The muzzle flash option code (scale and sprite digits) is read from
    public descriptions; confirm against a capture.
+4. The `lambert` weight: the reference fixes it at 1.4953, the engine's
+   cvar list shows 1.5; side-on they differ by about 0.2 % of shade.
+   Whether the floor-light gradient (step 3) is the engine's or only
+   the reference's: compare a player model's shading beside a light
+   edge in a capture.

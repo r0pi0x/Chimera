@@ -95,6 +95,8 @@ pub(crate) const SWIM_JUMP_WATER: f32 = 100.0;
 
 pub(crate) const SWIM_JUMP_SLIME: f32 = 80.0;
 
+pub(crate) const SWIM_JUMP_LAVA: f32 = 50.0;
+
 pub(crate) const WATER_JUMP_UP: f32 = 256.0;
 
 pub(crate) const WATER_JUMP_PUSH: f32 = 50.0;
@@ -168,6 +170,12 @@ pub(crate) struct Mover<'a, 'b, 'w, 's> {
     pub(crate) max_health: f32,
     /// A game's own stance this tick (`MoveStance`).
     pub(crate) stance: MoveStance,
+    /// A liquid's current under the feet (units/s: `QuakeConfig::
+    /// liquid_hazards`), found with the water level.
+    pub(crate) current: Vec3,
+    /// The up and down keys' input (`QuakeConfig::up_actions`), units/s:
+    /// up positive.
+    pub(crate) up_keys: f32,
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -224,16 +232,23 @@ impl Mover<'_, '_, '_, '_> {
             Some(p) => p.min(self.cfg.maxspeed) * modifier,
             None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * modifier,
         } * self.ground_factors().0;
-        let keys = intent.move_axis * key_walk;
+        // GoldSrc scales the keys together to the max speed first and the
+        // walk key then multiplies them (130, not 0.52 x 400).
+        let keys = intent.move_axis;
         let (mut f, mut s) = (
             keys.y * self.cfg.key_speed + self.push_input.x,
             keys.x * self.cfg.key_speed + self.push_input.y,
         );
-        let len = (f * f + s * s).sqrt();
+        let mut up = self.up_keys;
+        let len = (f * f + s * s + up * up).sqrt();
         if len > max_speed {
             f *= max_speed / len;
             s *= max_speed / len;
+            up *= max_speed / len;
         }
+        f *= key_walk;
+        s *= key_walk;
+        up *= key_walk;
         self.me.duck_timer = (self.me.duck_timer - 1000.0 * self.dt).max(0.0);
         self.me.stamina = (self.me.stamina - 1000.0 * self.dt).max(0.0);
         self.me.swim_timer = (self.me.swim_timer - 1000.0 * self.dt).max(0.0);
@@ -318,6 +333,7 @@ impl Mover<'_, '_, '_, '_> {
         }
         f *= scale;
         s *= scale;
+        up *= scale;
 
         // CS:S (measured, movecmp fuzz): the climb is slowed by the duck as
         // it stands after this tick's ducking: releasing duck while ducked
@@ -387,7 +403,9 @@ impl Mover<'_, '_, '_, '_> {
                 // Jump does nothing while water-jumping: a water jump that
                 // started this tick keeps its lift.
                 if self.me.water_jump_time <= 0.0 {
-                    self.v.z = if self.me.in_slime {
+                    self.v.z = if self.cfg.liquid_hazards && self.me.in_lava {
+                        SWIM_JUMP_LAVA
+                    } else if self.me.in_slime {
                         SWIM_JUMP_SLIME
                     } else {
                         SWIM_JUMP_WATER
@@ -397,7 +415,7 @@ impl Mover<'_, '_, '_, '_> {
             } else {
                 self.me.jump_held = false;
             }
-            self.swim(intent, f, s, max_speed);
+            self.swim(intent, f, s, up, max_speed);
             self.categorize();
             if self.me.on_ground {
                 self.v.z = 0.0;

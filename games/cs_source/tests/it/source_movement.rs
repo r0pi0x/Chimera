@@ -605,7 +605,7 @@ fn no_fall_damage_into_water() {
     );
     sim.app.insert_resource(MapWater(vec![MapWaterVolume {
         brush: MapBrush::from_box(a.min(b), a.max(b)),
-        slime: false,
+        slime: false, lava: false, current: None,
     }]));
     let p = sim.spawn_character(to_engine(Vec3::new(0.0, -3000.0, 40.0 + 36.0)), movement::ID);
     sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = to_engine(Vec3::Z * -800.0);

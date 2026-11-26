@@ -1,0 +1,27 @@
+# CS 1.6's liquid fog (specs/cs16/water.md "The view in a liquid"; the
+# fog-only water of `goldsrc_engine::content::water::fog_material`): the
+# eye under as_oilrig's sea, then at the surface, in the texture's colour.
+#   CHIMERA_CS16_ROOT=<install> cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 \
+#       +sandbox cs16:as_oilrig --scene apps/ultimate_gun_game/scenes/cs16_water_fog.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 2
+wait_for idle
+wait 120
+noclip
+setpos 516 -664 -1000
+setang 0 90
+wait 60
+shot cs16_water_dry_ref
+setpos 516 -664 -985
+setang 0 90
+wait 60
+shot cs16_water_under
+setpos 516 -664 -975
+setang -10 90
+wait 60
+shot cs16_water_under_shallow
+setpos 516 -664 -930
+setang 5 90
+wait 60
+shot cs16_water_surface

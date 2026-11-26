@@ -95,7 +95,8 @@
 //! its sound. A bullet hit's velocity modifier (CS:S, weapons.md M18,
 //! set by `hit_reaction`) multiplies the max speed and recovers by 1/3 a
 //! second after each move. A head under water too long drowns
-//! (`drown`, from the water level kept here). Footsteps play the
+//! (`drown`, from the water level kept here); GoldSrc's liquids hurt, drown
+//! and bubble their own way (`liquids`, `QuakeConfig::liquid_hazards`). Footsteps play the
 //! surface underfoot's steps, or a footstep volume's replacement
 //! (func_footstep_control, `content::sound::step_remaps`). A character with
 //! `SettleOnGround` (hostages) goes down onto the floor its ground test
@@ -171,6 +172,7 @@
 
 mod config;
 pub mod drown;
+pub mod liquids;
 mod hooks;
 mod mover;
 pub mod props;
@@ -224,7 +226,7 @@ impl Plugin for QuakeMovementPlugin {
             .predicted_net::<QuakeMovement>()
             .configure_sets(crate::core::Predict::Movement, MovementStep.before(crate::core::AfterMovements));
         props::add(app);
-        app.add_plugins(drown::DrowningPlugin);
+        app.add_plugins((drown::DrowningPlugin, liquids::LiquidsPlugin));
     }
 }
 

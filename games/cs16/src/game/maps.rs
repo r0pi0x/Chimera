@@ -44,6 +44,7 @@ pub static CS16: GoldSrcGame = GoldSrcGame {
     spawns: SPAWNS,
     gravity: GRAVITY,
     kit: own_kit,
+    materials: goldsrc_formats::materials::Rule::Cs16,
 };
 
 /// The game's maps from the install.

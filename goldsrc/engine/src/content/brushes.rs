@@ -76,12 +76,14 @@ pub fn surface_kind(letter: char) -> &'static str {
 
 /// The meshes of `models` into `data.meshes` and the lightmap atlas into
 /// `data.lightmap`; `slots[t]` is BSP texture t's index into
-/// `data.textures` (None: drawn flat); `families` the lump's texture
+/// `data.textures` (None: drawn flat); `liquids[t]` its fog material in
+/// `data.water_materials` (a liquid texture's); `families` the lump's texture
 /// families; `styles` how each light style other than 0 starts.
 pub fn add_meshes(
     bsp: &Bsp,
     models: &[Drawn],
     slots: &[Option<usize>],
+    liquids: &[Option<usize>],
     families: &Families,
     materials: &Materials,
     styles: &dyn Fn(u8) -> StyleStart,
@@ -157,6 +159,8 @@ pub fn add_meshes(
                     render_color: d.color,
                     flat_color: d.flat,
                     warp: (k == Kind::Water).then(|| warp(tex.width, tex.height)),
+                    // A liquid's face fogs the view under it (`water::fog_material`).
+                    water: if d.mover.is_none() { liquids.get(texture).copied().flatten() } else { None },
                     frames,
                     ..Default::default()
                 },

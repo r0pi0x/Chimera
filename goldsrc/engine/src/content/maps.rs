@@ -21,10 +21,13 @@
 //! 3. the faces as meshes with the lightmap atlas (`brushes`; each light
 //!    style beside 0 as the logic's spawn starts it, `style_start`),
 //!    surfaces named from `sound/materials.txt`;
-//! 4. the collision (`collision::add_world`);
+//! 4. the collision (`collision::add_world`) and the world's liquid
+//!    leaves as water volumes (`water::add_world`; the liquid brush
+//!    entities' came with the entities);
 //! 5. the sky (`sky`, `skyname`, else `desert`) and the map's sprites
 //!    (`sprites::add_map`);
-//! 6. the sounds its entities play (`sounds::add_map`);
+//! 6. the sounds its entities play (`sounds::add_map`) and the step sets
+//!    of the surfaces (`sounds::add_steps`);
 //! 7. the game's kit (`GoldSrcGame::kit`: its bodies).
 //!
 //! The look: LDR, untonemapped, the lightmap as stored (`lightmap`'s
@@ -32,9 +35,12 @@
 //! converts to the same bytes each time (the cache and the served entries
 //! rely on it).
 
-use goldsrc_formats::{bsp::Bsp, materials::Materials};
+use goldsrc_formats::{
+    bsp::Bsp,
+    materials::{Materials, Rule},
+};
 
-use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures};
+use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures, water};
 use crate::{
     core::Team,
     map::{
@@ -57,6 +63,8 @@ pub struct GoldSrcGame {
     pub gravity: f32,
     /// Its kit on its own map (bodies...), after the map's textures.
     pub kit: fn(&Mount, KitLoad, bool, &mut MapData),
+    /// How its `materials.txt` is matched (`goldsrc_formats::materials`).
+    pub materials: Rule,
 }
 
 /// A map's path on the mount.
@@ -165,6 +173,7 @@ pub fn convert(
         }
     }
     let mut slots = vec![None; bsp.textures.len()];
+    let mut liquids: Vec<Option<usize>> = vec![None; bsp.textures.len()];
     for (i, tex) in bsp.textures.iter().enumerate() {
         let Some(tex) = tex else { continue };
         let k = textures::kind(&tex.name);
@@ -172,7 +181,16 @@ pub fn convert(
             continue;
         }
         let texture = match textures::resolve(tex, &wads) {
-            Some(found) => textures::map_texture(&found, decode),
+            Some(found) => {
+                // A liquid's fog, from its palette.
+                if k == textures::Kind::Water
+                    && let Some(m) = water::fog_material(&tex.name, &found.palette)
+                {
+                    data.water_materials.push(m);
+                    liquids[i] = Some(data.water_materials.len() - 1);
+                }
+                textures::map_texture(&found, decode)
+            }
             None => {
                 data.warnings.push(format!("missing texture {}", tex.name));
                 textures::placeholder(&tex.name, tex.width, tex.height, decode)
@@ -198,17 +216,18 @@ pub fn convert(
     report(0.4, "Geometry");
     let materials = mount
         .read("sound/materials.txt")
-        .map(|b| Materials::parse(&String::from_utf8_lossy(&b)))
+        .map(|b| Materials::parse_with(&String::from_utf8_lossy(&b), game.materials))
         .unwrap_or_default();
     // How the light styles start: the logic's own spawn (switchable lights
     // dark or lit, the presets' patterns).
     let logic = crate::logic::world::World::new(&data.entities, 0);
     let styles = |s: u8| style_start(&logic, s);
-    brushes::add_meshes(&bsp, &parts.drawn, &slots, &families, &materials, &styles, &mut data);
+    brushes::add_meshes(&bsp, &parts.drawn, &slots, &liquids, &families, &materials, &styles, &mut data);
 
     report(0.6, "Collision");
     let counts = collision::add_world(&bsp, &mut data);
-    bevy::log::debug!("{name}: collision {counts:?}");
+    let liquids = water::add_world(&bsp, &mut data);
+    bevy::log::debug!("{name}: collision {counts:?}, {liquids} liquid leaves, {} water volumes", data.water.len());
 
     report(0.8, "Sky");
     let skyname = worldspawn.get("skyname").filter(|s| !s.trim().is_empty()).unwrap_or("desert");
@@ -218,6 +237,7 @@ pub fn convert(
 
     report(0.82, "Sounds");
     sounds::add_map(mount, &logic, std::sync::Arc::make_mut(&mut data.sounds), &mut data.warnings);
+    sounds::add_steps(mount, std::sync::Arc::make_mut(&mut data.sounds), &mut data.warnings);
 
     report(0.85, "Kit");
     (game.kit)(mount, options.kit, decode, &mut data);

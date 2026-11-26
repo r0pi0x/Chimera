@@ -310,7 +310,11 @@ impl Mover<'_, '_, '_, '_> {
         }
         self.back_clamp(forward, max_speed);
         // Base velocity moves the player but is not kept (trigger_push).
-        let base = Vec3::new(self.base.x, self.base.y, 0.0);
+        let mut base = Vec3::new(self.base.x, self.base.y, 0.0);
+        if self.cfg.liquid_hazards {
+            // A liquid's current (`QuakeConfig::liquid_hazards`).
+            base += Vec3::new(self.current.x, self.current.y, 0.0);
+        }
         self.v += base;
         if self.v.length() < 1.0 {
             self.v = Vec3::ZERO;
@@ -325,6 +329,13 @@ impl Mover<'_, '_, '_, '_> {
         }
         if !self.cfg.ground_snap {
             self.stay_on_ground();
+        }
+        if self.cfg.liquid_hazards {
+            // The level is found again after the move and the push added
+            // again: what is taken off is the sum (movement.md
+            // "Currents").
+            self.water_check();
+            base += Vec3::new(self.current.x, self.current.y, 0.0);
         }
         self.v -= base;
     }

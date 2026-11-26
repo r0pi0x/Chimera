@@ -78,7 +78,7 @@ fn a_combat_arms_gun_swims_in_a_source_maps_water() {
     let mut sim = party();
     let a = holding(&mut sim, 7, "combat_arms:m4a1");
     let brush = MapBrush::from_box(Vec3::new(-20.0, -1.0, -20.0), Vec3::new(20.0, 6.0, 20.0));
-    sim.app.world_mut().insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false }]));
+    sim.app.world_mut().insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false , lava: false, current: None }]));
     place(&mut sim, a, Vec3::new(0.0, 5.0, 0.0));
     sim.seconds(0.4);
     // Swimming sinks slowly: a free fall of 5 m takes ~0.6 s.

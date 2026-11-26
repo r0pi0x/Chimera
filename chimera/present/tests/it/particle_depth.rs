@@ -250,7 +250,7 @@ fn particles_in_water_seen_from_above_draw_before_the_surface() {
             ))
             .insert_resource(chimera_core::core::MapWater(vec![chimera_core::core::MapWaterVolume {
                 brush: chimera_core::core::MapBrush::from_box(Vec3::new(-10.0, -5.0, -10.0), Vec3::new(10.0, 0.0, 10.0)),
-                slime: false,
+                slime: false, lava: false, current: None,
             }]))
             .insert_resource(chimera_world::map::water::WaterView { under: eye_under.then_some(0), ..default() })
             .init_resource::<Particles>()

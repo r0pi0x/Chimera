@@ -9,7 +9,7 @@ use goldsrc_formats::bsp::hull::{CONTENTS_SOLID, HULL_BOXES};
 use goldsrc_formats::bsp::solids::{Convex, HalfSpace, Shrink, shrink};
 use goldsrc_formats::bsp::{Bsp, ClipNode, Model, Plane, parse_entities, vis::decode_row, wad_names};
 use goldsrc_formats::liblist::LibList;
-use goldsrc_formats::materials::{Materials, match_name};
+use goldsrc_formats::materials::{Materials, Rule, match_name};
 use goldsrc_formats::mdl::{Texture, TriCommand, TriVertex};
 use goldsrc_formats::miptex::MipTex;
 use goldsrc_formats::spr::{Frame, FrameEntry, Sprite, TextureFormat, parse_sprite_list};
@@ -170,6 +170,33 @@ fn materials_match_on_twelve_characters_without_prefixes() {
         "entries written with a prefix never match"
     );
     assert_eq!(m.surface("unlisted"), 'C');
+}
+
+#[test]
+fn cs16_materials_match_sixteen_characters_sorted() {
+    // Unsorted on purpose; the last line has no line break (dropped);
+    // a comment and a digit line are skipped.
+    let text = "// x\nW zeta_texture_name_long_x\nM abc\n1 skip\n  D  Dirty\nG generic015v\nM GENERIC015V\nN -0cstrike_me1pl\nP last";
+    let m = Materials::parse_with(text, Rule::Cs16);
+    assert_eq!(m.entries.len(), 6);
+    assert!(m.entries.windows(2).all(|w| w[0].1 <= w[1].1), "sorted");
+    assert_eq!(m.surface("ABC"), 'M');
+    assert_eq!(m.surface("dirty"), 'D');
+    assert_eq!(m.surface("{abc"), 'M');
+    // 16 characters, not 12.
+    assert_eq!(m.surface("zeta_texture_name_long_x"), 'W');
+    assert_eq!(m.surface("zeta_texture_nXXX"), 'C');
+    // Prefixed entries never match; a last line with no break is dropped.
+    assert_eq!(m.surface("-0cstrike_me1pl"), 'C');
+    assert_eq!(m.surface("cstrike_me1pl"), 'C');
+    assert_eq!(m.surface("last"), 'C');
+    // Half-Life's rule on the same text cuts to 12.
+    let hl = Materials::parse_with("W zeta_texture_name_long_x\n", Rule::HalfLife);
+    assert_eq!(hl.surface("zeta_texture_nXXX"), 'W');
+    // 1024 entries read.
+    let many: String = (0..1100).map(|i| format!("M t{i:04}\n")).collect();
+    assert_eq!(Materials::parse_with(&many, Rule::Cs16).entries.len(), 1024);
+    assert_eq!(Materials::parse_with(&many, Rule::HalfLife).entries.len(), 1100);
 }
 
 #[test]

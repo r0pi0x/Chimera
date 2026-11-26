@@ -4,11 +4,19 @@ use bevy::prelude::*;
 
 use crate::{
     core::Intent,
+    units::to_units,
     mover::{
         Mover, SWIM_SINK, SWIM_WISH_SCALE, WALKABLE_NORMAL_Z, WATER_FEET_PROBE, WATER_JUMP_DROP, WATER_JUMP_EYE_EXTRA,
         WATER_JUMP_MIN_VZ, WATER_JUMP_PUSH, WATER_JUMP_REACH, WATER_JUMP_TIME,
     },
 };
+
+/// How far the drawn eye is kept from a liquid's surface, units
+/// (`cl_waterdist`).
+const WATER_VIEW_GAP: f32 = 4.0;
+
+/// A current's push per water level, units/s.
+const CURRENT_PER_LEVEL: f32 = 50.0;
 
 impl Mover<'_, '_, '_, '_> {
     /// Water level from three points at the box's centre line: 1 unit
@@ -34,7 +42,9 @@ impl Mover<'_, '_, '_, '_> {
             answer
         };
         self.me.water_level = 0;
+        self.current = Vec3::ZERO;
         let Some(slime) = test(0) else {
+            self.me.in_lava = false;
             return;
         };
         self.me.in_slime = slime;
@@ -44,6 +54,41 @@ impl Mover<'_, '_, '_, '_> {
             if test(2).is_some() {
                 self.me.water_level = 3;
             }
+        }
+        if self.cfg.liquid_hazards {
+            // GoldSrc: lava is a kind of slime that burns; a current adds
+            // 50 x the water level along its direction each time the level
+            // is found.
+            let volume = self.trace.point_volume(points[0]);
+            self.me.in_lava = volume.is_some_and(|v| v.lava);
+            if let Some(dir) = volume.and_then(|v| v.current) {
+                self.current = to_units(dir.normalize_or_zero() * 1000.0).normalize_or_zero()
+                    * (CURRENT_PER_LEVEL * f32::from(self.me.water_level));
+            }
+        }
+    }
+
+    /// The eye height the view is drawn at (units over the feet): the
+    /// movement's own, but in a liquid (`QuakeConfig::liquid_hazards`,
+    /// water.md "The view in a liquid") kept `WATER_VIEW_GAP` from the
+    /// surface: out of it (level 2) raised to that far over it, under it
+    /// (level 3) lowered to that far under it. Only the drawn view moves.
+    pub(crate) fn view_eye(&self) -> f32 {
+        let eye = self.me.eye;
+        if !self.cfg.liquid_hazards || !matches!(self.me.water_level, 2 | 3) {
+            return eye;
+        }
+        let gap = WATER_VIEW_GAP;
+        let liquid = |z: f32| self.trace.point_water(self.feet + Vec3::Z * z).is_some();
+        if self.me.water_level == 2 {
+            // From a gap below the eye up, one unit at a time, to the first
+            // point out of the liquid.
+            let surface = (0..=gap as usize).map(|i| eye - gap + i as f32).find(|&z| !liquid(z));
+            surface.map_or(eye, |z| eye.max(z + gap))
+        } else {
+            // From a gap above the eye down to the first liquid point.
+            let surface = (0..=gap as usize).map(|i| eye + gap - i as f32).find(|&z| liquid(z));
+            surface.map_or(eye, |z| eye.min(z - gap))
         }
     }
 
@@ -87,7 +132,7 @@ impl Mover<'_, '_, '_, '_> {
 
     /// Swimming (waist deep or more): 3D wish, proportional friction, no
     /// gravity; holding jump rises.
-    pub(crate) fn swim(&mut self, intent: &Intent, f: f32, s: f32, max_speed: f32) {
+    pub(crate) fn swim(&mut self, intent: &Intent, f: f32, s: f32, up: f32, max_speed: f32) {
         let (forward, right) = Self::view(intent);
         let mut wish = forward * f + right * s;
         let lift = if self.cfg.swim_lift_max_speed {
@@ -95,7 +140,17 @@ impl Mover<'_, '_, '_, '_> {
         } else {
             self.cfg.client_maxspeed
         };
-        if intent.jump {
+        if self.cfg.liquid_hazards {
+            // GoldSrc (movement.md "Water"): the up key adds to the wish;
+            // with no input at all the wish sinks (jump isn't an input);
+            // a current's push is added before the friction and taken off
+            // after the move.
+            wish.z += up;
+            if f == 0.0 && s == 0.0 && up == 0.0 {
+                wish.z -= SWIM_SINK;
+            }
+            self.v += self.current;
+        } else if intent.jump {
             wish.z += lift;
         } else if f == 0.0 && s == 0.0 {
             wish.z -= SWIM_SINK;
@@ -106,7 +161,7 @@ impl Mover<'_, '_, '_, '_> {
         let dir = wish.normalize_or_zero();
         let speed = self.v.length();
         let mut new_speed = speed - self.dt * speed * self.cfg.friction * self.me.surface_friction;
-        if new_speed < 0.1 {
+        if new_speed < if self.cfg.liquid_hazards { 0.0 } else { 0.1 } {
             new_speed = 0.0;
         }
         self.v = if speed > 0.0 {
@@ -136,6 +191,9 @@ impl Mover<'_, '_, '_, '_> {
             self.step_move();
         } else {
             self.slide();
+        }
+        if self.cfg.liquid_hazards {
+            self.v -= self.current;
         }
     }
 

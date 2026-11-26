@@ -25,7 +25,7 @@ use bevy::{camera::visibility::RenderLayers, prelude::*};
 use super::prop_material::PropMaterial;
 use crate::map::{
     LightField, MapData, MapDebugView, ViewModels,
-    shells::{MapShellPhysics, ShellHit, ShellState, bounce_volume, shell_alpha, shell_step},
+    shells::{MapShellPhysics, ShellHit, ShellState, ThrowShell, bounce_volume, shell_alpha, shell_step},
     sound::{PlaySound, SoundBank},
     view_model::{
         self, EffectSettings, VIEW_MODEL_LAYER, ViewAnimator, ViewModelAnchor, ViewModelCamera, ViewModelEvent,
@@ -292,6 +292,80 @@ pub fn eject(
                         RenderLayers::layer(VIEW_MODEL_LAYER),
                         bevy::light::NotShadowCaster,
                     ));
+                }
+            });
+    }
+}
+
+/// Throw the shells a game's own rule asks for (`ThrowShell`) into the
+/// world: no view model's port, drawn in the world from the start (a case
+/// of another player's gun, a late one).
+#[allow(clippy::too_many_arguments)]
+pub fn throw(
+    mut events: MessageReader<ThrowShell>,
+    assets: Option<Res<ShellAssets>>,
+    effects: Option<Res<EffectSettings>>,
+    light_field: Option<Res<LightField>>,
+    mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut dice: Local<u32>,
+    mut commands: Commands,
+) {
+    let Some(assets) = assets else {
+        events.clear();
+        return;
+    };
+    if effects.is_some_and(|e| e.eject_brass == 0) {
+        events.clear();
+        return;
+    }
+    let mut roll = |lo: f32, hi: f32| {
+        let mut x = dice.wrapping_add(0x9e37_79b9).max(1);
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *dice = x;
+        lo + (hi - lo) * ((x >> 8) as f32 / (1u32 << 24) as f32)
+    };
+    for ev in events.read() {
+        let Some(look) = assets.models.get(&look_key(&ev.game, &ev.key)) else { continue };
+        let (parts, p) = (&look.parts, look.physics);
+        let mut own = Vec::with_capacity(parts.len());
+        if let Some(materials) = materials.as_mut() {
+            let probe = light_field.as_ref().map(|f| (f.0.0)(ev.position));
+            for (_, m) in parts {
+                let Some(mut material) = materials.get(m).cloned() else { continue };
+                if let Some(probe) = &probe {
+                    material.params.set_probe(probe, assets.light_scale);
+                }
+                own.push(materials.add(material));
+            }
+        }
+        let state = ShellState {
+            position: ev.position,
+            velocity: ev.velocity,
+            rotation: ev.rotation,
+            spin: Vec3::new(roll(-p.spin, p.spin), roll(-p.spin, p.spin), roll(-p.roll_spin, p.roll_spin)),
+            age: -roll(0.0, p.life_jitter),
+            resting: false,
+            bounced: true,
+        };
+        commands
+            .spawn((
+                Name::new("Shell"),
+                Shell {
+                    state,
+                    kind: look_key(&ev.game, &ev.key),
+                    bounce: look.bounce.clone(),
+                    physics: p,
+                    materials: own.clone(),
+                    in_world: true,
+                },
+                Transform::from_translation(ev.position).with_rotation(ev.rotation),
+                Visibility::default(),
+            ))
+            .with_children(|s| {
+                for ((mesh, _), material) in parts.iter().zip(own) {
+                    s.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material), bevy::light::NotShadowCaster));
                 }
             });
     }

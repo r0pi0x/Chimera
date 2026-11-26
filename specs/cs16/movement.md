@@ -3,7 +3,9 @@
 Source basis: the community reimplementation of the CS 1.6 game library
 (ReGameDLL_CS, open source; read in a separate spec session as reference
 only, its original-game behaviour, never its optional fixes or
-additions), the HL SDK's shared movement for Half-Life's base, then
+additions), the community reimplementation of the CS 1.6 client
+library (cs16-client: its input code, for the walk and up keys), the
+HL SDK's shared movement for Half-Life's base, then
 checked against the game: the console variable defaults read from a
 local HLDS (build 10211, `mod cstrike`) started without a server config,
 the client's shipped `config.cfg`, and the player models' hull data in
@@ -46,8 +48,12 @@ Status: draft
   jump) subtract `msec` each command.
 - Inputs: forward, side and up amounts in units/s, ±400 per key by
   default (`cl_forwardspeed`, `cl_sidespeed`, `cl_backspeed` are 400 in
-  the shipped client config; `cl_upspeed` 320 (ref.)). The walk key
-  scales them by `cl_movespeedkey` (0.52 (ref.)).
+  the shipped client config; `cl_upspeed` 320 (ref.), on `+moveup` and
+  `+movedown`, used only in water and noclip). The client first scales
+  the three amounts together so their length is at most the maximum
+  speed, then the walk key multiplies them by `cl_movespeedkey` (0.52
+  (ref.), never more than 0.52): walking with a 250 gun is 130 units/s,
+  not 0.52 × 400.
 - Entity friction and entity gravity are per-player multipliers, both 1
   for a normal player.
 
@@ -326,8 +332,17 @@ player's origin, tested against the ladder model's hull for the player's
 current box size, is not empty. Not on a train and alive. On a ladder:
 
 - Movement type becomes "fly": no gravity, no friction.
-- A hull trace from the origin toward the ladder model's centre gives
-  the ladder's facing plane. If it hits:
+- A trace from the origin toward the ladder model's centre (the middle
+  of its bounds) gives the ladder's facing plane. This trace is a
+  **point** trace against the ladder brush itself, not against the
+  grown hull used for the test above: the origin is always inside the
+  grown hull when on a ladder (that is what the test finds), so a hull
+  trace would start and stay inside and never see a face, yet looking
+  level at a ladder and pressing forward climbs it in the game, which
+  needs the face's normal (deduced; the engine's trace is not in the
+  references). So the plane is the face of the ladder brush nearest
+  the origin along that line, normally the face toward the player.
+  If it hits:
   - speed = min(200, maxspeed), × 0.333 when ducked;
   - forward/back/left/right are taken from the **keys** (not the input
     amounts): forward = ± speed, right = ± speed;
@@ -343,25 +358,63 @@ current box size, is not empty. Not on a train and alive. On a ladder:
     and the same amount (sign kept, into the face = up) is added along
     the ladder's surface, perpendicular to its horizontal edge; the rest
     is kept. So looking up while climbing is faster than looking level.
+- If the trace hits nothing, because the origin is inside the ladder
+  brush itself (a free-standing ladder walked into, or a brush thicker
+  than the 16 units between the box's side and the origin): none of the
+  above happens this command; the player is still on the ladder (fly
+  move type, no gravity, no friction) and keeps last command's
+  velocity (Open questions 6).
 - The move itself is a slide move with any base velocity added and
   removed around it.
 
 ### Water
 
 Water level, from point contents: 1 when the point 1 unit above the
-box's bottom is water (or slime or lava), 2 when the origin (the box's
-middle) is too, 3 when the eye is too. A current volume adds
-50 × level along its direction to the base velocity. In water at level
-≥ 2 there is no gravity.
+box's bottom is a liquid, 2 when the origin (the box's middle) is too,
+3 when the eye is too. Liquid is any contents from −3 down to −14: water
+(−3), slime (−4), lava (−5), and the current values (−9 to −14, which
+count as water). The liquid type is the bottom point's. In water at
+level ≥ 2 there is no gravity. Damage, drowning, sounds and the view:
+[water.md](water.md).
 
 Swimming (level ≥ 2): at level exactly 2, a water jump is tried (see
-below). The wish velocity uses the full 3D view vectors plus the up
-input (or −60 when there is no input at all), capped at maxspeed, then
-× 0.8. Water friction: speed −= friction · entity friction · dt · speed.
-Acceleration toward the wish speed with `sv_accelerate` (×
-entity friction × dt × wish speed, capped at what is missing). Then the
-move: from the destination raised by step size + 1, trace down to the
-destination; if clear, take it, else slide move.
+below). Then, if jump is held (and no water jump is running), vz is
+**set** to 100 in water, 80 in slime, 50 in lava (every command it is
+held, before the water move), with the swim-up sound (water.md). Then
+the water move:
+
+1. Wish velocity = view forward (full 3D) × forward input + view right
+   × side input; then z += the up input, or, when the forward, side and
+   up inputs are all 0, z −= 60 (jump is not an input: holding jump
+   alone still sinks the wish). The inputs were already scaled together
+   to the maximum speed (and × 0.333 while ducking, × 0.52 walking).
+2. Wish speed = its length, capped at maxspeed, then × 0.8.
+3. Velocity += base velocity (currents, below). Water friction: speed
+   s → max(s − `sv_friction` · entity friction · dt · s, 0), direction
+   kept (4 % a command at 10 ms).
+4. If the wish speed is under 0.1, stop here (no move this command;
+   not reached in practice, the sink wish is 48). Acceleration: add =
+   wish speed − s (the speed after friction, whatever its direction); if
+   add > 0, velocity += min(`sv_accelerate` · entity friction · dt ·
+   wish speed, add) along the wish direction.
+5. Move: from the destination raised by step size + 1, trace down to
+   the destination; if clear, take it, else slide move.
+6. Velocity −= base velocity.
+
+Steady speeds that follow (maxspeed 250, 10 ms commands, no current):
+
+- No input: sinks to 48 units/s (0.8 × 60).
+- Jump held, no other input: each command vz = 100, friction leaves 96
+  and the acceleration adds nothing (96 > 48): rises at 96 (slime 76.8,
+  lava 48).
+- Up key (`+moveup`, 320 clipped to 250): wish 200 up: rises at 200.
+  Down key: sinks at 200.
+- Forward, looking level: 200 horizontally (looking 30° down: 200 along
+  the view, so 100 down).
+- Jump held while swimming forward, looking level: vz is set to 100
+  each command and the acceleration only adds what the speed's length
+  lacks from 200, so the horizontal speed settles at 174.4 while rising
+  at 96.
 
 Water jump: only when not already water-jumping, vz ≥ −180, and not
 moving backwards relative to the flat view direction. A point-hull trace
@@ -371,6 +424,31 @@ height; if that one is clear: vz = 225, a horizontal push of 50 toward
 the wall for 2000 ms (the water-jump timer counts down by `msec`; it
 ends early when leaving water or falling while swimming). During it,
 acceleration and friction are off.
+
+#### Currents
+
+A liquid whose contents are one of the current values pushes the
+player: −9 along +x, −10 along +y, −11 along −x, −12 along −y, −13 up,
+−14 down (in the compiler's names: current 0, 90, 180, 270, up, down).
+Each time the water level is found, 50 × the water level units/s along
+that direction is **added** to the command's base velocity. The water
+level is found at the start of the command and again after the move,
+so (as the movement code stands) a current's push counts once in the
+move and once more in the velocity taken off after it:
+
+- walking (level 1): the move goes at own velocity + base + c (c = 50 ×
+  level along the current), and the stored velocity ends c lower than
+  the move's, along the current;
+- swimming: base + c is added before the water friction, so friction
+  works on the sum and the player's own velocity settles near −c: a
+  steady current drags a floating player at first and then hardly
+  moves them.
+
+The base velocity a command starts with (conveyors, `trigger_push`) is
+the engine's; with nothing else pushing it is 0. Lava, slime and
+currents move otherwise exactly as water. None of the install's maps or
+WADs has a current: no `!cur_` texture, and every stock `func_water`'s
+`skin` is −3 (bsp.md), so currents matter only for custom maps.
 
 ### Fall damage and landing
 
@@ -433,7 +511,7 @@ One command, a living walking player:
 5. Record the falling speed if in the air.
 6. Find a ladder.
 7. Duck handling (input scale × 0.333, duck/unduck).
-8. Footstep sounds.
+8. Footstep sounds ([footsteps.md](footsteps.md)).
 9. Ladder movement if on one (fly type), else walking type.
 10. Walking, not in water deeper than 1: first gravity half.
 11. Water jump in progress: keep its push, slide move, update water,
@@ -448,7 +526,7 @@ One command, a living walking player:
 17. Ground detection.
 18. Clamp; second gravity half (not in water).
 19. On ground: vz = 0. Landing effects.
-20. Water enter/leave sounds.
+20. Water enter/leave sounds ([water.md](water.md)).
 
 The game rules then (after the movement, same command) handle the
 weapon (weapons.md), fall damage and the hit speed modifier.
@@ -513,6 +591,14 @@ At 10 ms commands, flat ground, maxspeed 250 (knife), default cvars.
 | moving at 400 (3D) with maxspeed 250 | jump | take-off | speed scaled to 240 before vz is set |
 | on a vertical ladder, facing it level, maxspeed 250 | hold forward | | velocity 200 straight up |
 | same, looking 45° up | hold forward | | 282.8 up (141.4 kept from the view's own vertical part + 141.4 converted) |
+| standing against a ladder brush 4 units thick backed by a wall, origin 12 units from its face | | ladder test | on the ladder (the origin inside the grown hull); the point trace hits the face toward the player |
+| walking through a free-standing ladder brush 8 units thick | origin inside the brush | that command | on the ladder, no ladder velocity: last command's velocity kept, no gravity |
+| walk key held, 250 gun | hold forward | steady | 130 units/s (400 clipped to 250, × 0.52) |
+| water level 3, still | no input | steady | sinking at 48 |
+| water level 3 | hold jump only | steady | rising at 96 (slime 76.8, lava 48) |
+| water level 3, 250 gun | hold `+moveup` | steady | rising at 200 |
+| water level 3, looking level | hold forward and jump | steady | 174.4 horizontal, 96 up |
+| standing still on ground at water level 1 in a current of contents −9 | no input | first command | moved +0.5 along x (50 units/s × 0.01); stored velocity ends at −50 along x |
 | hit by an AK-47 in the chest, standing on ground at 250 | | next command | modifier 0.66, velocity × 0.66 |
 
 ## Open questions
@@ -531,3 +617,10 @@ At 10 ms commands, flat ground, maxspeed 250 (knife), default cvars.
    the reference's era) to read from the client's console.
 5. Whether a bullet trace counts a ducked player's box or only the
    hitboxes (damage.md).
+6. Ladders: the point trace toward the ladder's centre is deduced from
+   the game's behaviour (climbing while looking level), not read; and
+   when the origin is inside the ladder brush itself, whether the
+   engine's trace reports no hit (the player keeps the last velocity,
+   as written) or a hit with no plane (then the velocity would be the
+   view-relative keys unconverted and jumping off would give 0). Check
+   in the game by walking through a free-standing ladder.
