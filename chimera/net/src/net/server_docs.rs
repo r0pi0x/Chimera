@@ -19,7 +19,8 @@
 //! - **The server** packs each set once, in a thread started with the
 //!   first manifest (`Packed`: the documents as postcard, bzip2'd; Combat
 //!   Arms' install set, ~2,300 documents: ~14 MB of text, ~280 KB packed,
-//!   ~2 s), and sends a client what it asked for in `DocsChunk`s of
+//!   ~2 s; a big set's packing is kept in the converted cache by the
+//!   documents' hash and read back at the next start, `pack_kept`), and sends a client what it asked for in `DocsChunk`s of
 //!   `CHUNK` bytes, `PER_FRAME` a frame, logging each set's sizes. A set
 //!   packed over `DocsLimit` (`MAX_PACKED`, 4 MB) isn't sent: the server refuses with the
 //!   reason (`DocsDenied`), and the client leaves with it.
@@ -52,6 +53,7 @@ use super::{
     manifest::MatchManifest,
 };
 use crate::{core::NetRole, weapon::WeaponRegistry};
+use chimera_core::mount::assets::map_cache::{self, Key, MapCache, Outcome};
 use chimera_sim::server_docs::{self as docs, Docs, ServerDocs};
 
 /// The bytes of a set a server sends per message.
@@ -151,6 +153,70 @@ pub fn registry_offer(registry: &WeaponRegistry) -> RegistryOffer {
     }
 }
 
+/// A set's documents as sent (`encode`), packed: bzip2 at its best level.
+fn pack(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut z = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+    z.write_all(raw).and_then(|()| z.finish()).map_err(|e| e.to_string())
+}
+
+/// The packing's version in the converted cache: bump it when `pack`
+/// packs otherwise (a client only needs the bytes to unpack to the
+/// documents: `unpack`).
+const PACKED: &str = "bzip2 best";
+
+/// The least encoded size (bytes) a set's packing is kept from: a
+/// game's own documents pack in milliseconds (no entry each).
+pub const KEEP_PACKED_FROM: usize = 256 * 1024;
+
+/// The cache a set of `bytes` encoded bytes is kept packed in: the
+/// converted cache (chimera_assets' `map_cache`, off with
+/// `CHIMERA_MAP_CACHE=0`) for a big set (`KEEP_PACKED_FROM`).
+fn pack_disk(bytes: usize) -> Option<MapCache> {
+    (bytes >= KEEP_PACKED_FROM).then(MapCache::from_env).flatten()
+}
+
+/// `pack(raw)`, read back from `disk` when documents of this `hash` (the
+/// offer's: SHA-256 of `raw`) were packed before, and how it went:
+/// packing Combat Arms' install set (14 MB) took 20 G instructions of a
+/// thread at every server's and host's start (docs/performance.md,
+/// "Start cost, fifth pass"). The entry is the packed bytes; it reads no
+/// file, so it has no inputs.
+pub fn pack_kept(raw: &[u8], hash: &[u8; 32], disk: Option<&MapCache>) -> (Result<Vec<u8>, String>, Outcome) {
+    let key = Key::new("server_docs:packed", PACKED).part("sha256", hash);
+    match map_cache::cached(disk, &chimera_core::mount::Mount::default(), key, || pack(raw).map(PackedBytes)) {
+        Ok((bytes, outcome)) => (Ok(bytes.0), outcome),
+        Err(e) => (Err(e), Outcome::Off),
+    }
+}
+
+/// Packed bytes as an entry: one byte string, not a sequence of bytes.
+#[derive(Serialize, Deserialize)]
+struct PackedBytes(#[serde(with = "packed_bytes")] Vec<u8>);
+
+mod packed_bytes {
+    pub fn serialize<S: serde::Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(v)
+    }
+
+    struct Bytes;
+
+    impl serde::de::Visitor<'_> for Bytes {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("packed bytes")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(self, b: &[u8]) -> Result<Vec<u8>, E> {
+            Ok(b.to_vec())
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        d.deserialize_bytes(Bytes)
+    }
+}
+
 /// A set packed for sending (filled by a thread).
 #[derive(Default)]
 struct Packed(OnceLock<Result<Vec<u8>, String>>);
@@ -176,19 +242,19 @@ fn cached(world: &mut World, name: &str, d: &Docs, pack: bool) -> (DocsOffer, Ar
     let offer = offer_of(name, d);
     let packed = Arc::new(Packed::default());
     if pack {
-        let (d, p, n) = (d.clone(), packed.clone(), name.to_string());
+        let (d, p, n, hash) = (d.clone(), packed.clone(), name.to_string(), offer.hash);
         std::thread::spawn(move || {
             let started = std::time::Instant::now();
             let raw = encode(&d);
-            let mut z = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
-            let out = z.write_all(&raw).and_then(|()| z.finish()).map_err(|e| e.to_string());
+            let (out, kept) = pack_kept(&raw, &hash, pack_disk(raw.len()).as_ref());
             if let Ok(b) = &out {
                 info!(
-                    "{n}: {} documents, {} bytes, packed {} bytes in {:.2} s",
+                    "{n}: {} documents, {} bytes, packed {} bytes in {:.2} s{}",
                     d.len(),
                     raw.len(),
                     b.len(),
-                    started.elapsed().as_secs_f64()
+                    started.elapsed().as_secs_f64(),
+                    if kept == Outcome::Hit { " (read back)" } else { "" }
                 );
             }
             let _ = p.0.set(out);
@@ -525,4 +591,39 @@ pub fn wanted(world: &World) -> BTreeSet<String> {
         .get_resource::<Pending>()
         .map(|p| p.wanted.keys().cloned().collect())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A set's packing read back from the converted cache is the packing
+    /// made (`pack_kept`): the first call packs and writes the entry, the
+    /// second reads it; what a client unpacks is the documents as sent;
+    /// other documents are another entry; without a cache it packs.
+    #[test]
+    fn a_sets_packing_reads_back_from_the_cache_as_packed() {
+        let dir = std::env::temp_dir().join(format!("chimera-packed-docs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cache = MapCache::at(&dir, 1 << 30);
+        let docs: Vec<(String, String)> = (0..40).map(|i| (format!("w{i}.toml"), format!("id = \"t:w{i}\"\nslot = {i}\n"))).collect();
+        let raw = encode(&docs);
+        let hash: [u8; 32] = sha2::Sha256::digest(&raw).into();
+        let plain = pack(&raw).unwrap();
+        let (first, how) = pack_kept(&raw, &hash, Some(&cache));
+        assert_eq!((first.as_ref(), how), (Ok(&plain), Outcome::Miss));
+        let (again, how) = pack_kept(&raw, &hash, Some(&cache));
+        assert_eq!((again.as_ref(), how), (Ok(&plain), Outcome::Hit), "read back the same bytes");
+        let mut unpacked = Vec::new();
+        bzip2::read::BzDecoder::new(again.unwrap().as_slice()).read_to_end(&mut unpacked).unwrap();
+        assert_eq!(unpacked, raw, "a client unpacks the documents as sent");
+        // Other documents: their own entry.
+        let other = encode(&docs[..3]);
+        let other_hash: [u8; 32] = sha2::Sha256::digest(&other).into();
+        assert_eq!(pack_kept(&other, &other_hash, Some(&cache)), (pack(&other), Outcome::Miss));
+        assert_eq!(pack_kept(&raw, &hash, None), (Ok(plain), Outcome::Off));
+        // Small sets aren't kept at all.
+        assert!(pack_disk(KEEP_PACKED_FROM - 1).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -333,6 +333,13 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   archive opened. Combat Arms' install UI keeps its string table and
   decoded art (`install::strings_and_art`, `UI_READER`).
   docs/performance.md, "Start cost, fourth pass".
+  **A game's map list (2026-11-25).** `GameInfo::map_list`
+  (chimera_core's `game_registry::map_list`) keeps the maps an install
+  holds and its map cycle the same way, for a game that names its mount
+  unopened (`GameInfo::unopened`: the four Source games), keyed by the
+  archives' stamps and the maps the loose layers and the store list; the
+  set's tables (`kept_docs`) decode straight into TOML's tables.
+  docs/performance.md, "Start cost, fifth pass".
   **Halo, not moved (no disc image here).** How its donors would sit
   behind the same API: one `Dressing` for `audio::GUEST`'s whole chain
   (game `halo_ce`, converter `maps::CONVERTER`, mount `maps::mount_for`

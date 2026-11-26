@@ -153,6 +153,7 @@ pub static INFO: GameInfo = GameInfo {
     open: mount::open,
     map_cycle: |_| Vec::new(),
     map_names: world::map_names,
+    unopened: None,
     steam: None,
     // In the install's archives (`worlds*/<name>.dat`, `world::find`), not
     // a file clients download.

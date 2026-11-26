@@ -165,6 +165,7 @@ pub static INFO: GameInfo = GameInfo {
     // mount holds; the real rotation is the game type rules' (a later spec).
     map_cycle: maps::held,
     map_names: maps::map_names,
+    unopened: None,
     steam: None,
     // A map is a file of the install's disc, not one clients download.
     map_file: |_| None,

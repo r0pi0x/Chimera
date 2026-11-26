@@ -553,6 +553,7 @@ mod tests {
         open: |_| Err(std::io::Error::other("no install")),
         map_cycle: |_| Vec::new(),
         map_names: |_| Vec::new(),
+        unopened: None,
         map_file: |n| Some(format!("maps/{n}.bsp")),
         steam: Some(install::SteamGame { app_id: 1, name: "Counter-Strike Source", required: &["cstrike/a_dir.vpk", "hl2/b_dir.vpk"], server_apps: &[], folders: &[] }),
         import_map: |_| Err("no".into()),

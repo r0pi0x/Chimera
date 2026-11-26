@@ -234,7 +234,9 @@ fn image(images: &mut Assets<Image>, p: UiImage) -> Picture {
 
 /// DoD:S's pictures from its mount (the install, or the asset store's
 /// `players` set), tried at startup and again further apart (2 s doubling
-/// up to 30 s) until their files are here, never fetching: the HUD's
+/// up to 30 s) until their files are here, never fetching, each try read
+/// behind the frames (`tasks::Behind`: 0.6 G instructions with the
+/// mount): the HUD's
 /// (`HudPictures`) and the kill icons, registered for every app's kill
 /// feed (`WeaponIcons`; until then the feed writes the gun's name).
 pub fn load_pictures(
@@ -242,17 +244,28 @@ pub fn load_pictures(
     mut pictures: ResMut<HudPictures>,
     images: Option<ResMut<Assets<Image>>>,
     time: Option<Res<Time<Real>>>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut tries: Local<Tries>,
+    mut reading: Local<Option<chimera_core::tasks::Behind<Option<dods::game::hud::Pictures>>>>,
 ) {
-    let now = time.map_or(0.0, |t| t.elapsed_secs());
-    if tries.done || now < tries.next {
+    if tries.done {
         return;
     }
     let Some(mut images) = images else { return };
-    tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
-    tries.next = now + tries.wait;
-    let Some(mount) = INFO.mount() else { return };
-    let Some(read) = dods::game::hud::pictures(&mount) else { return };
+    if reading.is_none() {
+        let now = time.map_or(0.0, |t| t.elapsed_secs());
+        if now < tries.next {
+            return;
+        }
+        tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
+        tries.next = now + tries.wait;
+        *reading = Some(chimera_core::tasks::Behind::start(|| INFO.mount().and_then(|mount| dods::game::hud::pictures(&mount))));
+    }
+    // Still reading: the frames go on.
+    let Some(read) = reading.as_mut().and_then(|r| r.take(wait.is_some())) else { return };
+    *reading = None;
+    // Not here yet: the next try.
+    let Some(read) = read else { return };
     tries.done = true;
     let kill: BTreeMap<String, Picture> = read.kill_icons.into_iter().map(|(id, p)| (id, image(&mut images, p))).collect();
     info!("DoD:S: {} kill icons, {} weapons' and {} classes' HUD pictures", kill.len(), read.weapons.len(), read.classes.len());

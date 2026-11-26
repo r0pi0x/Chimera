@@ -37,6 +37,7 @@ static GAME: GameInfo = GameInfo {
     open: |_| Err(std::io::ErrorKind::NotFound.into()),
     map_cycle: |_| vec!["one".into(), "two".into()],
     map_names: |_| Vec::new(),
+    unopened: None,
     map_file: |n| Some(format!("maps/{n}.bsp")),
     steam: None,
     import_map: |_| Err("no".into()),

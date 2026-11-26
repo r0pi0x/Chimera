@@ -992,8 +992,9 @@ impl InstalledMaps {
 }
 
 /// `InstalledMaps` from each registered game's install that has pool
-/// rules (`map_fit::MapPoolAppExt`; mounted once; kept when already
-/// there).
+/// rules (`map_fit::MapPoolAppExt`; listed once, from the converted cache
+/// when the install gave the list before: `GameInfo::map_list`; kept
+/// when already there).
 pub fn find_installed_maps(world: &mut World) {
     if world.contains_resource::<InstalledMaps>() {
         return;
@@ -1007,7 +1008,7 @@ pub fn find_installed_maps(world: &mut World) {
     let found = games
         .into_iter()
         .filter(|g| wanted.get(g.id).is_some() && pool.has_rules(g.id))
-        .filter_map(|g| Some((g.id.to_string(), (g.map_names)(&g.mount()?))))
+        .filter_map(|g| Some((g.id.to_string(), g.map_list()?.names)))
         .collect();
     world.insert_resource(InstalledMaps(found));
 }

@@ -15,6 +15,10 @@
 //! What a game can't say as data is a plain `fn` (opening its install,
 //! reading its map cycle, importing a map file): no trait objects, so a
 //! `GameInfo` is a `static` and `Games` is cheap to clone.
+//!
+//! A game's map list (`GameInfo::map_list`, module `map_list`) reads back
+//! from the converted cache without opening the install's archives when
+//! the game names its mount unopened (`GameInfo::unopened`).
 
 use std::{
     io,
@@ -24,6 +28,7 @@ use std::{
 use bevy::prelude::*;
 
 pub mod known;
+pub mod map_list;
 
 use crate::mount::{Mount, config, install::SteamGame};
 
@@ -52,6 +57,15 @@ pub struct GameInfo {
     /// own layout (Source's `maps/<name>.bsp`, Combat Arms'
     /// `worlds*/<name>.dat`).
     pub map_names: fn(&Mount) -> Vec<String>,
+    /// What `open` would mount at a path, named without opening an
+    /// archive: its loose folders and the asset store as one mount, in
+    /// `open`'s order, and the archive files it would open (none when
+    /// those layers are the whole mount). A game whose mount costs much
+    /// to open gives it, so that what is read through the mount at every
+    /// start comes back from the converted cache instead (`map_list`;
+    /// chimera_assets' `map_cache::cached_unopened`). None: the mount is
+    /// opened.
+    pub unopened: Option<fn(&Path) -> io::Result<(Mount, Vec<PathBuf>)>>,
     /// The Steam app the install is found by (`mount::install`): None for
     /// a game found by its configured path only.
     pub steam: Option<SteamGame>,
@@ -233,6 +247,7 @@ mod tests {
         open: no_mount,
         map_cycle: |_| Vec::new(),
         map_names: |_| Vec::new(),
+        unopened: None,
         map_file: |n| Some(format!("maps/{n}.bsp")),
         steam: None,
         import_map: |_| Err("no".into()),

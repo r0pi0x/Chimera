@@ -6046,6 +6046,180 @@ nothing published needs republishing.
 - The offscreen sound thread, the kept dressings' decodes and the
   server's animation sets: as the third pass left them.
 
+## Start cost, fifth pass (2026-11-25)
+
+The whole start again on main with the listen-first start, the offscreen
+sound fix and the fourth pass merged (fcc23cf2e): a hosting client
+(`ultimate_gun_game --offscreen 320x180 +maxplayers 4 +after 1 ugg_new 7
+13 combat_arms:warehouse`, its start map de_dust2 as a level change; the
+same with `--frames 20`, which loads the start map before the app and
+spawns it whole in the first frame: the one run whose start map's counts
+repeat) and the dedicated server (`ultimate_gun_game_server -port 0
++maxplayers 4 +map combat_arms:warehouse`). Dev profile, six games, a
+cache folder of its own (`CHIMERA_MAP_CACHE`), read back; the boot log
+summed from the process's start, M instructions, the starting thread's
+and every thread's.
+
+**The server's 7.2 G of Combat Arms' data was the cache's eviction.**
+"A join while the host starts" saw the party's first stage grow from
+12.4 to 19.6 G on the server's main thread. On a cache that keeps its
+entries the stage is 2.5 G (the first run on the empty folder: 18.1 G,
+the same read with nothing kept): the attribute records, the merged
+documents and the set's tables were evicted at every write on the shared
+cache (fixed in f8d192b0d, "Start cost, fourth pass"). What is left of
+it is 1.9 G (the tables read back, the records made, the set
+registered: below), on the main thread before it listens.
+
+**What the first frame was.** Past the plugins, the process still ran
+9.5 G (client) and 5.1 G (server) on its main thread before it listened,
+on the greybox. The boot log now says a costly step's own count inside a
+stage (`boot::within`: `boot:   within <name>: N M this thread's`), and
+`perf record -e instructions:u` by thread and by window of the boot
+log's counts the rest (the dev build has no frame pointers: symbols
+only). All of it was the installs' archives opened on the main thread:
+
+| the first frames' reads (main thread) | before | after |
+|---|---|---|
+| the pool's installed maps (`auto::find_installed_maps`, a plugin's `finish`): every game mounted and every file of the mount listed for its `maps/*.bsp` | 4,560 (server), 3,990 (client) | 1,083, 483 |
+| the guests' guns' names for Combat Arms' HUD (`party_roster`, Startup): CS:S mounted for one strings file | 2,723 | on a task |
+| CS:S's guns' names for the minigame panel (`cs_source_ui`, Startup): the same read again | 390 | on a task |
+| TF2's kill icons (the first Update): TF2 mounted for a sheet | 1,069 | on a task |
+| DoD:S's HUD pictures: its mount | 638 | on a task |
+
+**Before and after.**
+
+| | main as found | after |
+|---|---|---|
+| server: to listening, main thread | 7,777 | 4,167 |
+| server: to listening, every thread | 8,430 | 4,822 |
+| server: to the map settled, main thread (ticks while it loads: varies) | 11,819-12,338 | 8,014-8,433 |
+| server: to the map settled, every thread | 30,237-30,306 | 27,148-27,293 |
+| hosting client: to listening, main thread | 13,634-13,662 | 6,902-6,919 |
+| hosting client: to listening, every thread | 15,165-15,785 | 8,595-8,690 |
+| hosting client: from the start map settled to warehouse settled, every thread | 64,873 | 42,385-44,080 |
+| client, start map at once: the first frame (to listening), main thread | 17,620 | 5,060 |
+| client, start map at once: to listening, main thread | 22,274 | 9,595 |
+| client, start map at once: to listening, every thread | 40,611 | 29,336 |
+
+A hosting client's count from listening to the start map settled is not
+a cost of the map: the main thread runs frames while the task loads
+(20-21 G here, before and after), a quarter of it the offscreen sound
+mixed by the frames' real time (`RecordAudioPlugin`), so it follows the
+box's load. The run with the start map at once is the one to compare.
+
+**The start map by phase** (de_dust2 with six games' kits, loaded before
+the app and spawned in the first frame; its part of the first frame is
+that frame less the hosting client's, which spawns the greybox):
+
+| | before | after |
+|---|---|---|
+| read: the loader (`loader cs_source`: the mount, the converted map read back) | 1,648 | 1,648 |
+| read: the kept dressings (`kept <game>: read from disk`: cs16 372, dods 1,659, hl2dm 1,520, tf2 4,053, combat_arms 2,360; each one's mount opened to check its inputs, its entry decoded) | 9,964 | 9,964 |
+| dress (the kept kits copied into the map, six games) | 64 | 64 |
+| **the load, every thread** (the main thread waits: 698) | **11,820** | **11,827** |
+| spawn, main thread: the textures' images (`MapTexture::box_mips` for those without their own mip levels: 3,564 of it) | 3,640 | on threads |
+| spawn, main thread: the lightmap's layers, the cubemaps, the sky's cube | 2,280 | on a thread |
+| spawn, main thread: the rest (the bodies' skinned bounds 670, the brushes' and props' colliders 330, materials, meshes, entities) | 2,190 | 2,180 |
+| **the spawn, main thread** | **8,110** | **2,180** |
+| the spawn, other threads | 5,400 | 6,870 |
+| **the start map, every thread** | **25,330** | **20,880** |
+
+The settle, the navigation mesh and the spawn points come after the
+first frame: the mesh is flooded on a task and polled ("The navigation
+mesh's arrival"), and on the server the main thread's part of the whole
+level change (spawn steps, colliders, settle, the ticks meanwhile) is
+3.8-4.6 G, no one piece of it over 0.2 G (the bots' rays, the players'
+animation states sent each tick).
+
+**What was cut.**
+
+- **A game's map list is kept without opening its archives**
+  (chimera_core's `game_registry::map_list`, `GameInfo::map_list`): the
+  maps an install holds and its map cycle are an entry of the converted
+  cache for a game that names its mount unopened (`GameInfo::unopened`,
+  new: the loose folders and the store as one mount, and the archives'
+  files; the four Source games give it), by the fourth pass's
+  `cached_unopened`. The key holds the archives' stamps and the maps
+  the loose layers list now, so a map dropped into `maps/` or `download/`
+  or a new store manifest lists again; the cycle's files are its inputs.
+  The pool's installed maps, the console's map lists (read ahead on a
+  task, once more per game) and the rules' map cycle
+  (`GameInfo::installed_cycle`) all read it.
+  Combat Arms, Halo and CS 1.6 mount as before (what is left of the
+  1,083 and 483).
+- **The HUDs' and names' reads go behind the frames**
+  (chimera_core's `tasks::Behind`): a system that read an install on its
+  frame starts the read on the async compute pool and takes the value
+  on the frame it is in; without a pool, or in a world that waits for
+  tasks (`WaitForTasks`), on the frame it started, so a test sees what
+  the synchronous read gave. The guests' guns' names, CS:S's names,
+  TF2's kill icons and DoD:S's pictures: 4.8 G of the first frames off
+  the main thread (the mounts are still opened, on the pool).
+- **A server's documents are packed once** (chimera_net's
+  `server_docs::pack_kept`): a server packs each set of documents for
+  the clients whose own differ (bzip2 at its best level, on a thread
+  started with the first manifest), and Combat Arms' install set
+  (16 MB) took 20.4 G instructions of that thread at every host's
+  start and every server's first join. The packing of a set of 256 KB
+  or more is an entry of the converted cache by the documents' hash
+  (the offer's SHA-256): 355 KB read back in 0.01 s.
+- **The map's images are built on several threads**
+  (chimera_present's `image_parts`): the textures' on up to eight
+  (`par_map`), the lightmap's layers, the cubemaps and the sky's cube on
+  one beside them (a small map starts no thread). A level change builds them on its load task already
+  (`MapHooks::prepare`), where they now take less of its time; a start
+  map loaded before the app builds them in the first frame, 5.9 G of
+  the main thread's.
+- **The set's tables decode straight into TOML's tables**
+  (`weapon::data::kept_docs`: the same entry, no value type of its own
+  between): 120 M of the 969.
+
+Guards: source_engine's `a_games_map_list_is_kept_without_opening_its_archives`
+(a hit opens nothing and is the mount's list; a map that appears, a
+changed cycle file and a changed archive list again), chimera_core's
+`a_read_behind_gives_the_reads_value_once`, chimera_net's
+`a_sets_packing_reads_back_from_the_cache_as_packed`, chimera_present's
+`the_textures_images_built_in_parallel_are_those_built_in_order` and
+chimera_sim's `a_table_reads_back_as_it_was_parsed` (the bytes are the
+derived enum's: entries written before read back).
+
+No file of a game's converter version or of the map format changed:
+nothing published needs republishing.
+
+**Left, measured.**
+
+- **Combat Arms' data before the server listens** (1.9 G of the 4.2 G:
+  the tables read back 850, the records made 370, the set registered
+  398, the attribute records 230). Registering the set after the
+  listen was not done: the ladder, the sandbox, the server's documents
+  and the match's manifest are made from the registered set, so a
+  join answered before it would be offered other documents and the
+  start map (Combat Arms' own, or dressed with its kit) could not load
+  meanwhile; the process would say `listening` sooner and answer no
+  sooner. `data::renew` (a join's files arriving) is the path it would
+  take; every host's start would then depend on it giving exactly what
+  a start gives.
+- **`MapTexture::box_mips`** (7.0 G on the load's and spawn's threads
+  at the dev profile's opt-level 1: the kept dressings' textures get
+  their mip levels again at each read, `texture_serde`): a row-wise
+  filter would be several times cheaper; it is a file of the map
+  format's hash.
+- **The kept dressings' reads** (10 G: besides the mips, 2.2 G turning
+  sound samples from bytes one by one, `chimera_formats::wav`, in
+  every game's converter hash, and each Source game's mount opened to
+  check the entry's inputs, 3-5 G across the start: `Vpk::open` builds
+  a map of every path; `cached_unopened` for the dressings would need
+  the served entries' inputs kept apart).
+- **The installed maps of Combat Arms, Halo and CS 1.6, and the loose
+  layers' listing** (1,083 M on the server): `map_names` lists every
+  file of a mount for the few in `maps/`; `Mount::files_in` would list
+  one folder.
+- **The ladder** (308 M in the first frame) and the rest of the first
+  frame (2.0 G on a client: Startup systems and the first schedules'
+  build).
+- The fourth pass's leftovers but the tables' copy: the records made,
+  registering, the install UI's layouts.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset

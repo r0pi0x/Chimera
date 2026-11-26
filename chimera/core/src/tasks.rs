@@ -21,6 +21,10 @@
 //! `ReadAhead`: a game's loads started ahead of need kept to a few at once
 //! on the async compute pool, so what is wanted now does not queue behind
 //! them.
+//!
+//! `Behind`: a value a system reads from an install, read on the async
+//! compute pool instead of on its frame (the HUDs' pictures and the guns'
+//! names at the start).
 
 use bevy::{
     prelude::*,
@@ -105,4 +109,75 @@ impl ReadAhead {
 /// Whether a read-ahead task may start (`ReadAhead::room`; none: always).
 pub fn read_ahead_room(ahead: Option<&ReadAhead>) -> bool {
     ahead.is_none_or(ReadAhead::room)
+}
+
+/// A value read behind the frames: a system that would read an install
+/// on the main thread (a HUD's pictures, the guns' names: opening a
+/// Source game's mount for them cost 0.6 to 2.7 G instructions of the
+/// first frames; docs/performance.md, "Start cost, fifth pass") starts
+/// the read on the async
+/// compute pool (`start`) and takes the value on the frame it is in
+/// (`take`). Without the pool (a bare test app) the read runs at once, and
+/// a world that waits for tasks (`WaitForTasks`) takes it on the frame
+/// it started, so a test sees what a synchronous read gave.
+pub struct Behind<T>(BehindState<T>);
+
+enum BehindState<T> {
+    Task(Task<T>),
+    Ready(T),
+    Taken,
+}
+
+impl<T: Send + 'static> Behind<T> {
+    /// Start `read` (counted as pending work until it has run: `spawn`).
+    pub fn start(read: impl FnOnce() -> T + Send + 'static) -> Self {
+        Self(match bevy::tasks::AsyncComputeTaskPool::try_get() {
+            Some(pool) => BehindState::Task(spawn(pool, async move { read() })),
+            None => BehindState::Ready(read()),
+        })
+    }
+
+    /// The value, once: now if the read is done, or, with `wait` (the
+    /// world holds `WaitForTasks`), when it is; None while it reads and
+    /// after it was taken.
+    pub fn take(&mut self, wait: bool) -> Option<T> {
+        match std::mem::replace(&mut self.0, BehindState::Taken) {
+            BehindState::Ready(value) => Some(value),
+            BehindState::Taken => None,
+            BehindState::Task(mut task) => match poll(&mut task, wait) {
+                Some(value) => Some(value),
+                None => {
+                    self.0 = BehindState::Task(task);
+                    None
+                }
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A read behind the frames gives what the read gives, once: at once
+    /// when waited for, else on a later poll.
+    #[test]
+    fn a_read_behind_gives_the_reads_value_once() {
+        let read = || (1..=10u64).product::<u64>();
+        // Whatever the process has (a pool or none): waited for.
+        let mut waited = Behind::start(read);
+        assert_eq!(waited.take(true), Some(read()));
+        assert_eq!(waited.take(true), None, "taken once");
+        // On the pool: in after some polls, the same value.
+        bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+        let mut polled = Behind::start(read);
+        let value = loop {
+            if let Some(v) = polled.take(false) {
+                break v;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(value, read());
+        assert_eq!(polled.take(false), None);
+    }
 }

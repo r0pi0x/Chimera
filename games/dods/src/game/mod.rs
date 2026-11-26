@@ -100,6 +100,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     open: mount::open,
     map_cycle: source_engine::maps::map_cycle,
     map_names: source_engine::maps::map_names,
+    unopened: Some(mount::unopened),
     steam: Some(crate::mount::install::SteamGame {
         app_id: 300,
         name: "Day of Defeat Source",

@@ -463,6 +463,22 @@ pub fn prepare_images(world: &World) -> crate::map::prepare::PrepareJob {
     })
 }
 
+/// The least texels (the lightmap's and the cubemaps') `image_parts`
+/// builds on a thread beside the textures.
+const BESIDE_FROM: usize = 64 * 64;
+
+/// Texture `i`'s image (None: the monitor's screen), a HUD picture's
+/// clamped at its edges.
+fn texture_image(data: &MapData, hud: &std::collections::HashSet<usize>, i: usize, bc: bool) -> Option<Image> {
+    (Some(i) != data.camera_texture).then(|| {
+        let mut image = to_image(&data.textures[i], &data.look, bc);
+        if hud.contains(&i) {
+            clamp_edges(&mut image);
+        }
+        image
+    })
+}
+
 fn image_parts(data: &MapData, bc: bool) -> ImageParts {
     // HUD pictures are clamped at their edges: wrapped, the scope
     // ring's outer edge blends with its clear centre and lets the
@@ -473,27 +489,35 @@ fn image_parts(data: &MapData, bc: bool) -> ImageParts {
         .chain(&data.kit.guest_huds)
         .flat_map(|h| h.sprites.values().map(|s| s.texture))
         .collect();
-    let textures = data
-        .textures
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            (Some(i) != data.camera_texture).then(|| {
-                let mut image = to_image(t, &data.look, bc);
-                if hud.contains(&i) {
-                    clamp_edges(&mut image);
-                }
-                image
-            })
+    // On several threads, in the textures' order (`par_map`): a texture
+    // without its own mip levels is filtered here (`MapTexture::box_mips`),
+    // 3.6 G instructions of de_dust2 with six games' kits, which were the
+    // main thread's when the start map spawns in the first frame
+    // (docs/performance.md, "Start cost, fifth pass").
+    let textures = || crate::map::parallel::par_map((0..data.textures.len()).collect(), |i| texture_image(data, &hud, i, bc));
+    // The cubemaps, the lightmap's layers and the sky's cube (2.3 G of the
+    // same map) on a thread of their own beside them, when the map has
+    // enough of them to be worth a thread (a small or code-built map
+    // starts none, as `par_map` starts none for a few textures).
+    let rest = || {
+        let cubemaps = data.cubemaps.iter().map(cube_image).collect();
+        let source_ldr = data.look.source_ldr_lightmaps;
+        let lightmaps = data
+            .lightmap
+            .as_ref()
+            .map(|l| LightmapLayers::build(&l.rgb, l.bumped.as_ref(), l.width, l.height, source_ldr));
+        let sky = data.sky.as_ref().map(|sky| sky_image(sky, &data.textures));
+        (cubemaps, lightmaps, sky)
+    };
+    let texels = data.lightmap.as_ref().map_or(0, |l| l.rgb.len()) + data.cubemaps.iter().map(|c| (c.size * c.size * 6) as usize).sum::<usize>();
+    let (textures, (cubemaps, lightmaps, sky)) = if texels >= BESIDE_FROM || data.sky.is_some() {
+        std::thread::scope(|s| {
+            let rest = s.spawn(rest);
+            (textures(), rest.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
         })
-        .collect();
-    let cubemaps = data.cubemaps.iter().map(cube_image).collect();
-    let source_ldr = data.look.source_ldr_lightmaps;
-    let lightmaps = data
-        .lightmap
-        .as_ref()
-        .map(|l| LightmapLayers::build(&l.rgb, l.bumped.as_ref(), l.width, l.height, source_ldr));
-    let sky = data.sky.as_ref().map(|sky| sky_image(sky, &data.textures));
+    } else {
+        (textures(), rest())
+    };
     ImageParts {
         bc,
         textures,
@@ -2408,6 +2432,56 @@ fn spawn_prop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The textures' images built on several threads (`image_parts`) are
+    /// the ones built one by one, in the textures' order: with and
+    /// without their own mip levels, a HUD picture clamped, the monitor's
+    /// screen left out.
+    #[test]
+    fn the_textures_images_built_in_parallel_are_those_built_in_order() {
+        let mut data = MapData::default();
+        for i in 0..40u32 {
+            let size = 1 << (i % 5);
+            let rgba8: Vec<u8> = (0..size * size * 4).map(|b| (b * 7 + i * 13) as u8).collect();
+            let mut t = MapTexture { name: format!("t{i}"), srgb: i % 2 == 0, mips: Vec::new(), width: size, height: size, rgba8, bc: None };
+            if i % 3 == 0 {
+                t.mips = t.box_mips();
+            }
+            data.textures.push(t);
+        }
+        data.camera_texture = Some(5);
+        data.cubemaps.push(MapCubemap { name: "c".into(), size: 1, mips: 1, faces: std::array::from_fn(|f| vec![f as u8 * 40; 4]) });
+        // Big enough to be built on the thread beside the textures.
+        let side = 64u32;
+        assert!((side * side) as usize >= BESIDE_FROM);
+        data.lightmap = Some(MapLightmap {
+            width: side,
+            height: side,
+            rgb: (0..side * side).map(|i| [(i % 7) as f32 * 0.25; 3]).collect(),
+            ..Default::default()
+        });
+        let hud: std::collections::HashSet<usize> = [7].into();
+        let parts = image_parts(&data, false);
+        assert_eq!(parts.textures.len(), 40);
+        // What is built beside the textures: the cubemaps and the lightmap.
+        assert!(parts.cubemaps.len() == 1 && parts.cubemaps[0].data == cube_image(&data.cubemaps[0]).data);
+        let light = data.lightmap.as_ref().unwrap();
+        let layers = LightmapLayers::build(&light.rgb, None, side, side, data.look.source_ldr_lightmaps);
+        assert!(parts.lightmaps.as_ref().is_some_and(|l| l.plain.data == layers.plain.data && l.bumped.is_none()));
+        assert!(parts.sky.is_none());
+        for (i, image) in parts.textures.iter().enumerate() {
+            let alone = texture_image(&data, &hud, i, false);
+            // Only a HUD's sprites are clamped (none here): the same image
+            // but for texture 7's sampler.
+            let plain = (i != 5).then(|| to_image(&data.textures[i], &data.look, false));
+            assert_eq!(image.is_some(), i != 5, "texture {i}: the monitor's screen is made at the spawn");
+            let (Some(image), Some(plain)) = (image, plain) else { continue };
+            assert!(image.data == plain.data, "texture {i}: the same bytes");
+            assert_eq!(image.texture_descriptor, plain.texture_descriptor, "texture {i}");
+            let alone = alone.unwrap();
+            assert!(alone.data == plain.data && (i == 7) == (format!("{:?}", alone.sampler) != format!("{:?}", plain.sampler)), "texture {i}: clamped only as a HUD picture");
+        }
+    }
 
     /// One baked prop of a one-triangle model, and one without baked light.
     fn data() -> MapData {

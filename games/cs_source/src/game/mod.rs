@@ -232,6 +232,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     open: mount::open,
     map_cycle,
     map_names,
+    unopened: Some(mount::unopened),
     steam: Some(crate::mount::install::SteamGame {
         app_id: 240,
         name: "Counter-Strike: Source",

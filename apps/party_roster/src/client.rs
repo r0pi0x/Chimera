@@ -204,8 +204,8 @@ impl Plugin for FrontPlugin {
 /// look): the guests' guns' names, HL2:DM's fast switch, the siren under
 /// UI sound.
 fn front_end_parts(app: &mut App) {
-    app.add_systems(Startup, (guest_names, hl2_fast_switch))
-        .add_systems(Update, sync_gun_names)
+    app.add_systems(Startup, hl2_fast_switch)
+        .add_systems(Update, (guest_names, sync_gun_names).chain())
         // Under UI sound our air-strike alert stands in for Combat Arms'
         // siren (`mute_siren`).
         .add_systems(Update, mute_siren.run_if(resource_exists::<chimera_client::client::ui_sound::UiSounds>));
@@ -251,18 +251,47 @@ fn read_names_again(_: On<chimera_net::net::assets::AssetsArrived>, games: Res<G
 /// each game's own strings in its install (its bundle's `display_names`:
 /// CS:S's `weapons::display_names`, HL2:DM's; none without the install,
 /// the guns then show their ids).
-fn guest_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
-    read_guest_names(&games, &mut names);
+///
+/// Read behind the frames at the start (`tasks::Behind`: each game's
+/// mount is opened for them, 2.7 G instructions of the first frame),
+/// once.
+fn guest_names(
+    games: Res<Games>,
+    mut names: ResMut<ItemNames>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut reading: Local<Option<chimera_core::tasks::Behind<Vec<(String, String)>>>>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
+    let reading = reading.get_or_insert_with(|| {
+        let readers = guest_name_readers(&games);
+        chimera_core::tasks::Behind::start(move || guest_names_of(&readers))
+    });
+    if let Some(read) = reading.take(wait.is_some()) {
+        *done = true;
+        if !read.is_empty() {
+            names.0.extend(read);
+        }
+    }
+}
+
+/// A guest's install and how its guns' names are read from it.
+type NameReader = (&'static chimera_core::game_registry::GameInfo, fn(&chimera_core::mount::Mount) -> Vec<(String, String)>);
+
+/// The guests that have names to read (`display_names`), as registered.
+fn guest_name_readers(games: &Games) -> Vec<NameReader> {
+    crate::GUESTS.iter().filter_map(|bundle| Some((games.get(bundle.info.id)?, bundle.display_names?))).collect()
+}
+
+/// Each reader's names from its game's mount, in order.
+fn guest_names_of(readers: &[NameReader]) -> Vec<(String, String)> {
+    readers.iter().filter_map(|(game, read)| Some(read(&game.mount()?))).flatten().collect()
 }
 
 fn read_guest_names(games: &Games, names: &mut ItemNames) {
-    for bundle in crate::GUESTS {
-        let Some(read) = bundle.display_names else { continue };
-        let Some(mount) = games.get(bundle.info.id).and_then(|g| g.mount()) else {
-            continue;
-        };
-        names.0.extend(read(&mount));
-    }
+    names.0.extend(guest_names_of(&guest_name_readers(games)));
 }
 
 /// The guns' full names for the shell (the Tab scoreboard, callouts, kill

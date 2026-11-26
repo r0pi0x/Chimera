@@ -1654,7 +1654,8 @@ load; work counts don't (performance.md, "Work counts"):
   and after it when a host listens and each map settles (`listening`,
   `a map settled`: a hosting run's start map, and a dedicated server's,
   loads after the first frame, performance.md, "A join while the host
-  starts";
+  starts"; a costly step inside a stage says its own count, `boot:   within <name>: N M this thread's`,
+  `boot::within`: the installs' maps, the ladder, the sandbox;
   `CHIMERA_START_MAP_AT_ONCE=1` the old start); each line says the process's instructions and, in brackets, the
   starting thread's own: read that one, since an offscreen run's sound
   thread never rests, performance.md, "Start cost, third pass";

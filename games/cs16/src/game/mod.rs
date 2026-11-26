@@ -74,6 +74,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     open: mount::open,
     map_cycle: maps::map_names,
     map_names: maps::map_names,
+    unopened: None,
     steam: Some(crate::mount::install::SteamGame {
         app_id: STEAM_APP,
         name: "Half-Life",

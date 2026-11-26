@@ -255,6 +255,7 @@ mod tests {
         open: |_| Err(std::io::ErrorKind::NotFound.into()),
         map_cycle: |_| Vec::new(),
         map_names: |_| Vec::new(),
+        unopened: None,
         map_file: |n| Some(format!("maps/{n}.bsp")),
         steam: None,
         import_map: |_| Err("no".into()),

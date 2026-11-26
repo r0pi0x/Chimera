@@ -104,7 +104,7 @@ five games have it so.
   two games need moves into Chimera or their family's crates.
 - `INFO` (`chimera_core::game_registry::GameInfo`): id, short name,
   full name (every menu, picker and card names the game by these, through
-  `chimera_core::game_registry::known`: no table of names elsewhere), content folder, tick, how its install mounts, its map names and
+  `chimera_core::game_registry::known`: no table of names elsewhere), content folder, tick, how its install mounts (and, for a mount that costs much to open, `unopened`: its loose layers and its archives' files named without opening them, so its map list reads back from the converted cache), its map names and
   cycle, its Steam app if it has one (`steam: SteamGame`: app id, the
   files that show a folder is the game, `server_apps` its dedicated
   server apps for SteamCMD's default places, and `folders` the names it

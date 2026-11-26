@@ -46,6 +46,27 @@ pub fn open_install(install: &Path) -> io::Result<Mount> {
     Ok(mount)
 }
 
+/// The install's loose layers alone, as `open_install` orders them
+/// (`unopened`).
+fn open_install_loose(install: &Path) -> io::Result<Mount> {
+    let (mut mount, _) = search_path(install)?.unopened();
+    if let Some(cache) = crate::mount::config::content_dir(GAME) {
+        mount.push(LooseDir::new(cache).hiding(&["vpk"]));
+    }
+    Ok(mount)
+}
+
+/// What `open` would mount, named without opening an archive
+/// (`GameInfo::unopened`, `SearchPath::unopened`): its loose folders and
+/// the asset store, layered as `open` layers them, and the archive files
+/// it would open (none when the store serves the game alone). What the
+/// kept map list is keyed by (chimera_core's `game_registry::map_list`).
+pub fn unopened(install: &Path) -> io::Result<(Mount, Vec<std::path::PathBuf>)> {
+    let light = crate::mount::served::open(GAME, install, open_install_loose)?;
+    let archives = if crate::mount::served::alone(GAME, install) { Vec::new() } else { search_path(install)?.unopened().1 };
+    Ok((light, archives))
+}
+
 /// Copy a map (`.bsp`, or `.bsp.bz2`) into Chimera's content cache for
 /// HL2:DM (`source_engine::maps::import_map_into`). Returns its name.
 pub fn import_map(file: &Path) -> Result<String, String> {

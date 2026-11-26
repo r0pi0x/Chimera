@@ -14,7 +14,11 @@ fn the_guns_kill_icons_are_cut_from_the_sheet() {
         return;
     }
     let mut app = App::new();
-    app.init_resource::<Assets<Image>>().init_resource::<WeaponIcons>().add_systems(Update, tf2_ui::systems::register_kill_icons);
+    // The read is behind the frames (`tasks::Behind`): waited for here.
+    app.init_resource::<Assets<Image>>()
+        .init_resource::<WeaponIcons>()
+        .init_resource::<chimera_core::tasks::WaitForTasks>()
+        .add_systems(Update, tf2_ui::systems::register_kill_icons);
     app.update();
     let icons = app.world().resource::<WeaponIcons>();
     use tf2::game::weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN};

@@ -737,7 +737,7 @@ fn follow_map_cycle(name: Option<Res<LoadedMapName>>, serving: Res<Serving>, mut
     cycle.current = net::maps::map_name(&name.0).to_string();
     if cycle.maps.is_empty() {
         let info = serving.0.info;
-        cycle.maps = info.mount().map(|m| (info.map_cycle)(&m)).unwrap_or_default();
+        cycle.maps = info.installed_cycle().unwrap_or_default();
     }
 }
 

@@ -681,6 +681,104 @@ mod tests {
         assert_eq!(opened.get(), 4);
     }
 
+    /// A game's map list (`GameInfo::map_list`, chimera_core's
+    /// `game_registry::map_list`) comes back from the converted cache
+    /// with no archive opened, the same as listed from the mount; a map
+    /// that appears in a loose folder, a cycle file or an archive that
+    /// changes lists again.
+    #[test]
+    fn a_games_map_list_is_kept_without_opening_its_archives() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use chimera_core::{
+            game_registry::{
+                GameInfo,
+                map_list::{MapList, kept},
+            },
+            mount::assets::map_cache::{MapCache, Outcome},
+        };
+        const SPECS: &[Spec] = &[Spec::vpk("g/g_pak_dir.vpk"), Spec::loose("g")];
+        static OPENED: AtomicUsize = AtomicUsize::new(0);
+        fn open(install: &Path) -> io::Result<Mount> {
+            OPENED.fetch_add(1, Ordering::Relaxed);
+            SearchPath::from_specs(install, SPECS).mount()
+        }
+        fn unopened(install: &Path) -> io::Result<(Mount, Vec<PathBuf>)> {
+            Ok(SearchPath::from_specs(install, SPECS).unopened())
+        }
+        // A Source game's lists (`maps::map_names`, `maps::map_cycle`), in
+        // short: `maps/<name>.bsp`, and the cycle file's names among them.
+        fn map_names(mount: &Mount) -> Vec<String> {
+            let mut names: Vec<String> = mount
+                .entries()
+                .into_iter()
+                .filter_map(|(e, _)| e.path.strip_prefix("maps/").and_then(|p| p.strip_suffix(".bsp")).map(String::from))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        }
+        fn map_cycle(mount: &Mount) -> Vec<String> {
+            let names = map_names(mount);
+            let text = mount.read("cfg/mapcycle.txt").map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            text.lines()
+                .filter_map(|l| l.split("//").next().and_then(|l| l.split_whitespace().next()).map(str::to_lowercase))
+                .filter(|m| names.contains(m))
+                .collect()
+        }
+        static GAME: GameInfo = GameInfo {
+            id: "listed",
+            short_name: "L",
+            name: "Listed",
+            content_dir: "g",
+            tick_interval: 0.015,
+            open,
+            map_cycle,
+            map_names,
+            unopened: Some(unopened),
+            map_file: |n| Some(format!("maps/{n}.bsp")),
+            steam: None,
+            import_map: |_| Err("no".into()),
+            default_binds_cfg: "cfg/default.cfg",
+            default_binds: &[],
+            old_default_binds: &[],
+            movement_cvars: &[],
+            meters_per_unit: 0.0254,
+            console_namespaces: &[],
+        };
+        let s = Scratch::new("map-list");
+        s.write("g/g_pak_dir.vpk", &vpk_with("maps/in_pak.bsp", b"VBSP"));
+        s.write("g/maps/loose.bsp", b"VBSP");
+        s.write("g/cfg/mapcycle.txt", b"loose\nin_pak // both\nnot_here\n");
+        let cache = MapCache::at(s.0.join("cache"), 1 << 30);
+        let listed = |disk: Option<&MapCache>| kept(&GAME, &s.0, disk).unwrap();
+        let names = |l: &[&str]| l.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let first = listed(Some(&cache));
+        assert_eq!(first.0, MapList { names: names(&["in_pak", "loose"]), cycle: names(&["loose", "in_pak"]) });
+        assert_eq!((first.1, OPENED.load(Ordering::Relaxed)), (Outcome::Miss, 1));
+        assert_eq!(listed(Some(&cache)), (first.0.clone(), Outcome::Hit), "read back the same");
+        assert_eq!(OPENED.load(Ordering::Relaxed), 1, "a hit opens no archive");
+        // The same as the mount lists.
+        assert_eq!(first.0, MapList::of(&GAME, &SearchPath::from_specs(&s.0, SPECS).mount().unwrap()));
+        assert_eq!(listed(None), (first.0.clone(), Outcome::Off), "no cache: mounted and listed");
+        let opened = OPENED.load(Ordering::Relaxed);
+        // A map appears in the loose folder.
+        s.write("g/maps/added.bsp", b"VBSP");
+        let (list, outcome) = listed(Some(&cache));
+        assert_eq!((list.names, outcome), (names(&["added", "in_pak", "loose"]), Outcome::Miss));
+        assert_eq!(listed(Some(&cache)).1, Outcome::Hit);
+        // The cycle's file changes.
+        s.write("g/cfg/mapcycle.txt", b"added\nloose\n");
+        let (list, outcome) = listed(Some(&cache));
+        assert_eq!((list.cycle, outcome), (names(&["added", "loose"]), Outcome::Miss));
+        assert_eq!(listed(Some(&cache)).1, Outcome::Hit);
+        // The archive changes (another size): its maps are listed again.
+        s.write("g/g_pak_dir.vpk", &vpk_with("maps/another_in_pak.bsp", b"VBSP"));
+        let (list, outcome) = listed(Some(&cache));
+        assert_eq!((list.names, outcome), (names(&["added", "another_in_pak", "loose"]), Outcome::Miss));
+        assert_eq!(OPENED.load(Ordering::Relaxed), opened + 3, "each change mounted once");
+    }
+
     #[test]
     fn a_games_own_list_keeps_its_order_and_rules() {
         let s = Scratch::new("specs");

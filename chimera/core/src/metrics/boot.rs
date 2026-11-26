@@ -11,7 +11,9 @@
 //! listens (`listening`) and each map settles (`a map settled`, a hosting
 //! run's start map first); the start map's own phases are
 //! `chimera_world::map::load_report`'s, the frames after are
-//! `--frame-log`'s. docs/performance.md, "Every game installed".
+//! `--frame-log`'s; a costly step inside a stage says its own count
+//! (`within`: the first frame's reads of the installs).
+//! docs/performance.md, "Every game installed".
 
 use std::sync::Mutex;
 
@@ -59,4 +61,28 @@ pub fn stage(name: &str) {
     log.at = now;
     log.own_at = own_now;
     log.began = std::time::Instant::now();
+}
+
+/// Run `f` and say what it ran on the starting thread, as a line of its
+/// own inside the stage it is part of (`boot:   within <name>: N M this
+/// thread's`; the stages' counts are unchanged): a costly step of a
+/// frame's systems (the first frame's reads of the installs), which a
+/// stage would lump with the systems run before it. For the starting
+/// thread only (the counter is that thread's); nothing without `start`.
+pub fn within<T>(name: &str, f: impl FnOnce() -> T) -> T {
+    let before = {
+        let mut boot = BOOT.lock().unwrap_or_else(|e| e.into_inner());
+        match boot.as_mut() {
+            Some(log) => log.own.read(),
+            None => return f(),
+        }
+    };
+    let out = f();
+    let mut boot = BOOT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(log) = boot.as_mut()
+        && let Some((a, b)) = before.zip(log.own.read())
+    {
+        eprintln!("boot:   within {name}: {} M this thread's", b.saturating_sub(a) / 1_000_000);
+    }
+    out
 }

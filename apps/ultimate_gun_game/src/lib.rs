@@ -422,11 +422,15 @@ impl Plugin for UltimateGunGamePlugin {
         // A game without a HUD of its own shows the base game's.
         world.get_resource_or_init::<PartsRegistry>().fallback_hud = BASE;
         if self.find_maps {
-            auto::find_installed_maps(world);
+            chimera_core::metrics::boot::within("the installs' maps", || auto::find_installed_maps(world));
         }
         let l = *world.resource::<AutoLadder>();
-        let _ = make(world, l, "the ladder");
-        let _ = sandbox::generate(world, BASE);
+        chimera_core::metrics::boot::within("the ladder", || {
+            let _ = make(world, l, "the ladder");
+        });
+        chimera_core::metrics::boot::within("the sandbox", || {
+            let _ = sandbox::generate(world, BASE);
+        });
     }
 }
 

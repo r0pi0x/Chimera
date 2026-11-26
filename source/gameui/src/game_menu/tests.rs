@@ -21,6 +21,7 @@ static TEST_INFO: crate::game_registry::GameInfo = crate::game_registry::GameInf
     open: |_| Err(std::io::Error::other("no install")),
     map_cycle: |_| Vec::new(),
     map_names: |_| Vec::new(),
+    unopened: None,
     map_file: |n| Some(format!("maps/{n}.bsp")),
     steam: None,
     import_map: |_| Err("no".into()),

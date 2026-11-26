@@ -1044,6 +1044,7 @@ mod tests {
         open: |_| Err(std::io::ErrorKind::NotFound.into()),
         map_cycle: |_| Vec::new(),
         map_names: |_| Vec::new(),
+        unopened: None,
         steam: None,
         map_file: |n| Some(format!("maps/{n}.bsp")),
         import_map: |_| Err("no".into()),

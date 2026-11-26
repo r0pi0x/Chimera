@@ -2117,7 +2117,7 @@ impl MapLists {
         let mut cached = self.cycles.lock().unwrap_or_else(|e| e.into_inner());
         cached
             .entry(game.id)
-            .or_insert_with(|| game.mount().map(|m| (game.map_cycle)(&m)).unwrap_or_default())
+            .or_insert_with(|| game.installed_cycle().unwrap_or_default())
             .clone()
     }
 }
@@ -2137,11 +2137,11 @@ fn read_map_lists_ahead(mut commands: Commands, games: Option<Res<Games>>) {
         games
             .into_iter()
             .map(|g| {
-                let Some(mount) = g.mount() else { return (g.id, Vec::new(), Vec::new()) };
-                let mut names = (g.map_names)(&mount);
+                let Some(list) = g.map_list() else { return (g.id, Vec::new(), Vec::new()) };
+                let mut names = list.names;
                 names.sort();
                 names.dedup();
-                (g.id, names, (g.map_cycle)(&mount))
+                (g.id, names, list.cycle)
             })
             .collect()
     });
@@ -2161,8 +2161,8 @@ fn take_map_lists_ahead(mut commands: Commands, ahead: Option<ResMut<MapListsAhe
 }
 
 fn read_map_names(game: &GameInfo) -> Vec<String> {
-    let Some(mount) = game.mount() else { return Vec::new() };
-    let mut names = (game.map_names)(&mount);
+    let Some(list) = game.map_list() else { return Vec::new() };
+    let mut names = list.names;
     names.sort();
     names.dedup();
     names
@@ -2204,7 +2204,7 @@ fn follow_map_cycle(
     {
         cycle.maps = match lists {
             Some(l) => l.cycle(game),
-            None => game.mount().map(|m| (game.map_cycle)(&m)).unwrap_or_default(),
+            None => game.installed_cycle().unwrap_or_default(),
         };
     }
 }
@@ -3587,6 +3587,7 @@ mod tests {
             open: |_| Err(std::io::ErrorKind::NotFound.into()),
             map_cycle: |_| Vec::new(),
             map_names: |_| Vec::new(),
+            unopened: None,
             map_file: |n| Some(format!("maps/{n}.bsp")),
         steam: None,
             import_map: |_| Err("no".into()),
@@ -3624,6 +3625,7 @@ mod tests {
             open: |_| Err(std::io::ErrorKind::NotFound.into()),
             map_cycle: |_| Vec::new(),
             map_names: |_| Vec::new(),
+            unopened: None,
             map_file: |n| Some(format!("maps/{n}.bsp")),
             steam: None,
             import_map: |_| Err("no".into()),
@@ -3673,6 +3675,7 @@ mod tests {
             open: |_| Err(std::io::ErrorKind::NotFound.into()),
             map_cycle: |_| Vec::new(),
             map_names: |_| Vec::new(),
+            unopened: None,
             map_file: |n| Some(format!("maps/{n}.bsp")),
             steam: None,
             import_map: |_| Err("no".into()),

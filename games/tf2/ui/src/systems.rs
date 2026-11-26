@@ -384,23 +384,35 @@ const MOST_WAIT: f32 = 30.0;
 /// app's kill feed once their files are here: tried at startup and again,
 /// further apart each time (2 s doubling up to 30 s), until they are (a
 /// tester reading TF2 from the asset service gets them with the first
-/// match that offers TF2); never fetching. Until then the feed writes the
-/// gun's name.
+/// match that offers TF2); never fetching. Each try reads behind the
+/// frames (`tasks::Behind`: 1.1 G instructions with TF2's mount). Until
+/// then the feed writes the gun's name.
 pub fn register_kill_icons(
     mut icons: ResMut<WeaponIcons>,
     images: Option<ResMut<Assets<Image>>>,
     time: Option<Res<Time<Real>>>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut tries: Local<KillIconTries>,
+    mut reading: Local<Option<chimera_core::tasks::Behind<Option<BTreeMap<String, chimera_world::map::hud::UiImage>>>>>,
 ) {
-    let now = time.map_or(0.0, |t| t.elapsed_secs());
-    if tries.done || now < tries.next {
+    if tries.done {
         return;
     }
     let Some(mut images) = images else { return };
-    tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
-    tries.next = now + tries.wait;
-    let Some(mount) = INFO.mount() else { return };
-    let Some(pictures) = tf2::game::hud::kill_icon_pictures(&mount) else { return };
+    if reading.is_none() {
+        let now = time.map_or(0.0, |t| t.elapsed_secs());
+        if now < tries.next {
+            return;
+        }
+        tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
+        tries.next = now + tries.wait;
+        *reading = Some(chimera_core::tasks::Behind::start(|| INFO.mount().and_then(|mount| tf2::game::hud::kill_icon_pictures(&mount))));
+    }
+    // Still reading: the frames go on.
+    let Some(pictures) = reading.as_mut().and_then(|r| r.take(wait.is_some())) else { return };
+    *reading = None;
+    // Not here yet: the next try.
+    let Some(pictures) = pictures else { return };
     tries.done = true;
     if pictures.is_empty() {
         warn!("TF2: no kill icons (scripts/mod_textures.txt or its sheets don't read)");
