@@ -59,10 +59,12 @@
 //! - Ladder volumes are solid ladder brushes found by a 2-unit probe
 //!   along the keys (the shared code's, as on every game's maps); the
 //!   original's are not solid and hold a player whose box is in them.
-//! - Currents are the data's (`MapWaterVolume::current`): no loader fills
-//!   them (the stock maps have none; the compiler's current contents never
-//!   reach a compiled tree), and the swim's push is counted as the spec's
-//!   movement.md "Currents" has it. Noclip's up and down keys are not used.
+//! - Currents are the data's (`MapWaterVolume::current`): the GoldSrc
+//!   conversion fills them from a leaf's or a `func_water`'s current
+//!   contents (-9 to -14), but the stock maps have none (the compiler's
+//!   current contents never reach a compiled tree), so only unit tests
+//!   build them; the swim's push is counted as the spec's movement.md
+//!   "Currents" has it. Noclip's up and down keys are not used.
 //! - The drowning's, slime's and lava's damage kinds are Chimera's `Drown`,
 //!   `Poison` and `Burn` (`chimera_movement::liquids`).
 //! - The walk key's 0.52 is the spec's, applied after the keys are

@@ -915,6 +915,10 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   `mp_footsteps`. The walk key now multiplies after the clip (130); the
   golden run's hash was re-taken for it.
 - Tests: cs16 `footsteps` (the spec's cases), heavy `footsteps`.
+- **Surface probe** (2026-11-26, `Mover::record_surface`): the face a line
+  from the box's middle 64 units straight down hits (28 under the feet
+  standing, 46 ducked), as the spec has it; nothing hit: concrete (it was
+  the ground trace's face, else the world face 6 units under the feet).
 
 ### 2026-11-26: shells (specs/cs16/shells.md)
 
@@ -956,7 +960,7 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   keys to the max speed, then x 0.52 walking, x 0.333 ducked), sinking at 48
   with no input, the jump's lift 100/80/50, 96 rising, 174.4 horizontal
   with forward and jump; currents (`MapWaterVolume::current`: 50 x the
-  water level, counted as the spec's code has it; no loader fills it).
+  water level, counted as the spec's code has it; filled by `water::current_of` from a leaf's or a `func_water`'s current contents -9 to -14, which count as water; no stock map has one, a unit test builds them).
 - **The view**: the drawn eye kept 4 units from the surface
   (`Mover::view_eye`, `MovementState::view_shift`: the camera only, shots and traces start at `eye_offset`, the real eye; the golden run re-taken, its hash held the shifted eye); the fog under a liquid
   is the liquid texture's palette (entry 3 its colour, the red of entry 4

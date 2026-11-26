@@ -17,18 +17,22 @@
 //! Known shortcuts:
 //! - Slime and lava are both `slime` volumes, lava also `lava` (the
 //!   install has neither).
-//! - Currents are not read (the compiler's current contents never reach a
-//!   compiled tree: bsp.md; `MapWaterVolume::current` is for custom maps), nor the clip trees' rare water ends (none in
-//!   cstrike's maps).
+//! - Currents (contents -9 to -14) fill `MapWaterVolume::current` from the
+//!   leaf or the entity's `skin`; no stock map has one (the compiler's
+//!   current contents never reach a compiled tree: bsp.md), so only unit
+//!   tests build them. The clip trees' rare water ends are not read (none
+//!   in cstrike's maps).
 //! - The fog under water (`fog_material`, water.md "The view in a
 //!   liquid"): the colour is the liquid texture's, its distance is ours.
 //!   No colour tint or screen warp is drawn (water.md open question 3).
 
 use goldsrc_formats::bsp::{
     Bsp, Entity,
-    hull::{CONTENTS_LAVA, CONTENTS_WATER, filled, liquid},
+    hull::{CONTENTS_LAVA, CONTENTS_SLIME, CONTENTS_WATER, current_direction, filled, liquid},
     solids::convex_regions_where,
 };
+
+use bevy::math::Vec3;
 
 use super::{collision::brush, METERS_PER_UNIT};
 use crate::{
@@ -66,7 +70,13 @@ pub fn fog_material(name: &str, palette: &[[u8; 3]]) -> Option<MapWaterMaterial>
 /// A contents value as a volume's kind: `Some(slime)` for a liquid
 /// (water: false; slime and lava: true), `None` otherwise.
 pub fn slime_of(contents: i32) -> Option<bool> {
-    liquid(contents).then_some(contents != CONTENTS_WATER)
+    liquid(contents).then_some(matches!(contents, CONTENTS_SLIME | CONTENTS_LAVA))
+}
+
+/// A current's push direction in engine space (a contents value -9 to
+/// -14), for `MapWaterVolume::current`.
+pub fn current_of(contents: i32) -> Option<Vec3> {
+    current_direction(contents).map(super::to_engine_dir)
 }
 
 /// The world's liquid leaves (module doc) into `data.water`; how many.
@@ -76,9 +86,9 @@ pub fn add_world(bsp: &Bsp, data: &mut MapData) -> usize {
     for (contents, c) in regions {
         data.water.push(MapWaterVolume {
             brush: brush(&c, [0.0; 3]),
-            slime: contents != CONTENTS_WATER,
+            slime: slime_of(contents) == Some(true),
             lava: contents == CONTENTS_LAVA,
-            current: None,
+            current: current_of(contents),
         });
     }
     n
@@ -120,7 +130,7 @@ pub fn add_entity(
             brush: brush(&c, o),
             slime,
             lava: skin == CONTENTS_LAVA,
-            current: None,
+            current: current_of(skin),
         });
     }
     n
@@ -257,5 +267,38 @@ mod tests {
         assert_eq!(slime_of(-4), Some(true));
         assert_eq!(slime_of(-5), Some(true));
         assert_eq!(slime_of(-2), None);
+        // Currents are water that pushes.
+        assert_eq!(slime_of(-9), Some(false));
+        assert_eq!(current_of(-9), Some(Vec3::X));
+        assert_eq!(current_of(-10), Some(-Vec3::Z));
+        assert_eq!(current_of(-11), Some(-Vec3::X));
+        assert_eq!(current_of(-12), Some(Vec3::Z));
+        assert_eq!(current_of(-13), Some(Vec3::Y));
+        assert_eq!(current_of(-14), Some(-Vec3::Y));
+        assert_eq!(current_of(-3), None);
+        assert_eq!(slime_of(-8), None);
+        assert_eq!(slime_of(-15), None);
+    }
+
+    #[test]
+    fn a_current_leaf_is_a_water_volume_that_pushes() {
+        let mut b = pool();
+        b.leaves[2].contents = -10;
+        let mut data = MapData::default();
+        assert_eq!(add_world(&b, &mut data), 1);
+        let v = &data.water[0];
+        assert!(!v.slime && !v.lava);
+        assert_eq!(v.current, Some(-Vec3::Z), "+y in GoldSrc is -z in the engine's axes");
+        // A func_water whose skin is a current.
+        let e = Entity {
+            pairs: vec![
+                ("classname".into(), "func_water".into()),
+                ("skin".into(), "-13".into()),
+                ("model".into(), "*1".into()),
+            ],
+        };
+        assert_eq!(entity_liquid(&e), Some(-13));
+        assert_eq!(add_entity(&pool(), &e, 1, [0.0; 3], 3, false, &mut data), 1);
+        assert_eq!(data.water[1].current, Some(Vec3::Y), "up");
     }
 }

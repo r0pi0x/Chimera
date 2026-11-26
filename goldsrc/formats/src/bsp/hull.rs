@@ -36,10 +36,31 @@ pub fn blocks(contents: i32) -> bool {
     contents == CONTENTS_SOLID || contents == CONTENTS_SKY
 }
 
-/// Whether a contents value is a liquid a player swims in: water, slime
-/// or lava (bsp.md, "Contents"; specs/cs16/movement.md, "Water").
+/// The current contents values (the compiler's current 0, 90, 180, 270,
+/// up and down; specs/cs16/movement.md, "Currents"): water that pushes.
+pub const CONTENTS_CURRENT_0: i32 = -9;
+pub const CONTENTS_CURRENT_DOWN: i32 = -14;
+
+/// Whether a contents value is a liquid a player swims in: water, slime,
+/// lava or a current (bsp.md, "Contents"; specs/cs16/movement.md,
+/// "Water": the current values count as water).
 pub fn liquid(contents: i32) -> bool {
     matches!(contents, CONTENTS_WATER | CONTENTS_SLIME | CONTENTS_LAVA)
+        || (CONTENTS_CURRENT_DOWN..=CONTENTS_CURRENT_0).contains(&contents)
+}
+
+/// A current's direction in GoldSrc's axes (+x, +y, -x, -y, up, down) for
+/// a current contents value (movement.md, "Currents").
+pub fn current_direction(contents: i32) -> Option<[f32; 3]> {
+    Some(match contents {
+        -9 => [1.0, 0.0, 0.0],
+        -10 => [0.0, 1.0, 0.0],
+        -11 => [-1.0, 0.0, 0.0],
+        -12 => [0.0, -1.0, 0.0],
+        -13 => [0.0, 0.0, 1.0],
+        -14 => [0.0, 0.0, -1.0],
+        _ => return None,
+    })
 }
 
 /// Whether a contents value is anything but empty (a brush entity's
