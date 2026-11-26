@@ -21,7 +21,9 @@
 //! 3. the faces as meshes with the lightmap atlas (`brushes`; each light
 //!    style beside 0 as the logic's spawn starts it, `style_start`),
 //!    surfaces named from `sound/materials.txt`;
-//! 4. the collision (`collision::add_world`);
+//! 4. the collision (`collision::add_world`) and the world's liquid
+//!    leaves as water volumes (`water::add_world`; the liquid brush
+//!    entities' came with the entities);
 //! 5. the sky (`sky`, `skyname`, else `desert`) and the map's sprites
 //!    (`sprites::add_map`);
 //! 6. the sounds its entities play (`sounds::add_map`);
@@ -34,7 +36,7 @@
 
 use goldsrc_formats::{bsp::Bsp, materials::Materials};
 
-use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures};
+use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures, water};
 use crate::{
     core::Team,
     map::{
@@ -208,7 +210,8 @@ pub fn convert(
 
     report(0.6, "Collision");
     let counts = collision::add_world(&bsp, &mut data);
-    bevy::log::debug!("{name}: collision {counts:?}");
+    let liquids = water::add_world(&bsp, &mut data);
+    bevy::log::debug!("{name}: collision {counts:?}, {liquids} liquid leaves, {} water volumes", data.water.len());
 
     report(0.8, "Sky");
     let skyname = worldspawn.get("skyname").filter(|s| !s.trim().is_empty()).unwrap_or("desert");

@@ -58,16 +58,22 @@ pub struct Region {
 
 /// Every path from `hull`'s root of `model` to a solid or sky end.
 pub fn solid_regions(bsp: &Bsp, model: usize, hull: usize) -> Vec<Region> {
+    regions_where(bsp, model, hull, blocks)
+}
+
+/// Every path from `hull`'s root of `model` to an end whose contents
+/// `keep` takes (liquids: `liquid_regions`).
+pub fn regions_where(bsp: &Bsp, model: usize, hull: usize, keep: fn(i32) -> bool) -> Vec<Region> {
     let mut out = Vec::new();
     let mut path = Vec::new();
-    walk(bsp, hull, bsp.hull_root(model, hull), &mut path, &mut out);
+    walk(bsp, hull, bsp.hull_root(model, hull), keep, &mut path, &mut out);
     out
 }
 
-fn walk(bsp: &Bsp, hull: usize, at: HullRef, path: &mut Vec<HalfSpace>, out: &mut Vec<Region>) {
+fn walk(bsp: &Bsp, hull: usize, at: HullRef, keep: fn(i32) -> bool, path: &mut Vec<HalfSpace>, out: &mut Vec<Region>) {
     match at {
         HullRef::Contents(c) => {
-            if blocks(c) {
+            if keep(c) {
                 out.push(Region {
                     contents: c,
                     half_spaces: path.clone(),
@@ -83,10 +89,10 @@ fn walk(bsp: &Bsp, hull: usize, at: HullRef, path: &mut Vec<HalfSpace>, out: &mu
                 normal: scale(nrm, -1.0),
                 dist: -d,
             });
-            walk(bsp, hull, kids[0], path, out);
+            walk(bsp, hull, kids[0], keep, path, out);
             path.pop();
             path.push(HalfSpace { normal: nrm, dist: d });
-            walk(bsp, hull, kids[1], path, out);
+            walk(bsp, hull, kids[1], keep, path, out);
             path.pop();
         }
     }
@@ -417,6 +423,12 @@ pub fn exposed_in(bsp: &Bsp, model: usize, hull: usize) -> impl Fn(&HalfSpace, &
 /// Every solid region of `hull` of `model` as a convex polytope, cut out of
 /// the model's bounds grown by 64 units.
 pub fn convex_regions(bsp: &Bsp, model: usize, hull: usize) -> Vec<(i32, Convex)> {
+    convex_regions_where(bsp, model, hull, blocks)
+}
+
+/// Every region of `hull` of `model` whose contents `keep` takes, as a
+/// convex polytope cut out of the model's bounds grown by 64 units.
+pub fn convex_regions_where(bsp: &Bsp, model: usize, hull: usize, keep: fn(i32) -> bool) -> Vec<(i32, Convex)> {
     let m = &bsp.models[model];
     let mins = [
         m.mins[0] as f64 - 64.0,
@@ -428,7 +440,7 @@ pub fn convex_regions(bsp: &Bsp, model: usize, hull: usize) -> Vec<(i32, Convex)
         m.maxs[1] as f64 + 64.0,
         m.maxs[2] as f64 + 64.0,
     ];
-    solid_regions(bsp, model, hull)
+    regions_where(bsp, model, hull, keep)
         .into_iter()
         .filter_map(|r| Convex::cut(&r.half_spaces, mins, maxs).map(|c| (r.contents, c)))
         .collect()

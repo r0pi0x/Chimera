@@ -36,14 +36,14 @@
 //! `func_wall_toggle` get a node too (`brush_kind_of`: their logic flips
 //! their frame, moves them or turns them off).
 //!
-//! Known shortcuts:
-//! - Water volumes (`func_water`, `!` leaves) are drawn but not handed
-//!   over as water.
+//! A liquid brush entity (`func_water`, or a `func_illusionary` whose
+//! `skin` is a liquid) is a water volume too (`water::add_entity`; a
+//! named `func_water`'s follow its node).
 
 use bevy::math::Vec3;
 use goldsrc_formats::bsp::{Bsp, Entity, solids::convex_regions};
 
-use super::{METERS_PER_UNIT, brushes::Drawn, collision, parse_vector, to_engine};
+use super::{METERS_PER_UNIT, brushes::Drawn, collision, parse_vector, to_engine, water};
 use crate::{
     core::Team,
     map::{
@@ -190,6 +190,7 @@ pub fn add(bsp: &Bsp, spawns: &[(&str, Option<Team>)], data: &mut MapData) -> Pa
                     points: c.vertices.iter().map(|v| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32)).collect(),
                 })
                 .collect();
+            water::add_entity(bsp, &e, model, origin, index, kind == Brush::Mover, data);
             match kind {
                 Brush::Mover => parts.drawn.push(Drawn { model, offset: [0.0; 3], mover: Some(index), render, color, flat }),
                 Brush::StaticSolid | Brush::DrawnOnly => {
