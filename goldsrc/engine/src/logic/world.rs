@@ -51,7 +51,7 @@
 //!   regions (open question 10: the clip-hull test is not made).
 //! - Light styles: a switchable light's `pattern` key plays through
 //!   `map::LightStyles::patterns` (and on network clients, `net`), not
-//!   baked into the converted atlas; `tables::letter_brightness` is linear (open question 11).
+//!   baked into the converted atlas; `tables::letter_brightness` is the spec's letter scale (entities.md; the curve acts on the styles' sum, bsp.md "Drawn light").
 //! - Sprites keep their on/off state only: their frames don't animate
 //!   (`content::sprites` draws the first); `env_glow` and `cycler_sprite`
 //!   have no logic.

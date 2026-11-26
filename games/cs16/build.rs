@@ -18,7 +18,7 @@ mod source_hash;
 /// The converter's number (docs/plans/active/converted-cache.md,
 /// "Converter versions"): bump it when what the conversion gives changes
 /// through code or data outside `CONVERTING`.
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
 
 /// What shapes the converted output (module doc).
 const CONVERTING: &[&str] = &[

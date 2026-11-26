@@ -31,6 +31,7 @@ pub mod brushes;
 pub mod collision;
 pub mod entities;
 pub mod lightmap;
+pub mod model_light;
 pub mod maps;
 pub mod sky;
 pub mod sounds;

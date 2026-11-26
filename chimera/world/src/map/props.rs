@@ -264,6 +264,7 @@ mod switch_tests {
             height: 1,
             rgb: vec![[1.0; 3], [0.5; 3]],
             bumped: None,
+            curve: None,
             styles: vec![
                 MapLightStyle {
                     style: 32,

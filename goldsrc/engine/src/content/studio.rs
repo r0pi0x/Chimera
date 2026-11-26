@@ -48,6 +48,10 @@
 //! - Chrome's exact mapping (which vectors, scale, whether it follows the
 //!   view or the light) is not in mdl.md: Chimera's sphere map stands in,
 //!   to match against captures (mdl.md open question 1).
+//! - Model textures' palettes go through texgamma except masked ones
+//!   (flag 64), as in mdl.md "Lighting"; the light itself is
+//!   `model_light`'s (its shortcuts: the flat, fullbright and lambert
+//!   parts).
 //! - No bone controllers; body parts other than choice 0 are not drawn.
 //! - Which way the aim blends run against the view's pitch is not
 //!   measured (mdl.md, open question 2): drivers leave the parameter at 0.
@@ -369,7 +373,16 @@ pub fn textures(tex_file: &Mdl, path: &str, decode: bool) -> Vec<MapTexture> {
             mips: Vec::new(),
             width: t.width,
             height: t.height,
-            rgba8: if decode { t.rgba() } else { Vec::new() },
+            rgba8: if decode {
+                let mut px = t.rgba();
+                // Palette through texgamma, masked (flag 64) ones not (mdl.md, "Lighting").
+                if t.flags & 64 == 0 {
+                    super::textures::texgamma_rgba(&mut px);
+                }
+                px
+            } else {
+                Vec::new()
+            },
             bc: None,
         })
         .collect()

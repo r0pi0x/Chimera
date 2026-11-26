@@ -394,6 +394,7 @@ impl AtlasBuilder {
                 rgb,
                 bumped,
                 styles,
+                curve: None,
             },
             placements,
             white,

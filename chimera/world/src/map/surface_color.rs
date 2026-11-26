@@ -84,9 +84,10 @@ impl SurfaceColors {
                 Arc::new(MapLightmap {
                     width: l.width,
                     height: l.height,
-                    rgb: l.rgb.clone(),
+                    rgb: l.shown().into_owned(),
                     bumped: None,
                     styles: Vec::new(),
+                    curve: None,
                 })
             }),
             light_scale: data.look.light_scale,
@@ -264,6 +265,7 @@ mod tests {
             height: 1,
             rgb: vec![[0.25, 0.5, 1.0]],
             bumped: None,
+            curve: None,
             styles: Vec::new(),
         });
         data.meshes.push(MapMesh {

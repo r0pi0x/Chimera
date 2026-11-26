@@ -28,6 +28,12 @@
 //! - Random tiling picks a variant per face, not per texture tile of a
 //!   face (the spec allows either; which one the original does is not
 //!   pinned down), with our own hash.
+//! - texgamma (bsp.md, "Drawn light": textures; 2.0 at CS 1.6's gamma
+//!   2.5, exponent 0.8) corrects every opaque texture's palette here, at
+//!   conversion, and leaves masked `{` textures and decals as stored, as
+//!   the reference does; whether the original's own renderer corrects
+//!   them is open (bsp.md, open question 1: a capture of de_aztec's vines
+//!   settles it). The cvars are fixed at CS 1.6's values.
 //! - The four stored mip levels are not handed over: the renderer makes
 //!   its own.
 
@@ -254,10 +260,34 @@ pub fn resolve(tex: &MipTex, wads: &Wads) -> Option<MipTex> {
     wads.miptex(&tex.name)
 }
 
+/// The exponent texgamma / gamma puts on a palette channel at CS 1.6's
+/// values (bsp.md, "Drawn light": textures): 2.0 / 2.5.
+pub const TEXGAMMA_EXPONENT: f64 = 2.0 / 2.5;
+
+/// One palette channel through texgamma: floor(255 (c / 255)^0.8), so
+/// 16 -> 27, 32 -> 48, 64 -> 84, 128 -> 146, 192 -> 203, 255 -> 255.
+pub fn texgamma(c: u8) -> u8 {
+    (255.0 * (c as f64 / 255.0).powf(TEXGAMMA_EXPONENT)).floor() as u8
+}
+
+/// The RGB of `rgba` (alpha kept) through `texgamma`.
+pub fn texgamma_rgba(rgba: &mut [u8]) {
+    let lut: Vec<u8> = (0..=255).map(texgamma).collect();
+    for px in rgba.chunks_exact_mut(4) {
+        for c in &mut px[..3] {
+            *c = lut[*c as usize];
+        }
+    }
+}
+
 /// `tex` as a map texture (sRGB RGBA8, level 0), or with `decode` off a
-/// placeholder of its size.
+/// placeholder of its size. Opaque textures' palettes go through texgamma;
+/// masked (`{`) ones don't (module doc, shortcuts).
 pub fn map_texture(tex: &MipTex, decode: bool) -> MapTexture {
-    let rgba8 = if decode { tex.rgba(0).unwrap_or_default() } else { Vec::new() };
+    let mut rgba8 = if decode { tex.rgba(0).unwrap_or_default() } else { Vec::new() };
+    if kind(&tex.name) != Kind::Masked {
+        texgamma_rgba(&mut rgba8);
+    }
     MapTexture {
         name: tex.name.to_ascii_lowercase(),
         srgb: true,
@@ -293,6 +323,16 @@ pub fn placeholder(name: &str, width: u32, height: u32, decode: bool) -> MapText
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texgamma_brightens_the_palette() {
+        // bsp.md, "Drawn light": 16, 32, 64, 128, 192, 255.
+        let got: Vec<u8> = [16, 32, 64, 128, 192, 255].map(texgamma).to_vec();
+        assert_eq!(got, [27, 48, 84, 146, 203, 255]);
+        let mut px = [16, 64, 128, 7];
+        texgamma_rgba(&mut px);
+        assert_eq!(px, [27, 84, 146, 7], "alpha is kept");
+    }
 
     #[test]
     fn prefixes_name_the_kind() {

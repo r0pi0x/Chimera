@@ -152,8 +152,11 @@ pub fn style_letter(pattern: &str, t: f64) -> u8 {
     bytes[((t * STYLE_RATE) as usize) % bytes.len()]
 }
 
-/// A style letter's brightness, `m` 1 (normal), `a` 0, linear in the
-/// letter (the exact scale is the spec's open question 11).
+/// A style letter's brightness relative to `m` (1): the spec's 22 per
+/// letter step (entities.md, "light, light_spot, light_environment";
+/// `a` 0, `m` 264, `z` 550 in 256ths), so (letter - a) / 12. The sum of
+/// the styles then goes through the drawn-light curve (bsp.md, "Drawn
+/// light"; `map::LightCurve`), not each style.
 pub fn letter_brightness(letter: u8) -> f32 {
     f32::from(letter.clamp(b'a', b'z') - b'a') / 12.0
 }
@@ -184,5 +187,6 @@ mod tests {
         assert_eq!(style_letter("ab", 0.25), b'a');
         assert_eq!(letter_brightness(b'm'), 1.0);
         assert_eq!(letter_brightness(b'a'), 0.0);
+        assert_eq!(letter_brightness(b'z') * 264.0, 550.0);
     }
 }

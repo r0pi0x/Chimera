@@ -15,13 +15,30 @@
 //! renderer adds or takes it away as the logic switches it
 //! (`map::LightStyles`) or its pattern plays.
 //!
+//! The drawn light (bsp.md, "Drawn light"): the atlas holds the raw sums
+//! (stored byte / 255 times each style's letter scale, `m` = 1: the
+//! spec's 22 per letter step relative to `m`, which is
+//! `map::style_levels`), and `MapLightmap::curve` (`map::LightCurve`,
+//! CS 1.6's gamma 2.5, brightness 1, lightgamma 2.5, gl_overbright 0)
+//! turns each sum into the lightmap texel: the gain 2^(1/lightgamma) on
+//! the style sum with the 1023 clamp, lightgamma, the brightness knee,
+//! 1/gamma, /4 to a byte. The renderer applies it once per sample when
+//! it builds the images and again for the blocks whose style changes
+//! (`render::light_styles`), always on the sum, never per style.
+//!
 //! Known shortcuts:
 //! - A switchable light's own `pattern` key is not in the atlas: the style
 //!   starts on (its baked light); the logic plays the pattern at run time
 //!   (`map::LightStyles::patterns`).
-//! - The stored values are used as linear light, byte/255
-//!   (`MapLook::light_scale` 1): the original's brightening is open
-//!   (bsp.md, open question 1), to be matched by captures.
+//! - bsp.md's table gives L 67 for stored 50 at brightness 0; the formula
+//!   (the identity there, k = 272) gives 68, which this follows.
+//! - The curve's cvars are CS 1.6's shipped values, fixed at convert
+//!   time (the spec rebuilds every lightmap when one changes; here a
+//!   change needs a new conversion), and dynamic lights add nothing to
+//!   the sum. GoldSrc's own `gl_overbright 1` and the software renderer
+//!   are not done (bsp.md, open question 1). The curved texel multiplies
+//!   the texture in Chimera's linear light, where the original multiplies
+//!   the bytes (the same as for every game's lightmap here).
 
 use bevy::math::Vec2;
 
@@ -176,6 +193,7 @@ impl Atlas {
                 height,
                 rgb,
                 bumped: None,
+                curve: Some(crate::map::LightCurve::default()),
                 styles: styles.into_values().map(|(_, s)| s).collect(),
             },
             places,
@@ -215,6 +233,8 @@ mod tests {
         assert_eq!(at(place.x - 1, place.y - 1), [1.0, 0.0, 0.0]);
         let wp = p.places[w];
         assert_eq!(at(wp.x, wp.y), [1.0; 3]);
+        // The curve rides along (bsp.md "Drawn light").
+        assert_eq!(p.map.curve, Some(crate::map::LightCurve::default()));
         let uv = p.uv(b, Vec2::new(1.0, 0.0));
         assert!((uv[0] * p.map.width as f32 - (place.x as f32 + 1.5)).abs() < 1e-3);
     }
@@ -235,5 +255,46 @@ mod tests {
         assert_eq!((s32.style, s32.on, s32.texels.len(), s32.rects.len()), (32, true, 9, 1));
         assert!((s32.rgb[4][0] - 0.4).abs() < 1e-5);
         assert!(!p.map.styles[1].on);
+    }
+
+    #[test]
+    fn the_curve_matches_the_specs_table() {
+        let c = crate::map::LightCurve::default();
+        // bsp.md "Drawn light": stored (one style at m) -> L at CS 1.6's values.
+        for (stored, l) in [
+            (0, 0), (8, 15), (16, 31), (23, 45), (29, 56), (32, 62), (45, 88), (50, 98), (64, 116),
+            (96, 146), (128, 182), (160, 221), (187, 254), (188, 255), (255, 255),
+        ] {
+            assert_eq!(c.level(stored as f32), l, "stored {stored}");
+            assert_eq!(c.texel(stored as f32 / 255.0), l as f32 / 255.0);
+        }
+        // Brightness 0 column (the spec's table says 67 for stored 50; at
+        // b = 0 the curve is the identity, k = 272, L = 68: its own
+        // 'about 1.36 x stored' agrees).
+        let flat = crate::map::LightCurve { brightness: 0.0, ..c.clone() };
+        for (stored, l) in [(8, 10), (50, 68), (128, 174)] {
+            assert_eq!(flat.level(stored as f32), l, "b = 0, stored {stored}");
+        }
+        // The sum goes through once: 40 + 60 at m, and 60 at a.
+        assert_eq!(c.level(100.0), 151);
+        assert_eq!(c.level(40.0), 78);
+        assert_eq!(c.level(40.0 + 60.0 * 0.0), 78);
+        // One style at z: clamped.
+        assert_eq!(c.level(100.0 * 25.0 / 12.0), 255);
+        assert_eq!(c.gain(), 338.0);
+    }
+
+    #[test]
+    fn a_style_change_uses_the_same_curve() {
+        let mut a = Atlas::default();
+        let b = a.add_styled(1, 1, &[40, 40, 40, 60, 60, 60], &[0, 33]);
+        let p = a.finish(&|_| StyleStart { on: true, pattern: Vec::new() });
+        let place = p.places[b];
+        let raw = p.map.rgb[(place.y * p.map.width + place.x) as usize];
+        let c = p.map.curve.as_ref().unwrap();
+        assert_eq!((c.texel(raw[0]) * 255.0).round(), 151.0, "both at m");
+        let (relit, _) = p.map.relit(&|s| if s.style == 33 { 0.0 } else { s.start() });
+        let at = relit[(place.y * p.map.width + place.x) as usize];
+        assert_eq!((at[0] * 255.0).round(), 78.0, "style 33 at a");
     }
 }

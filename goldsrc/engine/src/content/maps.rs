@@ -30,8 +30,8 @@
 //!    of the surfaces (`sounds::add_steps`);
 //! 7. the game's kit (`GoldSrcGame::kit`: its bodies).
 //!
-//! The look: LDR, untonemapped, the lightmap as stored (`lightmap`'s
-//! shortcut). Every step walks the file in its own order, so a map
+//! The look: LDR, untonemapped, the lightmap through the drawn-light curve
+//! (`lightmap`); models are lit by `model_light`'s light field. Every step walks the file in its own order, so a map
 //! converts to the same bytes each time (the cache and the served entries
 //! rely on it).
 
@@ -105,6 +105,18 @@ pub fn load_in(
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, || {
         convert(game, mount, &bytes, name, file_hash, options).map_err(|e| format!("{path}: {e}"))
     })?;
+    // The light field (a closure: not cached): the model light of
+    // `model_light`, the styles at their map-start letters.
+    if let Ok(bsp) = Bsp::parse(&bytes) {
+        let logic = crate::logic::world::World::new(&map.entities, 0);
+        let starts: std::collections::BTreeMap<u8, f32> = (0..=255u8)
+            .map(|s| {
+                let st = style_start(&logic, s);
+                (s, if st.on || !st.pattern.is_empty() { 264.0 } else { 0.0 })
+            })
+            .collect();
+        map.light_field = Some(super::model_light::field(bsp, move |s| starts.get(&s).copied().unwrap_or(264.0)));
+    }
     let took = start.elapsed().as_secs_f32();
     map.load_times = vec![(if outcome == Outcome::Hit { "map cache" } else { "convert" }, took)];
     options.progress.report(0.95, "Loading the map");

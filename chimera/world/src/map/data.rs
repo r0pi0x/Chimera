@@ -842,6 +842,92 @@ pub struct MapLightmap {
     /// `rgb` and `bumped` hold the lighting at map start (switchable
     /// styles with `on` and animated ones at brightness 1 included).
     pub styles: Vec<MapLightStyle>,
+    /// The drawn-light curve the raw sums go through before they are
+    /// drawn (`LightCurve`; GoldSrc's: specs/goldsrc/bsp.md, "Drawn
+    /// light"). None: `rgb` and the styles' shares are drawn as they are
+    /// (Source's, already in display units).
+    #[serde(default)]
+    pub curve: Option<LightCurve>,
+}
+
+/// The GoldSrc renderer's brightening of a lightmap sample (specs/goldsrc/
+/// bsp.md, "Drawn light"; studio models use it without the gain, mdl.md
+/// "Lighting"). A lightmap holding it keeps the raw sum of its styles in
+/// `MapLightmap::rgb`: stored byte / 255 times the style's letter scale
+/// (`style_levels`, `m` = 1), summed; `texel` turns a sum into the drawn
+/// light (the lightmap texel L / 255, multiplied by the texture).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LightCurve {
+    /// The display gamma (cvar `gamma`).
+    pub gamma: f32,
+    /// The dark lift (cvar `brightness`).
+    pub brightness: f32,
+    /// The lightmaps' gamma (cvar `lightgamma`).
+    pub lightgamma: f32,
+}
+
+impl Default for LightCurve {
+    /// CS 1.6's values: gamma 2.5 and brightness 1 (its shipped
+    /// `config.cfg`), lightgamma 2.5 (the engine's default).
+    fn default() -> Self {
+        LightCurve { gamma: 2.5, brightness: 1.0, lightgamma: 2.5 }
+    }
+}
+
+impl LightCurve {
+    /// The 1024-entry gain for the style sum: round(256 * 2^(1/lightgamma)),
+    /// 338 at 2.5.
+    pub fn gain(&self) -> f32 {
+        (256.0 * 2f32.powf(1.0 / self.lightgamma)).round()
+    }
+
+    /// The curve's output for index `k` (0 to 1023, clamped): bsp.md step
+    /// 3, `floor(1023 f'^(1/gamma))` kept within 0 to 1023.
+    pub fn out(&self, k: i32) -> u32 {
+        let x = k.clamp(0, 1023) as f64 / 1023.0;
+        let b = self.brightness as f64;
+        let mut f = x.powf(self.lightgamma as f64);
+        if b > 1.0 {
+            f *= b;
+        }
+        let g = if b <= 0.0 {
+            0.125
+        } else if b <= 1.0 {
+            0.125 - 0.075 * b * b
+        } else {
+            0.05
+        };
+        let f = if f <= g { f * 0.125 / g } else { 0.125 + 0.875 * (f - g) / (1.0 - g) };
+        ((1023.0 * f.max(0.0).powf(1.0 / self.gamma as f64)).floor() as i64).clamp(0, 1023) as u32
+    }
+
+    /// The lightmap texel L (0 to 255) for stored bytes summed with the
+    /// styles' letter values: `sum` = the sum of stored x letter scale (a
+    /// stored 50 at `m` is 50), as bsp.md's steps 1 to 3 give.
+    pub fn level(&self, sum: f32) -> u32 {
+        // S = sum x 264 (m's value) in 1/16 steps, so a whole stored byte
+        // never lands a hair under its index.
+        let s = (sum * 264.0 * 16.0).round() / 16.0;
+        let k = (s * self.gain() / 16384.0).floor() as i32;
+        self.out(k) / 4
+    }
+
+    /// The drawn light (L / 255) of the raw sum `raw` = `level`'s `sum`
+    /// / 255, as `MapLightmap::rgb` holds it.
+    pub fn texel(&self, raw: f32) -> f32 {
+        self.level(raw * 255.0) as f32 / 255.0
+    }
+
+    /// `texel` of each channel.
+    pub fn texel_rgb(&self, raw: [f32; 3]) -> [f32; 3] {
+        raw.map(|c| self.texel(c))
+    }
+
+    /// A studio model's vertex light (mdl.md, "Lighting"): the curve on
+    /// index floor(4 illum) without the gain, 0 to 1 (1023 = full).
+    pub fn vertex(&self, illum: f32) -> f32 {
+        self.out((4.0 * illum.clamp(0.0, 255.0)).floor() as i32) as f32 / 1023.0
+    }
 }
 
 /// One light style's share of the lightmap atlas.
@@ -930,7 +1016,18 @@ impl MapLightmap {
                 }
             }
         }
+        if let Some(c) = &self.curve {
+            rgb.iter_mut().for_each(|t| *t = c.texel_rgb(*t));
+        }
         (rgb, bumped)
+    }
+
+    /// The atlas as drawn at map start (`rgb` through `curve`).
+    pub fn shown(&self) -> std::borrow::Cow<'_, [[f32; 3]]> {
+        match &self.curve {
+            None => std::borrow::Cow::Borrowed(&self.rgb),
+            Some(c) => std::borrow::Cow::Owned(self.rgb.iter().map(|t| c.texel_rgb(*t)).collect()),
+        }
     }
 }
 

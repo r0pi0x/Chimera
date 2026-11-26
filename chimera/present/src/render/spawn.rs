@@ -505,7 +505,7 @@ fn image_parts(data: &MapData, bc: bool) -> ImageParts {
         let lightmaps = data
             .lightmap
             .as_ref()
-            .map(|l| LightmapLayers::build(&l.rgb, l.bumped.as_ref(), l.width, l.height, source_ldr));
+            .map(|l| LightmapLayers::build(&l.shown(), l.bumped.as_ref(), l.width, l.height, source_ldr));
         let sky = data.sky.as_ref().map(|sky| sky_image(sky, &data.textures));
         (cubemaps, lightmaps, sky)
     };

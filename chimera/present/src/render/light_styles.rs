@@ -218,6 +218,9 @@ impl StyledLightmaps {
                 }
             }
         }
+        if let Some(c) = &l.curve {
+            flat.iter_mut().for_each(|t| *t = c.texel_rgb(*t));
+        }
         (flat, pages)
     }
 }
@@ -688,6 +691,7 @@ mod tests {
             height: 1,
             rgb: vec![[0.5; 3], [1.0; 3], [1.5; 3], [0.25; 3]],
             bumped: None,
+            curve: None,
             styles: vec![
                 MapLightStyle {
                     style: 4,
