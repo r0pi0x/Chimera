@@ -150,7 +150,7 @@ fn spawn(
             }
             Kind::Water => water.push(MapWaterVolume {
                 brush: MapBrush::from_box(lo, hi),
-                slime: false,
+                slime: false, lava: false, current: None,
             }),
         }
         #[cfg(feature = "render")]

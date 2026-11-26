@@ -167,7 +167,7 @@ fn test_map(mut commands: Commands, entities: Res<Entities>) {
     ]));
     commands.insert_resource(MapWater(vec![MapWaterVolume {
         brush: brush(Vec3::new(-2000.0, -8192.0, -200.0), Vec3::new(-1000.0, 8192.0, 200.0)),
-        slime: false,
+        slime: false, lava: false, current: None,
     }]));
     commands.insert_resource(MapEntities {
         entities: Arc::new(entities.0.clone()),

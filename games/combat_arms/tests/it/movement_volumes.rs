@@ -1055,7 +1055,7 @@ fn brush_water(t: &mut T, y0: f32, y1: f32) {
     t.sim
         .app
         .world_mut()
-        .insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false }]));
+        .insert_resource(MapWater(vec![MapWaterVolume { brush, slime: false , lava: false, current: None }]));
     t.ticks(2);
 }
 

@@ -892,3 +892,26 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   the spec's swim details beyond the shared swim (movement.md's up key,
   slime and lava speeds, currents) stay `cs16::game::movement`'s
   shortcuts.
+
+### 2026-11-26: footsteps (specs/cs16/footsteps.md)
+
+- **Lookup** (`goldsrc_formats::materials`): `Rule::Cs16` (up to 1024
+  entries, 16 characters, a line counting by the spec's reading, sorted by
+  name and searched by halving: `generic015v` is metal) beside
+  Half-Life's (`Rule::HalfLife`, 12 characters, first match);
+  `GoldSrcGame::materials` picks it. Heavy test on the install.
+- **Sets** (`goldsrc_engine::content::sounds::add_steps`): every surface
+  kind's step surface (wood, computer, glass, grass as concrete) and
+  `ladder`, `wade` in the map's sounds, the feet as entries listing their
+  files; the water's splash, bubble and gasp entries. Converter version
+  bumped by its sources: **a cs16 republish is needed** (the served map
+  entries gain surfaces and sounds).
+- **Movement** (`chimera_movement::QuakeConfig::goldsrc_steps`, steps.rs):
+  the 150 units/s gate with the 400 ms idle timer, 300 ms steps, +100 ducked
+  or on a ladder, 600 ms wading with every fourth skipped on the shared
+  counter, ladder 0.35, wade 0.65, slosh 0.5, concrete 0.5, dirt 0.55, vent
+  0.7, ducked x 0.35, the foot flipped even when silent, standing up takes
+  100 ms off, a jump's step at 1.0 from 150, a landing's timer 300,
+  `mp_footsteps`. The walk key now multiplies after the clip (130); the
+  golden run's hash was re-taken for it.
+- Tests: cs16 `footsteps` (the spec's cases), heavy `footsteps`.

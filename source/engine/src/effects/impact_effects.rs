@@ -2359,7 +2359,7 @@ mod tests {
     fn water_entry() {
         let tank = MapWaterVolume {
             brush: crate::core::MapBrush::from_box(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 0.0, 1.0)),
-            slime: false,
+            slime: false, lava: false, current: None,
         };
         let w = [tank];
         assert_eq!(

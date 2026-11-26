@@ -26,7 +26,8 @@
 //!    entities' came with the entities);
 //! 5. the sky (`sky`, `skyname`, else `desert`) and the map's sprites
 //!    (`sprites::add_map`);
-//! 6. the sounds its entities play (`sounds::add_map`);
+//! 6. the sounds its entities play (`sounds::add_map`) and the step sets
+//!    of the surfaces (`sounds::add_steps`);
 //! 7. the game's kit (`GoldSrcGame::kit`: its bodies).
 //!
 //! The look: LDR, untonemapped, the lightmap as stored (`lightmap`'s
@@ -34,7 +35,10 @@
 //! converts to the same bytes each time (the cache and the served entries
 //! rely on it).
 
-use goldsrc_formats::{bsp::Bsp, materials::Materials};
+use goldsrc_formats::{
+    bsp::Bsp,
+    materials::{Materials, Rule},
+};
 
 use super::{METERS_PER_UNIT, brushes, collision, entities, lightmap, sky, sounds, sprites, textures, water};
 use crate::{
@@ -59,6 +63,8 @@ pub struct GoldSrcGame {
     pub gravity: f32,
     /// Its kit on its own map (bodies...), after the map's textures.
     pub kit: fn(&Mount, KitLoad, bool, &mut MapData),
+    /// How its `materials.txt` is matched (`goldsrc_formats::materials`).
+    pub materials: Rule,
 }
 
 /// A map's path on the mount.
@@ -200,7 +206,7 @@ pub fn convert(
     report(0.4, "Geometry");
     let materials = mount
         .read("sound/materials.txt")
-        .map(|b| Materials::parse(&String::from_utf8_lossy(&b)))
+        .map(|b| Materials::parse_with(&String::from_utf8_lossy(&b), game.materials))
         .unwrap_or_default();
     // How the light styles start: the logic's own spawn (switchable lights
     // dark or lit, the presets' patterns).
@@ -221,6 +227,7 @@ pub fn convert(
 
     report(0.82, "Sounds");
     sounds::add_map(mount, &logic, std::sync::Arc::make_mut(&mut data.sounds), &mut data.warnings);
+    sounds::add_steps(mount, std::sync::Arc::make_mut(&mut data.sounds), &mut data.warnings);
 
     report(0.85, "Kit");
     (game.kit)(mount, options.kit, decode, &mut data);

@@ -66,12 +66,12 @@ fn test_map(mut commands: Commands, node: Res<WithNode>) {
     commands.insert_resource(MapWater(vec![
         MapWaterVolume {
             brush: brush(Vec3::new(-2000.0, -8192.0, -200.0), Vec3::new(-1000.0, 8192.0, 200.0), None),
-            slime: false,
+            slime: false, lava: false, current: None,
         },
         // Waist-deep water over the floor.
         MapWaterVolume {
             brush: brush(Vec3::new(WADE.x - 1000.0, -8192.0, -64.0), Vec3::new(WADE.x + 1000.0, 8192.0, 40.0), None),
-            slime: false,
+            slime: false, lava: false, current: None,
         },
     ]));
     let mut entities = vec![entity(&[

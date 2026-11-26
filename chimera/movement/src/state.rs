@@ -57,7 +57,7 @@ pub struct QuakeMovement {
     /// Footsteps (sound spec 3): time to the next step (ms), which foot
     /// steps next, the surface last stood on, swim-stroke timer (ms).
     pub step_timer: f32,
-    pub(crate) step_left: bool,
+    pub step_left: bool,
     pub surface: Option<String>,
     pub(crate) swim_timer: f32,
     /// The punch angle's roll (degrees) and its velocity: hard landings

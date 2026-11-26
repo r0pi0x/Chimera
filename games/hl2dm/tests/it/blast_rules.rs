@@ -63,7 +63,7 @@ fn water(data: &mut MapData, lo: Vec3, hi: Vec3) {
     let (a, b) = engine_box(lo, hi);
     data.water.push(MapWaterVolume {
         brush: MapBrush::from_box(a, b),
-        slime: false,
+        slime: false, lava: false, current: None,
     });
 }
 

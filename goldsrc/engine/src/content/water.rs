@@ -15,17 +15,17 @@
 //!   `MapData::water_movers` entry: its volumes follow its node.
 //!
 //! Known shortcuts:
-//! - Slime and lava are both `slime` volumes (Chimera's water knows water
-//!   and slime only; the install has neither).
+//! - Slime and lava are both `slime` volumes, lava also `lava` (the
+//!   install has neither).
 //! - Currents are not read (the compiler's current contents never reach a
-//!   compiled tree: bsp.md), nor the clip trees' rare water ends (none in
+//!   compiled tree: bsp.md; `MapWaterVolume::current` is for custom maps), nor the clip trees' rare water ends (none in
 //!   cstrike's maps).
 //! - What is drawn for an eye under water (fog, tint) is not specified;
 //!   none is drawn.
 
 use goldsrc_formats::bsp::{
     Bsp, Entity,
-    hull::{CONTENTS_WATER, filled, liquid},
+    hull::{CONTENTS_LAVA, CONTENTS_WATER, filled, liquid},
     solids::convex_regions_where,
 };
 
@@ -46,6 +46,8 @@ pub fn add_world(bsp: &Bsp, data: &mut MapData) -> usize {
         data.water.push(MapWaterVolume {
             brush: brush(&c, [0.0; 3]),
             slime: contents != CONTENTS_WATER,
+            lava: contents == CONTENTS_LAVA,
+            current: None,
         });
     }
     n
@@ -86,6 +88,8 @@ pub fn add_entity(
         data.water.push(MapWaterVolume {
             brush: brush(&c, o),
             slime,
+            lava: skin == CONTENTS_LAVA,
+            current: None,
         });
     }
     n

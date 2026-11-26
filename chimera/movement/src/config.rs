@@ -321,6 +321,24 @@ pub struct QuakeConfig {
     /// (GoldSrc: the client's `cl_movespeedkey`), the max speed untouched;
     /// off: it scales the max speed (CS:S, measured).
     pub walk_scales_keys: bool,
+    /// GoldSrc's footsteps (specs/cs16/footsteps.md; `steps::
+    /// goldsrc_footsteps`): the 400 ms idle timer under `step_min_speed`,
+    /// one 3D speed gate (no walk band), the ladder, knee-deep and
+    /// feet-in-water overrides by water only (not slime), the ducked
+    /// volume x 0.35, the foot flipped even when silent, the surface
+    /// the concrete set when none is found, a standing-up credit of
+    /// 100 ms, a jump's step only from 150 units/s and a landing's timer
+    /// of 300.
+    pub goldsrc_steps: bool,
+    /// GoldSrc's liquids (specs/cs16/water.md; `liquids`): slime and lava
+    /// hurt on every command, the air and drowning clocks with their
+    /// gasps, bubbles, the time-based recovery; the jump lift by liquid
+    /// (100, 80, 50) and the steady sink; currents.
+    pub liquid_hazards: bool,
+    /// The names of the held-down actions that move up and down in water
+    /// and noclip (`+moveup`, `+movedown`: `core::ActionRegistry`) and the
+    /// speed each sends, units/s; empty: none.
+    pub up_actions: Option<(&'static str, &'static str, f32)>,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -375,7 +393,7 @@ impl QuakeConfig {
             "edgefriction" => self.edge_friction = num()?,
             "sv_enablebunnyhopping" => self.enable_bunnyhopping = num()? != 0.0,
             "sv_autobunnyhopping" => self.auto_bunnyhopping = num()? != 0.0,
-            "sv_footsteps" => self.footsteps = num()? != 0.0,
+            "sv_footsteps" | "mp_footsteps" => self.footsteps = num()? != 0.0,
             "cl_forwardspeed" | "cl_sidespeed" => self.key_speed = num()?,
             "sv_ladder_dampen" => self.ladder_dampen = num()?,
             "sv_ladder_angle" => self.ladder_angle = num()?,
@@ -408,7 +426,7 @@ impl QuakeConfig {
             "edgefriction" => f(self.edge_friction),
             "sv_enablebunnyhopping" => b(self.enable_bunnyhopping),
             "sv_autobunnyhopping" => b(self.auto_bunnyhopping),
-            "sv_footsteps" => b(self.footsteps),
+            "sv_footsteps" | "mp_footsteps" => b(self.footsteps),
             "cl_forwardspeed" | "cl_sidespeed" => f(self.key_speed),
             "sv_ladder_dampen" => f(self.ladder_dampen),
             "sv_ladder_angle" => f(self.ladder_angle),
@@ -583,6 +601,9 @@ impl QuakeConfig {
             rising_friction: crate::mover::UPWARD_AIR_FRICTION,
             water_jump_up: crate::mover::WATER_JUMP_UP,
             walk_scales_keys: false,
+            goldsrc_steps: false,
+            liquid_hazards: false,
+            up_actions: None,
         }
     }
 }

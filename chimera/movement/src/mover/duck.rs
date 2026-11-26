@@ -122,6 +122,10 @@ impl Mover<'_, '_, '_, '_> {
         self.me.ducking = false;
         self.me.duck_timer = 0.0;
         self.me.eye = self.cfg.eye_stand;
+        if self.cfg.goldsrc_steps {
+            // Standing up takes 100 ms off the step timer.
+            self.me.step_timer = (self.me.step_timer - 100.0).max(0.0);
+        }
         self.categorize();
     }
 

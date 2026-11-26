@@ -224,7 +224,9 @@ impl Mover<'_, '_, '_, '_> {
             Some(p) => p.min(self.cfg.maxspeed) * modifier,
             None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * modifier,
         } * self.ground_factors().0;
-        let keys = intent.move_axis * key_walk;
+        // GoldSrc scales the keys together to the max speed first and the
+        // walk key then multiplies them (130, not 0.52 x 400).
+        let keys = intent.move_axis;
         let (mut f, mut s) = (
             keys.y * self.cfg.key_speed + self.push_input.x,
             keys.x * self.cfg.key_speed + self.push_input.y,
@@ -234,6 +236,8 @@ impl Mover<'_, '_, '_, '_> {
             f *= max_speed / len;
             s *= max_speed / len;
         }
+        f *= key_walk;
+        s *= key_walk;
         self.me.duck_timer = (self.me.duck_timer - 1000.0 * self.dt).max(0.0);
         self.me.stamina = (self.me.stamina - 1000.0 * self.dt).max(0.0);
         self.me.swim_timer = (self.me.swim_timer - 1000.0 * self.dt).max(0.0);

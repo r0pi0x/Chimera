@@ -580,7 +580,7 @@ fn a_rocket_on_a_river_bed_shows_the_water_effect_13() {
     let mut sim = sim();
     sim.app.insert_resource(MapWater(vec![MapWaterVolume {
         brush: MapBrush::from_box(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, 1.27, 10.0)),
-        slime: false,
+        slime: false, lava: false, current: None,
     }]));
     let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), ROCKET_LAUNCHER);
     let (starts, ..) = collect(&mut sim, 60, |s, t| {

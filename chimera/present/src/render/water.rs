@@ -1483,7 +1483,7 @@ mod tests {
     fn reflection_only_for_water_in_sight() {
         let volume = |x: f32, top: f32| crate::core::MapWaterVolume {
             brush: crate::core::MapBrush::from_box(Vec3::new(x, top - 2.0, 0.0), Vec3::new(x + 4.0, top, 4.0)),
-            slime: false,
+            slime: false, lava: false, current: None,
         };
         let surface = |x: f32, top: f32| WaterSurface {
             material: 0,
