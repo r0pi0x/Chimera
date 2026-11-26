@@ -2025,6 +2025,7 @@ What is left of a swap over 100 M on the profiling build, in order:
 Seen in passing, not looked into: offscreen without `--dump` the audio thread
 (`cpal_alsa_out`) ran flat out during these frames (759 samples in an 85 ms frame, half in
 `audio::room::Reverb::frame`); whether a real output device paces it wasn't checked.
+(Fixed: an offscreen run has no output stream, "The sound thread" below.)
 
 ### A swap's prop meshes and shadows (2026-11-12)
 
@@ -5803,7 +5804,7 @@ added (seen in `/proc/<pid>/task/*/stat`: a whole core through the app's
 build and every frame after). Each stage therefore read about 2.5 times
 what it ran: the "30.6 G" was 15.0 G of the app's own, the "13.0 G" 4.9 G.
 The log now says both (`N M instructions (M M this thread's)`): the
-second is the stage. The thread itself is left as it is (below).
+second is the stage. The thread itself was fixed afterwards (below, "The sound thread").
 
 **Where the 15.0 G and the 4.9 G went** (this thread's, M instructions;
 by stage marks between the plugins and inside the costly ones, taken out
@@ -5822,6 +5823,16 @@ again):
 | Combat Arms' HUD (`CaHudPlugin`, the install's UI): the weapons' names (the weapons and item files parsed again: 2,047), the attachments' (the modification and item files again: 1,433), the string table (572), the art decoded (552), the layouts (300) | 4,909 | 1,440 |
 | **the shell and the HUDs** | **4,950** | **1,483** |
 | the window and Bevy's plugins | 795 | 795 |
+
+**The sound thread.** `--offscreen` no longer builds Bevy's `AudioPlugin`
+at all: `app::default_plugins` adds `RecordAudioPlugin` with `--dump`'s
+`audio.wav` or, without `--dump`, with no file (`path: None`), which mixes
+by the frames' real time and discards the samples, so sinks still finish
+and sound timing is the same. No `cpal_alsa_out` thread starts; a 300-frame
+`ultimate_gun_game --offscreen 640x480 +volume 0` boot log now has every
+stage's all-threads count equal its own thread's (the shell and the HUDs
+1,483 M both; before, 2.5 times as much on the all-threads side). Windowed
+runs are unchanged.
 
 The other games' simulations and HUDs are under 60 M each (their systems
 are gated by `games_in_play`; building them costs nothing worth cutting).

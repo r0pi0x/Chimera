@@ -1,6 +1,8 @@
 //! `RecordAudioPlugin`: Bevy's audio played into a WAV file instead of a
 //! sound device, timed by the frames, for recordings (the client's
-//! `--offscreen` with `--dump`, docs/OBSERVABILITY.md section 2). It
+//! `--offscreen` with `--dump`, docs/OBSERVABILITY.md section 2; with
+//! `--offscreen` alone the same with no file, so no output thread spins
+//! on a null device). It
 //! takes Bevy's `AudioPlugin`'s place: the same components
 //! (`AudioPlayer`, `PlaybackSettings`, `AudioSink`) and assets (`AudioSource` with its loader, `Pitch`), so everything that
 //! plays or steers sounds works unchanged, but every player is connected
@@ -58,7 +60,10 @@ pub const CHANNELS: u16 = 2;
 
 /// Bevy's audio into a WAV file at `path` (see the module doc).
 pub struct RecordAudioPlugin {
-    pub path: PathBuf,
+    /// The WAV file, or `None` for the same mixing and timing with the
+    /// samples thrown away (a run with no sound device: `--offscreen`
+    /// without `--dump`).
+    pub path: Option<PathBuf>,
 }
 
 impl Plugin for RecordAudioPlugin {
@@ -108,7 +113,7 @@ pub struct AudioRecording {
     mixer: Mixer,
     out: Mutex<MixerSource>,
     file: Option<BufWriter<File>>,
-    path: PathBuf,
+    path: Option<PathBuf>,
     /// `Time<Real>`'s elapsed time at the first frame.
     start: Option<f64>,
     /// Sample frames (one per channel each) written.
@@ -120,27 +125,29 @@ pub struct AudioRecording {
 }
 
 impl AudioRecording {
-    fn create(path: PathBuf) -> Self {
+    fn create(path: Option<PathBuf>) -> Self {
         let (mixer, out) = rodio::mixer::mixer(NonZero::new(CHANNELS).unwrap(), NonZero::new(RATE).unwrap());
-        let file = path
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| File::create(&path))
-            .map(BufWriter::new)
-            .and_then(|mut f| {
-                write_header(&mut f, 0)?;
-                Ok(f)
-            });
-        let file = match file {
-            Ok(f) => {
-                info!("audio: recording into {}", path.display());
-                Some(f)
+        let file = path.as_ref().and_then(|path| {
+            let file = path
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| File::create(path))
+                .map(BufWriter::new)
+                .and_then(|mut f| {
+                    write_header(&mut f, 0)?;
+                    Ok(f)
+                });
+            match file {
+                Ok(f) => {
+                    info!("audio: recording into {}", path.display());
+                    Some(f)
+                }
+                Err(e) => {
+                    error!("audio: can't record into {}: {e}", path.display());
+                    None
+                }
             }
-            Err(e) => {
-                error!("audio: can't record into {}: {e}", path.display());
-                None
-            }
-        };
+        });
         Self {
             mixer,
             out: Mutex::new(out),
@@ -160,9 +167,9 @@ impl AudioRecording {
         self.written
     }
 
-    /// The file being written.
-    pub fn path(&self) -> &std::path::Path {
-        &self.path
+    /// The file being written (none: the samples are discarded).
+    pub fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
     }
 
     /// Mix `frames` sample frames and append them to the file.
@@ -171,12 +178,15 @@ impl AudioRecording {
             return;
         }
         self.bytes.clear();
+        let keep = self.file.is_some();
         if let Ok(mut out) = self.out.lock() {
             for _ in 0..frames * u64::from(CHANNELS) {
                 // An empty mixer ends (`None`) until a sound is added: silence.
                 let s = out.next().unwrap_or(0.0);
-                let s = (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
-                self.bytes.extend_from_slice(&s.to_le_bytes());
+                if keep {
+                    let s = (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+                    self.bytes.extend_from_slice(&s.to_le_bytes());
+                }
             }
         }
         self.written += frames;
@@ -188,7 +198,7 @@ impl AudioRecording {
                 .and_then(|()| f.seek(SeekFrom::End(0)).map(drop))
                 .and_then(|()| f.flush());
             if let Err(e) = ok {
-                error!("audio: writing {}: {e}", self.path.display());
+                error!("audio: writing {}: {e}", self.path.as_deref().map_or_else(String::new, |p| p.display().to_string()));
                 self.file = None;
             }
         }
