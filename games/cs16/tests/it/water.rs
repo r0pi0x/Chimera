@@ -314,7 +314,14 @@ fn the_drawn_eye_keeps_4_units_from_the_surface() {
         sim.ticks(1);
         let m = sim.app.world().get::<QuakeMovement>(p).unwrap().clone();
         assert!(m.water_level >= 2, "level {}", m.water_level);
-        let drawn = sim.app.world().get::<chimera_core::core::MovementState>(p).unwrap().eye_offset.y / 0.0254 + ORIGIN;
+        let ms = sim.app.world().get::<chimera_core::core::MovementState>(p).unwrap().clone();
+        let drawn = (ms.eye_offset.y + ms.view_shift) / 0.0254 + ORIGIN;
         assert!((drawn - want).abs() <= 1.1, "surface {top}: drawn eye {drawn}, want {want}");
+        // Shots and traces start at the real eye (53 over the feet).
+        let real = ms.eye_offset.y / 0.0254 + ORIGIN;
+        assert!((real - 53.0).abs() <= 0.1, "surface {top}: shot origin {real}");
+        let view = chimera_world::map::interp::EyeView::of(&Default::default(), &ms);
+        assert!((view.eye_offset - ms.eye_offset).length() < 1e-6, "the aim ray's eye is the real one");
+        assert!((view.camera_offset().y - ms.eye_offset.y - ms.view_shift).abs() < 1e-6, "the camera's is shifted");
     }
 }

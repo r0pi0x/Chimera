@@ -1133,7 +1133,7 @@ fn follow_eye(
             };
             let eye = crate::map::interp::eye_view(v, i, s);
             let look = view::camera_look(&chase, Quat::from_euler(EulerRot::YXZ, eye.yaw, eye.pitch, 0.0));
-            let offset = view::camera_offset(&chase, t.translation, eye.eye_offset, look, &spatial, &characters);
+            let offset = view::camera_offset(&chase, t.translation, eye.camera_offset(), look, &spatial, &characters);
             (t.translation + offset, look)
         });
     for (at, intent, state, children, punch, view, map_view, hull, back) in &players {
@@ -1160,7 +1160,7 @@ fn follow_eye(
         let filter = avian3d::prelude::SpatialQueryFilter::from_excluded_entities(&characters)
             .with_mask(crate::core::CHARACTER_FILTER);
         let kick = Vec3::new(p.x, p.y, eye.view_roll + p.z);
-        let placed = shoulder.place(at.translation, eye.eye_offset, look, look, kick, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
+        let placed = shoulder.place(at.translation, eye.camera_offset(), look, look, kick, Vec2::new(free.yaw, free.pitch), &spatial, &filter);
         let third = placed.is_some();
         let (offset, look) = placed.unwrap_or_else(|| {
             // The ceiling probe is over the player's own hull.
@@ -1169,7 +1169,7 @@ fn follow_eye(
                 third_person: false,
                 ..*mode
             };
-            let offset = view::camera_offset_for_hull(&first, at.translation, eye.eye_offset, look, &spatial, &characters, hull);
+            let offset = view::camera_offset_for_hull(&first, at.translation, eye.camera_offset(), look, &spatial, &characters, hull);
             (offset, look)
         });
         // Over steps the eye lags the feet (first person: `smooth_stairs`).

@@ -160,6 +160,8 @@ impl Interpolated {
 pub struct EyeView {
     /// Eye above the origin (`MovementState::eye_offset`), meters.
     pub eye_offset: Vec3,
+    /// `MovementState::view_shift`, meters: the camera only.
+    pub view_shift: f32,
     /// `MovementState::view_roll`, radians.
     pub view_roll: f32,
     /// Look angles (`Intent`), radians.
@@ -174,6 +176,7 @@ impl EyeView {
     pub fn of(intent: &Intent, state: &MovementState) -> Self {
         Self {
             eye_offset: state.eye_offset,
+            view_shift: state.view_shift,
             view_roll: state.view_roll,
             yaw: intent.yaw,
             pitch: intent.pitch,
@@ -181,9 +184,15 @@ impl EyeView {
         }
     }
 
+    /// The eye the camera is drawn at, above the origin (with the shift).
+    pub fn camera_offset(&self) -> Vec3 {
+        self.eye_offset + Vec3::Y * self.view_shift
+    }
+
     pub fn lerp(a: &Self, b: &Self, t: f32) -> Self {
         Self {
             eye_offset: a.eye_offset.lerp(b.eye_offset, t),
+            view_shift: a.view_shift + (b.view_shift - a.view_shift) * t,
             view_roll: a.view_roll + (b.view_roll - a.view_roll) * t,
             yaw: a.yaw + wrap(b.yaw - a.yaw) * t,
             pitch: a.pitch + (b.pitch - a.pitch) * t,

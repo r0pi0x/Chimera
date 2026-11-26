@@ -279,6 +279,10 @@ pub struct MovementState {
     pub sprinting: bool,
     /// Eye position relative to the character's origin, in meters.
     pub eye_offset: Vec3,
+    /// How far the drawn view sits above `eye_offset` (meters, up; a
+    /// movement that keeps the camera off a liquid's surface sets it).
+    /// View only: shots and traces start at `eye_offset`.
+    pub view_shift: f32,
     /// The collision box relative to the character's origin (engine
     /// space, meters), when the movement has one (Source hulls); zero
     /// when it doesn't (the logic layer then uses the collider's bounds).

@@ -812,7 +812,7 @@ pub fn place_camera(
                     let fp = CameraMode::default();
                     // The ceiling probe over the watched character's own hull.
                     let hull = spec.target.and_then(|w| hulls.get(w).ok()).map(super::view::Hull::of);
-                    let offset = camera_offset_for_hull(&fp, t, e.eye_offset, look, &spatial, &characters, hull);
+                    let offset = camera_offset_for_hull(&fp, t, e.camera_offset(), look, &spatial, &characters, hull);
                     Some((t + offset, look))
                 }
                 (SpecMode::Chase, Some((t, e))) => {
@@ -827,7 +827,7 @@ pub fn place_camera(
                         pivot_up: 0.0,
                         meters_per_unit: UNIT,
                     };
-                    let offset = camera_offset(&third, t, e.eye_offset, look, &spatial, &characters);
+                    let offset = camera_offset(&third, t, e.camera_offset(), look, &spatial, &characters);
                     Some((t + offset, look))
                 }
                 (SpecMode::Fixed, _) => {

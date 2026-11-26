@@ -507,7 +507,7 @@ fn the_walk_key_scales_the_keys() {
 #[test]
 fn golden_run() {
     use chimera_world::harness::own_process;
-    const GOLDEN: u64 = 0x011d_7d69_31be_3384;
+    const GOLDEN: u64 = 0x46cd_0acd_f21d_e07d;
     const TICKS: u64 = 1620;
     if !own_process("movement::golden_run") {
         return;
