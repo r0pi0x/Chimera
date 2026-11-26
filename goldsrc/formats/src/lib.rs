@@ -12,6 +12,9 @@
 //!   lookup and the visibility decoding are adapted from `qbsp`
 //!   (THIRD_PARTY.md); its Quake palette is not.
 //! - `miptex`: the mip texture record BSP and WAD3 share, to RGBA.
+//! - `holes`: the colour under alpha-tested images' holes (from their
+//!   opaque neighbours, so filtering and mip levels don't bleed the key
+//!   colour).
 //! - `wad`: WAD3 texture archives (specs/goldsrc/wad3.md): mip textures,
 //!   pictures, fonts, decals.
 //! - `mdl`: studio models, MDL version 10 (specs/goldsrc/mdl.md): bones,
@@ -25,6 +28,7 @@
 //!   (specs/goldsrc/mount.md).
 
 pub mod bsp;
+pub mod holes;
 pub mod liblist;
 pub mod materials;
 pub mod mdl;

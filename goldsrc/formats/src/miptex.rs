@@ -3,7 +3,7 @@
 //! a 16-byte name, the size, four mip offsets and, when embedded, the four
 //! levels of palette indices and the texture's own 256-colour palette.
 //! `MipTex::rgba` converts level 0: index 255 is transparent only in `{`
-//! textures; decals (`decal_rgba`) take the palette's last colour as the
+//! textures (its colour filled from the opaque texels, `holes`); decals (`decal_rgba`) take the palette's last colour as the
 //! tint and the index as coverage.
 
 use chimera_vfs::bytes::Le;
@@ -92,7 +92,8 @@ impl MipTex {
     }
 
     /// Mip `level` as RGBA8, row by row from the top (`None` when not
-    /// embedded). Holes of a `{` texture are black with alpha 0.
+    /// embedded). Holes of a `{` texture have alpha 0 and their nearest
+    /// opaque texels' colour (`holes::fill`), not the key colour.
     pub fn rgba(&self, level: usize) -> Option<Vec<u8>> {
         let px = self.levels.get(level)?;
         let masked = self.masked();
@@ -104,6 +105,13 @@ impl MipTex {
                 let c = self.palette[i as usize];
                 out.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }
+        }
+        if masked {
+            crate::holes::fill(
+                &mut out,
+                (self.width >> level).max(1) as usize,
+                (self.height >> level).max(1) as usize,
+            );
         }
         Some(out)
     }

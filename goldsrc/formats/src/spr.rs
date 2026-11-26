@@ -141,7 +141,7 @@ impl Sprite {
     pub fn rgba(&self, frame: &Frame) -> Vec<u8> {
         let last = self.palette.last().copied().unwrap_or([255; 3]);
         let col = |i: u8| self.palette.get(i as usize).copied().unwrap_or([0; 3]);
-        frame
+        let mut out: Vec<u8> = frame
             .pixels
             .iter()
             .flat_map(|&i| match self.format {
@@ -155,7 +155,13 @@ impl Sprite {
                     [c[0], c[1], c[2], if i == 255 { 0 } else { 255 }]
                 }
             })
-            .collect()
+            .collect();
+        // An alpha-test frame's holes take their opaque neighbours'
+        // colour, not the key colour (`holes::fill`).
+        if self.format == TextureFormat::AlphaTest {
+            crate::holes::fill(&mut out, frame.width as usize, frame.height as usize);
+        }
+        out
     }
 }
 

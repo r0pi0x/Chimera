@@ -1,15 +1,18 @@
 //! The specs' worked examples that need no game files: a hull trace on a
 //! one-plane clip tree (bsp.md, "Test cases"), the visibility row
 //! decoding, triangle commands, `liblist.gam`, `materials.txt` matching
-//! and the HUD sprite lists, each built in code.
+//! the HUD sprite lists, and alpha-tested images' holes (a `{` mip
+//! texture, a masked studio texture, an alpha-test sprite: wad3.md,
+//! "Converting to RGBA"), each built in code.
 
 use goldsrc_formats::bsp::hull::{CONTENTS_SOLID, HULL_BOXES};
 use goldsrc_formats::bsp::solids::{Convex, HalfSpace, Shrink, shrink};
 use goldsrc_formats::bsp::{Bsp, ClipNode, Model, Plane, parse_entities, vis::decode_row, wad_names};
 use goldsrc_formats::liblist::LibList;
 use goldsrc_formats::materials::{Materials, match_name};
-use goldsrc_formats::mdl::{TriCommand, TriVertex};
-use goldsrc_formats::spr::parse_sprite_list;
+use goldsrc_formats::mdl::{Texture, TriCommand, TriVertex};
+use goldsrc_formats::miptex::MipTex;
+use goldsrc_formats::spr::{Frame, FrameEntry, Sprite, TextureFormat, parse_sprite_list};
 
 /// A hull 1 tree for a flat floor at z = 0: its hull 1 plane at z = 36,
 /// empty above, solid below.
@@ -178,4 +181,79 @@ fn a_hud_sprite_list_reads_its_rectangles() {
     // Fewer entries than counted (the install's hud.txt): those there.
     assert_eq!(parse_sprite_list("3\nammo 640 640hud7 72 72 24 24\n").unwrap().len(), 1);
     assert!(parse_sprite_list("1\nammo 640 640hud7 72\n").is_err());
+}
+
+/// A leafy 16 x 16 image's indices: a one-texel-wide stem down column 7
+/// (index 1, green) on the key colour (255, blue) everywhere else, and
+/// its palette.
+fn leaf() -> (Vec<u8>, Vec<[u8; 3]>) {
+    let px = (0..256).map(|i| if i % 16 == 7 { 1 } else { 255 }).collect();
+    let mut palette = vec![[0, 0, 0]; 256];
+    palette[1] = [40, 90, 20];
+    palette[255] = [0, 0, 255];
+    (px, palette)
+}
+
+/// What an alpha-tested image must decode to: the stem opaque and green,
+/// every hole clear and green too (the stem's colour, not the key's blue
+/// that filtering and the mip levels would mix in: de_aztec's blue grass),
+/// so no texel is blue-dominant.
+fn assert_holes_filled(rgba: &[u8], what: &str) {
+    assert_eq!(rgba.len(), 256 * 4, "{what}");
+    for (i, p) in rgba.chunks(4).enumerate() {
+        assert_eq!(p[3], if i % 16 == 7 { 255 } else { 0 }, "{what}: texel {i} alpha");
+        assert_eq!(&p[..3], &[40, 90, 20], "{what}: texel {i} colour");
+    }
+}
+
+#[test]
+fn alpha_tested_holes_take_the_opaque_colour_not_the_key() {
+    let (px, palette) = leaf();
+    // A `{` mip texture (its four levels; only level 0 is checked).
+    let levels = vec![px.clone(), vec![255; 64], vec![255; 16], vec![255; 4]];
+    let mut tex = MipTex {
+        name: "{vine1".into(),
+        width: 16,
+        height: 16,
+        mip_offsets: [40, 296, 360, 376],
+        levels,
+        palette: palette.clone(),
+        colour_count: 256,
+    };
+    assert_holes_filled(&tex.rgba(0).unwrap(), "{vine1");
+    // Without `{`, index 255 is an opaque blue texel.
+    tex.name = "vine1".into();
+    let plain = tex.rgba(0).unwrap();
+    assert_eq!(&plain[..4], &[0, 0, 255, 255]);
+    // A masked studio texture (flag 64).
+    let skin = Texture {
+        name: "leaf.bmp".into(),
+        flags: 64,
+        width: 16,
+        height: 16,
+        pixel_offset: 0,
+        pixels: px.clone(),
+        palette: palette.clone(),
+    };
+    assert_holes_filled(&skin.rgba(), "masked studio texture");
+    // An alpha-test sprite (ikgrass1.spr's format).
+    let frame = Frame {
+        origin: [-8, 8],
+        width: 16,
+        height: 16,
+        pixels: px,
+    };
+    let spr = Sprite {
+        orientation: 0,
+        format: TextureFormat::AlphaTest,
+        radius: 11.3,
+        max_width: 16,
+        max_height: 16,
+        beam_length: 0.0,
+        sync: 0,
+        palette,
+        frames: vec![FrameEntry::Single(frame.clone())],
+        trailing: 0,
+    };
+    assert_holes_filled(&spr.rgba(&frame), "alpha-test sprite");
 }
