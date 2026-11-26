@@ -5,7 +5,7 @@
 //! the greybox), its weapons' rules (`weapons`: specs/cs16/weapons.md's
 //! and damage.md's test cases), its movement from the spec's test cases
 //! and its golden run (`movement`), that movement predicted over `NetSim`
-//! (`net_prediction`), its light styles (`light_styles`, server to client), a converted water leaf swum in (`water`), its footsteps (`footsteps`), and, in `heavy`, the user's install (`movement`:
+//! (`net_prediction`), its light styles (`light_styles`, server to client), a converted water leaf swum in (`water`), its footsteps (`footsteps`), its spent cases (`shells`), and, in `heavy`, the user's install (`movement`:
 //! hull-traced walks, stairs and ladders; `guns`: every weapon's models
 //! and sounds; `hud`: every weapon's HUD pictures and kill icon; `served`: CS 1.6
 //! from the asset service alone, packed from it; `textures`: what texture
@@ -25,6 +25,7 @@ mod info;
 mod light_styles;
 mod movement;
 mod net_prediction;
+mod shells;
 mod skeleton;
 mod water;
 mod weapons;

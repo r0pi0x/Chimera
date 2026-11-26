@@ -197,6 +197,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
         .add_message::<ClearBodyDecals>();
     layers.decal_resources(app);
     app.add_message::<ViewModelEvent>()
+        .add_message::<super::shells::ThrowShell>()
         .add_message::<SpawnGibs>()
         .add_message::<breakables::BreakProp>()
         .add_message::<prop_physics::PropAwakened>()

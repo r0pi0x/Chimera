@@ -105,6 +105,10 @@ pub struct QuakeMovement {
     /// (`QuakeConfig::command_msec`), ms: added to the next tick's time.
     #[serde(default)]
     pub msec_carry: f32,
+    /// The liquid under the feet is lava (`QuakeConfig::liquid_hazards`;
+    /// `in_slime` is set with it).
+    #[serde(default)]
+    pub in_lava: bool,
 }
 
 impl Default for QuakeMovement {
@@ -151,6 +155,7 @@ impl Default for QuakeMovement {
             stance_low: false,
             stance_crouch: false,
             msec_carry: 0.0,
+            in_lava: false,
         }
     }
 }

@@ -109,3 +109,31 @@ fn a_player_swims_in_as_oilrigs_sea() {
     let (vz, z1) = (to_units(sim.velocity(p)).z, to_units(sim.position(p)).z);
     assert!(vz > 50.0 && z1 > z0 + 10.0, "rising at {vz}, {z0} -> {z1}");
 }
+
+/// as_oilrig's sea fogs the view under it in its texture's colours
+/// (specs/cs16/water.md "The view in a liquid": palette entry 3, here
+/// `!BWATER1` of liquids.wad's (37, 40, 52)): the converted map has the
+/// fog-only material and tags its liquid faces with it.
+#[test]
+fn as_oilrigs_sea_has_its_liquid_textures_fog() {
+    let Some(mount) = super::maps::mount() else { return };
+    let map = super::maps::convert(&mount, "as_oilrig", false);
+    assert!(!map.water_materials.is_empty());
+    assert!(map.water_materials.iter().all(|m| m.fog_only && m.above_water));
+    let tagged: Vec<&str> = map
+        .meshes
+        .iter()
+        .filter_map(|m| m.water.map(|i| map.water_materials[i].name.as_str()))
+        .collect();
+    assert!(!tagged.is_empty(), "no liquid face tagged");
+    for w in &map.water {
+        let (a, b) = (chimera_movement::to_units(w.brush.min), chimera_movement::to_units(w.brush.max));
+        eprintln!("as_oilrig volume {:?}..{:?}", a.min(b), a.max(b));
+    }
+    let bwater = map.water_materials.iter().find(|m| m.name.contains("bwater"));
+    eprintln!("as_oilrig fog materials: {:?}", map.water_materials.iter().map(|m| (&m.name, m.fog_color, m.fog_end)).collect::<Vec<_>>());
+    if let Some(m) = bwater {
+        let c = m.fog_color.map(|c| (c * 255.0).round() as u8);
+        assert_eq!(c, [37, 40, 52], "{}", m.name);
+    }
+}

@@ -501,13 +501,13 @@ fn the_walk_key_scales_the_keys() {
 /// hash was taken when the movement landed: a change of one float
 /// operation changes it; a behaviour change re-takes it in its own
 /// commit, saying why (re-taken 2026-11-26: the walk key's 0.52 after the
-/// keys' clip). `CHIMERA_GOLDEN_TRACE=1` prints every tick's row.
+/// keys' clip, then the swim's GoldSrc rules: the sink, the up key). `CHIMERA_GOLDEN_TRACE=1` prints every tick's row.
 /// Asserted on Linux x86-64 only. It prints the step's and the tick's
 /// instructions a tick.
 #[test]
 fn golden_run() {
     use chimera_world::harness::own_process;
-    const GOLDEN: u64 = 0x5ae0_3e14_b2ec_70c5;
+    const GOLDEN: u64 = 0x011d_7d69_31be_3384;
     const TICKS: u64 = 1620;
     if !own_process("movement::golden_run") {
         return;

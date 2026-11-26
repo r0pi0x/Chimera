@@ -39,8 +39,49 @@ fn de_dust2_names_its_surfaces_by_the_cs16_rule() {
     kinds.sort();
     kinds.dedup();
     eprintln!("de_dust2 surface kinds: {kinds:?}");
-    assert!(kinds.len() >= 3, "{kinds:?}");
-    assert!(kinds.iter().any(|k| *k != "concrete"));
+    // `+0~fifties_lgt2` (the animation frame and the `~` dropped) is a
+    // computer's; the rest of dust2's textures are unlisted: concrete.
+    assert_eq!(kinds, ["computer", "concrete"]);
     assert!(map.sounds.surfaces.contains_key("concrete") && map.sounds.surfaces.contains_key("ladder"));
-    assert!(!map.warnings.iter().any(|w| w.starts_with("step sounds") || w.starts_with("water sound")), "{:?}", map.warnings);
+    assert!(
+        !map.warnings
+            .iter()
+            .any(|w| w.starts_with("step sounds") || w.starts_with("water sound")),
+        "{:?}",
+        map.warnings
+    );
+}
+
+/// The guns' spent cases (specs/cs16/shells.md): the four case models
+/// read with meshes and textures, the five shell types are in the kit,
+/// and the brass and shotgun bounce sounds resolve.
+#[test]
+fn the_shell_models_and_bounce_sounds_resolve() {
+    use chimera_world::map::MapData;
+    let Some(mount) = mount() else { return };
+    let mut map = MapData::default();
+    cs16::game::weapons::add_guns(&mount, &|_| true, cs16::game::weapons::SKELETON, false, &mut map);
+    let mut keys: Vec<&str> = map.kit.shells.iter().map(|s| s.key.as_str()).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["pshell", "rshell", "rshell_big", "shotgunshell", "shotgunshell_shotgun"],
+        "{:?}",
+        map.warnings
+    );
+    for s in &map.kit.shells {
+        assert!(!s.model.meshes.is_empty(), "{}", s.key);
+        let size = s.model.bounds.1 - s.model.bounds.0;
+        eprintln!("shell {} size {size:?}", s.key);
+        // A case is a few centimetres long and its long axis is x (the
+        // way the throw turns it along the shooter's view).
+        assert!(
+            size.max_element() < 0.15 && size.x >= size.y.max(size.z) - 1e-4,
+            "{}: {size:?}",
+            s.key
+        );
+        let bounce = s.bounce.as_deref().unwrap();
+        assert!(map.sounds.entry(bounce).is_some_and(|e| e.waves.len() == 3), "{bounce}");
+    }
+    assert!(!map.warnings.iter().any(|w| w.contains("shell")), "{:?}", map.warnings);
 }

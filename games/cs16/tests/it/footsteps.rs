@@ -79,7 +79,12 @@ fn the_first_step_comes_at_0_4_s_then_every_0_3_s() {
     let (left, right) = concrete();
     let names: Vec<&str> = steps.iter().map(|(_, (e, _))| e.as_str()).collect();
     assert!(!names.is_empty());
-    assert!(steps.iter().all(|(_, (e, v))| (e == &left || e == &right) && *v == Some(0.5)), "{steps:?}");
+    assert!(
+        steps
+            .iter()
+            .all(|(_, (e, v))| (e == &left || e == &right) && *v == Some(0.5)),
+        "{steps:?}"
+    );
     // The feet alternate.
     let feet: Vec<bool> = steps.iter().map(|(_, (e, _))| *e == left).collect();
     assert!(feet.windows(2).all(|w| w[0] != w[1]), "{feet:?}");
@@ -166,7 +171,12 @@ fn wading_steps_every_0_6_s_with_every_fourth_skipped() {
     heard(&mut sim);
     let steps = step_commands(&mut sim, 240);
     let (left, right) = step_entries("wade", "pl_wade");
-    assert!(steps.iter().all(|(_, (e, v))| (e == &left || e == &right) && *v == Some(0.65)), "{steps:?}");
+    assert!(
+        steps
+            .iter()
+            .all(|(_, (e, v))| (e == &left || e == &right) && *v == Some(0.65)),
+        "{steps:?}"
+    );
     // 240 commands = 4 checks of 0.6 s each... counted from the first
     // step; three of every four play.
     let n = steps.len();
@@ -228,5 +238,9 @@ fn mp_footsteps_0_silences_but_the_foot_alternates() {
     let foot0 = me(&sim, p).step_left;
     let steps = step_commands(&mut sim, 100);
     assert!(steps.is_empty(), "silent: {steps:?}");
-    assert_eq!(me(&sim, p).step_left, foot0 ^ (n % 2 == 1), "the foot flips with every step, heard or not");
+    assert_eq!(
+        me(&sim, p).step_left,
+        foot0 ^ (n % 2 == 1),
+        "the foot flips with every step, heard or not"
+    );
 }

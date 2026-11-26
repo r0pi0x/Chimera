@@ -35,6 +35,11 @@
 //!   modifier (0.5; 0.65 and a 170 units/s push for a large flinch: one of
 //!   the data's twelve guns, not in the legs, the victim not ducked),
 //!   which on each ground tick gains 0.01 and scales the whole velocity;
+//! - **water** (specs/cs16/water.md, movement.md "Water"): the swim with
+//!   the up key (`+moveup`, 320 clipped to the max speed), the sink of 48
+//!   with no input, the jump's lift by liquid (100, 80, 50), currents, and
+//!   (`chimera_movement::liquids`) slime and lava damage per command, the
+//!   12 s of air and the drowning, bubbles, gasps and the recovery;
 //! - **footsteps** (`goldsrc_steps`, specs/cs16/footsteps.md): the step
 //!   sets by the map's surface kind (`goldsrc_engine::content::sounds`),
 //!   the 150 units/s gate, 300 ms steps (+100 ducked or on a ladder, 600
@@ -54,10 +59,12 @@
 //! - Ladder volumes are solid ladder brushes found by a 2-unit probe
 //!   along the keys (the shared code's, as on every game's maps); the
 //!   original's are not solid and hold a player whose box is in them.
-//! - Swimming is the shared code's (jump held adds the player's speed to
-//!   the wish; the spec's up key, slime and lava speeds, and currents are
-//!   not modelled). GoldSrc maps hand over their liquids as water
-//!   volumes (`goldsrc_engine::content::water`).
+//! - Currents are the data's (`MapWaterVolume::current`): no loader fills
+//!   them (the stock maps have none; the compiler's current contents never
+//!   reach a compiled tree), and the swim's push is counted as the spec's
+//!   movement.md "Currents" has it. Noclip's up and down keys are not used.
+//! - The drowning's, slime's and lava's damage kinds are Chimera's `Drown`,
+//!   `Poison` and `Burn` (`chimera_movement::liquids`).
 //! - The walk key's 0.52 is the spec's, applied after the keys are
 //!   clipped to the max speed (130 units/s with a 250 gun); not checked in
 //!   the game.
@@ -81,6 +88,10 @@ use crate::{
     core::{Hitgroup, Velocity},
     slots::{Loadout, MovementSlot},
 };
+
+/// The named actions of `+moveup` and `+movedown` (swimming, noclip).
+pub const UP_ACTION: &str = "moveup";
+pub const DOWN_ACTION: &str = "movedown";
 
 /// The movement's id.
 pub const ID: &str = "cs16:movement";
@@ -246,6 +257,16 @@ pub fn config() -> QuakeConfig {
         water_surface: "slipperyslime",
         waist_step_skip: false,
         swim_sound: goldsrc_engine::content::sounds::SPLASH,
+        // Liquids (specs/cs16/water.md): slime and lava hurt, the air and
+        // the drowning, bubbles and gasps, the swim's lift by liquid,
+        // currents; the up and down keys.
+        liquid_hazards: true,
+        liquid_sounds: Some((
+            goldsrc_engine::content::sounds::BUBBLE,
+            goldsrc_engine::content::sounds::GASP_OUT,
+            goldsrc_engine::content::sounds::GASP_SHORT,
+        )),
+        up_actions: Some((UP_ACTION, DOWN_ACTION, 320.0)),
         // Ladders and water.
         contents_ladders: true,
         useable_ladders: false,
@@ -336,7 +357,11 @@ pub fn add_movement(app: &mut App) {
     {
         return;
     }
-    app.quake_movement(ID, config(), &[QUAKE_CVARS, CVARS], Some(super::GAME))
+    use chimera_core::core::ActionAppExt;
+    app.init_resource::<chimera_core::core::ActionRegistry>()
+        .intent_action(UP_ACTION)
+        .intent_action(DOWN_ACTION)
+        .quake_movement(ID, config(), &[QUAKE_CVARS, CVARS], Some(super::GAME))
         .add_plugins(goldsrc_engine::hulls::GoldSrcHullsPlugin)
         .insert_resource(HitNumbers(numbers().hit))
         .add_systems(

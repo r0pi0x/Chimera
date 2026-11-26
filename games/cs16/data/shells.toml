@@ -1,0 +1,151 @@
+# CS 1.6's shell ejection per gun (specs/cs16/shells.md): the case model
+# (`models/<model>.mdl`), the bounce sound type (`brass`: pl_shell1-3,
+# `shotgun`: sshell1-3), the first-person start offset from the eye
+# (forward `f`, up `up`, right `r` for a right-handed player; `f_left`:
+# the forward offset when left-handed, where it differs; `r` is the
+# right gun's for the Elites), and, for the guns that throw it late, the
+# `late` delay in seconds after the shot.
+
+[glock18]
+model = "pshell"
+f = 36
+up = -14
+r = 14
+
+[usp]
+model = "pshell"
+f = 36
+up = -14
+r = 14
+
+[p228]
+model = "pshell"
+f = 36
+up = -14
+r = 14
+
+[fiveseven]
+model = "pshell"
+f = 36
+up = -14
+r = 14
+
+[deagle]
+model = "pshell"
+f = 35
+up = -11
+r = 16
+
+[elite]
+model = "pshell"
+f = 35
+up = -11
+r = -16
+pair = true
+
+[tmp]
+model = "pshell"
+f = 32
+up = -6
+r = 11
+
+[ump45]
+model = "pshell"
+f = 34
+up = -10
+r = 11
+
+[ak47]
+model = "rshell"
+f = 20
+up = -8
+r = 10
+
+[galil]
+model = "rshell"
+f = 20
+up = -8
+r = 10
+
+[m4a1]
+model = "rshell"
+f = 20
+up = -8
+r = 10
+
+[sg552]
+model = "rshell"
+f = 20
+up = -8
+r = 10
+
+[sg550]
+model = "rshell"
+f = 17
+f_left = 20
+up = -8
+r = 10
+
+[g3sg1]
+model = "rshell"
+f = 17
+f_left = 20
+up = -8
+r = 10
+
+[aug]
+model = "rshell"
+f = 17
+up = -8
+r = 14
+
+[famas]
+model = "rshell"
+f = 17
+up = -8
+r = 14
+
+[m249]
+model = "rshell"
+f = 20
+up = -10
+r = 13
+
+[mp5navy]
+model = "rshell"
+f = 36
+up = -10
+r = 11
+
+[mac10]
+model = "rshell"
+f = 32
+up = -9
+r = 11
+
+[p90]
+model = "rshell"
+f = 35
+up = -16
+r = 22
+
+[xm1014]
+model = "shotgunshell"
+f = 22
+up = -9
+r = 11
+
+# Thrown late, from the pump or the bolt (their start and speeds are the
+# late shells', not the offsets above).
+[m3]
+model = "shotgunshell"
+sound = "shotgun"
+late = 0.45
+
+[scout]
+model = "rshell_big"
+late = 0.56
+
+[awp]
+model = "rshell_big"
+late = 0.55

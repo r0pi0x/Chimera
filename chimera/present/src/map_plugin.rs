@@ -291,6 +291,7 @@ impl MapLayers for Present {
                     render::view_model::size_flash_sprites,
                     render::view_model::age_effects,
                     render::shells::eject,
+                    render::shells::throw,
                     render::shells::fly,
                 )
                     .chain()

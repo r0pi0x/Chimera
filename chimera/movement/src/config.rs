@@ -339,6 +339,9 @@ pub struct QuakeConfig {
     /// and noclip (`+moveup`, `+movedown`: `core::ActionRegistry`) and the
     /// speed each sends, units/s; empty: none.
     pub up_actions: Option<(&'static str, &'static str, f32)>,
+    /// The entries `liquid_hazards` plays: a bubble, a gasp after the
+    /// air ran out and a gasp after a longer dive.
+    pub liquid_sounds: Option<(&'static str, &'static str, &'static str)>,
 }
 
 /// The console variables every game of the Quake lineage knows, mapped
@@ -604,6 +607,7 @@ impl QuakeConfig {
             goldsrc_steps: false,
             liquid_hazards: false,
             up_actions: None,
+            liquid_sounds: None,
         }
     }
 }

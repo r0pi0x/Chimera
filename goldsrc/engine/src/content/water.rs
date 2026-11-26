@@ -20,8 +20,9 @@
 //! - Currents are not read (the compiler's current contents never reach a
 //!   compiled tree: bsp.md; `MapWaterVolume::current` is for custom maps), nor the clip trees' rare water ends (none in
 //!   cstrike's maps).
-//! - What is drawn for an eye under water (fog, tint) is not specified;
-//!   none is drawn.
+//! - The fog under water (`fog_material`, water.md "The view in a
+//!   liquid"): the colour is the liquid texture's, its distance is ours.
+//!   No colour tint or screen warp is drawn (water.md open question 3).
 
 use goldsrc_formats::bsp::{
     Bsp, Entity,
@@ -29,8 +30,38 @@ use goldsrc_formats::bsp::{
     solids::convex_regions_where,
 };
 
-use super::collision::brush;
-use crate::{core::MapWaterVolume, map::MapData};
+use super::{collision::brush, METERS_PER_UNIT};
+use crate::{
+    core::MapWaterVolume,
+    map::{MapData, water::MapWaterMaterial},
+};
+
+/// The palette entry (0-based) whose colour a liquid texture's fog is,
+/// and the one whose red value is its thickness (specs/cs16/water.md,
+/// "The view in a liquid").
+pub const FOG_COLOR_ENTRY: usize = 3;
+pub const FOG_THICKNESS_ENTRY: usize = 4;
+
+/// A liquid texture's fog (`fog_only` water: the surface is drawn as the
+/// world, the volume fogs the view under it) from its palette: the colour
+/// of entry 3 and a thickness from the red of entry 4. The engine's curve
+/// from thickness to distance is not specified (water.md open question
+/// 1): ours is a linear fog to 6000 / (1 + thickness / 8) units (thickness
+/// 255: 182 units, 128: 353, 57: 740, 32: 1200).
+pub fn fog_material(name: &str, palette: &[[u8; 3]]) -> Option<MapWaterMaterial> {
+    let color = *palette.get(FOG_COLOR_ENTRY)?;
+    let thickness = f32::from(palette.get(FOG_THICKNESS_ENTRY)?[0]);
+    Some(MapWaterMaterial {
+        name: name.to_ascii_lowercase(),
+        fog_color: color.map(|c| f32::from(c) / 255.0),
+        fog_start: 0.0,
+        fog_end: 6000.0 / (1.0 + thickness / 8.0) * METERS_PER_UNIT,
+        above_water: true,
+        refract: false,
+        fog_only: true,
+        ..Default::default()
+    })
+}
 
 /// A contents value as a volume's kind: `Some(slime)` for a liquid
 /// (water: false; slime and lava: true), `None` otherwise.
@@ -194,6 +225,22 @@ mod tests {
             ],
         };
         assert_eq!(add_entity(&b, &dry, 1, [0.0; 3], 8, false, &mut data), 0);
+    }
+
+    #[test]
+    fn a_liquids_fog_is_its_palettes_fourth_colour_and_fifth_thickness() {
+        // `!BWATER1` of liquids.wad: colour (37, 40, 52), thickness 255.
+        let mut palette = vec![[0, 0, 0]; 256];
+        palette[3] = [37, 40, 52];
+        palette[4] = [255, 1, 2];
+        let m = fog_material("!BWATER1", &palette).unwrap();
+        assert!(m.fog_only && m.above_water && !m.refract);
+        assert_eq!(m.fog_color, [37.0 / 255.0, 40.0 / 255.0, 52.0 / 255.0]);
+        assert!((m.fog_end - 6000.0 / 32.875 * 0.0254).abs() < 1e-4, "{}", m.fog_end);
+        // Thinner water fogs farther.
+        palette[4] = [32, 0, 0];
+        assert!(fog_material("!bwater3", &palette).unwrap().fog_end > m.fog_end);
+        assert!(fog_material("x", &palette[..4]).is_none());
     }
 
     #[test]

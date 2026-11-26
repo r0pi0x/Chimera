@@ -173,6 +173,7 @@ pub fn convert(
         }
     }
     let mut slots = vec![None; bsp.textures.len()];
+    let mut liquids: Vec<Option<usize>> = vec![None; bsp.textures.len()];
     for (i, tex) in bsp.textures.iter().enumerate() {
         let Some(tex) = tex else { continue };
         let k = textures::kind(&tex.name);
@@ -180,7 +181,16 @@ pub fn convert(
             continue;
         }
         let texture = match textures::resolve(tex, &wads) {
-            Some(found) => textures::map_texture(&found, decode),
+            Some(found) => {
+                // A liquid's fog, from its palette.
+                if k == textures::Kind::Water
+                    && let Some(m) = water::fog_material(&tex.name, &found.palette)
+                {
+                    data.water_materials.push(m);
+                    liquids[i] = Some(data.water_materials.len() - 1);
+                }
+                textures::map_texture(&found, decode)
+            }
             None => {
                 data.warnings.push(format!("missing texture {}", tex.name));
                 textures::placeholder(&tex.name, tex.width, tex.height, decode)
@@ -212,7 +222,7 @@ pub fn convert(
     // dark or lit, the presets' patterns).
     let logic = crate::logic::world::World::new(&data.entities, 0);
     let styles = |s: u8| style_start(&logic, s);
-    brushes::add_meshes(&bsp, &parts.drawn, &slots, &families, &materials, &styles, &mut data);
+    brushes::add_meshes(&bsp, &parts.drawn, &slots, &liquids, &families, &materials, &styles, &mut data);
 
     report(0.6, "Collision");
     let counts = collision::add_world(&bsp, &mut data);

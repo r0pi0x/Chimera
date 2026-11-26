@@ -21,6 +21,8 @@
 //!   the first attachment, in the same frame.
 //! - **Dropped models** (`dropped`, `w_*.mdl`): a held model's loose form
 //!   (`map::loose::loose_key`), in the model's own space, as it lies.
+//! - **Shell models** (`shell`, `rshell.mdl`...): a spent case's meshes in
+//!   the model's own space.
 //! - **Sounds** (`sounds`): the waves a model's events name.
 //! - **Muzzle flashes** (`muzzle_flash`): a muzzle flash event's options,
 //!   a two-digit code (mdl.md, "Events": tens the scale, units which
@@ -291,6 +293,23 @@ pub fn dropped(mount: &Mount, path: &str, key: &str, decode: bool) -> Result<(Ma
         },
         studio::textures(&tex, path, decode),
     ))
+}
+
+/// The spent shell model at `path` (`models/rshell.mdl`...) as a model
+/// of its own, with its textures: body 0's meshes in the model's own
+/// space (its bind pose), what `map::shells` throws.
+pub fn shell(mount: &Mount, path: &str, decode: bool) -> Result<(MapModel, Vec<MapTexture>), String> {
+    let (mdl, tex) = read(mount, path)?;
+    // Engine axes (Y up) in meters, turned so the case's long axis (the
+    // models' y) lies along +X as `map::shells` wants it: an even
+    // permutation of the axes, no mirror.
+    let unit = super::METERS_PER_UNIT;
+    let axes = |v: Vec3| Vec3::new(v.y, v.z, v.x);
+    let (meshes, bounds) = studio::meshes(&mdl, &tex, 1, &|_, p, n| Some((0, axes(p) * unit, axes(n)))).pop().unwrap_or_default();
+    if meshes.is_empty() {
+        return Err(format!("{path}: no meshes"));
+    }
+    Ok((MapModel { meshes, bounds, ..Default::default() }, studio::textures(&tex, path, decode)))
 }
 
 /// A skeleton's bone names.

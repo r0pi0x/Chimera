@@ -24,8 +24,8 @@ Force) is a small port on the same loader.
 | Plan, install, scaffold | done (2026-11-24) | this plan; HLDS with CS 1.6 on this box (§2); `games/cs16` and `games/cs16/ui` from `tools/new-game` |
 | First specs | in progress | §6: `specs/goldsrc/` formats written (2026-11-24: bsp, wad3, mdl, spr, mount; entities 2026-11-24); `specs/cs16/` movement, weapons, damage, view_and_hud drafted 2026-11-24 (ReGameDLL as reference, cvars and model data checked); install to come |
 | M0 loader, mount, maps, bodies | in progress | §5. First half done (2026-11-24): `goldsrc/formats` (BSP 30 with hull traces and solid regions, WAD3, MDL v10, SPR v2, `liblist.gam`, `materials.txt`), the collision spike (§3: the shapes are close enough), `games/cs16`'s install facts and folder chain. Second half done (2026-11-24): `goldsrc/engine` (maps to `MapData` with the §3 collision, studio models as bodies), the eight player bodies, `cs16:<map>` in the sandbox, the pool's fitness sweep. `chimera_pack cs16` published (2026-11-24: `players`, the 25 maps' sets, the guest dressing; 142 MB stored). Texture names (2026-11-24): animated sets and their alternate, random tiling, the liquid warp, chrome. Map logic (2026-11-24): `goldsrc_engine::logic` from entities.md (firing, movers, triggers, breakables, the `+a` toggle, light styles, `+use`). Logic on network clients (2026-11-24): Chimera's shared `net::movers` (lifted from Source's logic), `logic::net`. Polish (2026-11-25): the maps' sounds (doors, buttons, ambients, breakables: `content::sounds::add_map`), `env_sprite`/`env_glow` drawn and switched (`content::sprites`), light styles in the lightmap atlas (switchable 32+ and the animated presets, `content::lightmap`; converter version 3). Left: the lightmap brightening against captures (a spec session: bsp.md question 1 lists what the implementation needs); debris; sentences |
-| M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Left: shells, measurements (weapons.md open questions) |
-| M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Water volumes (2026-11-25, Log): the world's liquid leaves and the liquid brush entities (`goldsrc_engine::content::water`; converter version 4). Left: the ladder volumes' own rule, the spec's swim details (up key, slime and lava speeds, currents), measurement in the game |
+| M1 weapons | done (2026-11-25) | §5: the 24 guns, the knife and the three grenades as data (`games/cs16/data/weapons`) with `cs16:gun` (accuracy, spread by state, kick, modes, bursts, penetration by GoldSrc's power rule: Chimera's `PowerPenetration`) and `cs16:grenade`; `v_`/`p_` models and sounds through `goldsrc_engine::content::weapon_models` and `sounds`; `weapon/<id>` sets published; `scaffold: false` (Log). Polish (2026-11-25): the bodies' weapon sequences (aim on the pitch blends, shots, reloads; `[hooks."cs16:body_anim"]`), the HE's and smoke's looks from the install's sprites (`weapons::looks`), dropped and thrown weapons as their `w_` models (`map::loose::loose_key`). Shells done (2026-11-26, Log). Left: measurements (weapons.md open questions) |
+| M2 movement | done (2026-11-25) | §5. `cs16:movement` is the shared movement ([shared-movement.md](shared-movement.md), S0-S9) with CS 1.6's config from specs/cs16/movement.md, hull traced on GoldSrc maps (`goldsrc_engine::hulls`, the clip trees carried in the converted map), Chimera's shapes elsewhere (Log). Water volumes (2026-11-25, Log): the world's liquid leaves and the liquid brush entities (`goldsrc_engine::content::water`; converter version 4). Footsteps, the swim's details (up key, lift by liquid, currents), slime, lava and drowning, the liquid fog (2026-11-26, Log). Left: the ladder volumes' own rule (movement.md ladder gaps), measurement in the game |
 | M3 party rungs | in progress | §5. The guns are rungs since M1. HUD (2026-11-25): `cs16_ui::hud` from specs/cs16/hud.md (health with the cross and bar, armour with the suit lit by armour, ammunition with its icon, fades, the damage arcs; the install's `640hud` sprites added at their pixel size), the `d_` kill icons and headshot mark in every app's kill feed, the HUD's sprites in `players` (Log). Second part (2026-11-25, Log): CS 1.6's dynamic crosshair, the weapon menu (bucket list), the round timer, the 320 layout. The HUD follows hud.md's second part (2026-11-25, Log: the spec's numbers for the crosshair, timer, menu and 320 layout). Left: hud.md questions 2-3 (money; the pistols' speed threshold and fastswitch cycling), the 320/320hud files in the served `players` set (republish) |
 
 ## 1. Rules for this port
@@ -915,3 +915,58 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   `mp_footsteps`. The walk key now multiplies after the clip (130); the
   golden run's hash was re-taken for it.
 - Tests: cs16 `footsteps` (the spec's cases), heavy `footsteps`.
+
+### 2026-11-26: shells (specs/cs16/shells.md)
+
+- **Cases** (`games/cs16/src/game/weapons/shells.rs`, data/shells.toml): each
+  shown shot's `Fired` event throws one case per bullet event, on every
+  machine that shows it, at the gun's first-person offset from the eye
+  (the local player's, `ViewModelSettings::right_hand` mirrors it; the
+  Elites by shot) or the third-person one (20, -12, 4), with the spec's
+  random speeds, half the shooter's velocity and the 0.1 s lead
+  (`event_throw`); the M3, Scout and AWP at 0.45, 0.56 and 0.55 s, from the
+  eye 16 ahead and 9 down at the view of that moment (`late_throw`, then
+  9 units and 120 units/s to the left as `late_client`). Chimera got the
+  generic `map::shells::ThrowShell` and `render::shells::throw` (a world
+  shell, drawn and bounced as the view-model ports' are), and
+  `weapon_models::shell` reads the four models; the five types
+  (`pshell`, `rshell`, `rshell_big`, `shotgunshell`, and its shotgun-clink
+  twin) join the kit with their bounce entries.
+- Known shortcuts (module doc): the late cases are made by every machine
+  from the shot's event, not by a server's shell message; the sideways
+  directions (open questions 1 and 2) and the cases' physics (3: gravity,
+  damping 0.45, spin, bounce sounds, a 0.2 s fade inside the 2.5 s) are
+  ours.
+- Tests: cs16 `shells` (the spec's test cases, the shot's messages),
+  heavy `footsteps` (the models and sounds on the install). Capture:
+  `apps/ultimate_gun_game/scenes/cs16_shells.scene`.
+
+### 2026-11-26: water and the swim (specs/cs16/water.md, movement.md "Water")
+
+- **Liquids** (`chimera_movement::liquids`, `QuakeConfig::liquid_hazards`):
+  slime 4 and lava 10 times the water level on every command (`MapWaterVolume::
+  lava`, set by `water::add_world`/`add_entity`), the 12 s of air, drowning
+  3/4/5 a second (never absorbed), the gasps on surfacing (`pl_wade1` when
+  the air ran out, `pl_wade2` after more than 3 s under, on the voice
+  channel), the bubbles (1 in 32 a command then a roll against the air
+  left, `pl_swim1`-`4` at 0.8), the recovery of 10 every 2 s; the
+  splash and swim stroke are `pl_wade1`-`4`.
+- **The swim** (movement.md "Water"): the wish from the keys plus the up
+  key (`+moveup`/`+movedown`, the named actions, 320 clipped with the other
+  keys to the max speed, then x 0.52 walking, x 0.333 ducked), sinking at 48
+  with no input, the jump's lift 100/80/50, 96 rising, 174.4 horizontal
+  with forward and jump; currents (`MapWaterVolume::current`: 50 x the
+  water level, counted as the spec's code has it; no loader fills it).
+- **The view**: the drawn eye kept 4 units from the surface
+  (`Mover::view_eye`, `MovementState::eye_offset`); the fog under a liquid
+  is the liquid texture's palette (entry 3 its colour, the red of entry 4
+  its thickness: `water::fog_material`, fog-only water materials on the
+  liquid faces); the curve is ours (open question 1), and as_oilrig's
+  `!water2b` has thickness 0, so its fog is faint. No colour tint or
+  room effect (open questions 2 and 3). Capture:
+  `apps/ultimate_gun_game/scenes/cs16_water_fog.scene`.
+- Tests: cs16 `water` (steady speeds, forward and jump, slime and lava, the
+  drowning timeline with the recovery and gasps, a current, the drawn
+  eye), goldsrc_engine `water` (the fog), heavy `water` (as_oilrig's fog).
+- Converter version changes again: **a cs16 republish is needed** (the
+  liquid fog materials and the step sets in the served maps).

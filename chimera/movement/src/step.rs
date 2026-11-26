@@ -116,12 +116,13 @@ pub(crate) fn step(
             Option<Res<crate::map::prop_physics::PlayerPropRules>>,
         ),
     ),
-    (clock, first, mut grid_cache, mut waist_steps, clip_hulls): (
+    (clock, first, mut grid_cache, mut waist_steps, clip_hulls, actions): (
         Res<crate::core::SimClock>,
         Res<crate::core::FirstTimePredicted>,
         Local<Option<crate::core::BrushGrid>>,
         Local<u32>,
         Option<Res<MapClipHulls>>,
+        Option<Res<crate::core::ActionRegistry>>,
     ),
     other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<QuakeMovement>)>,
     (health, dead, noblock, teams, (collider_of, afloat, prop_groups)): (
@@ -446,12 +447,21 @@ pub(crate) fn step(
             outputs: Vec::new(),
             max_health: health.get(entity).map_or(100.0, |h| h.max * 100.0),
             stance,
+            current: Vec3::ZERO,
+            // The up and down keys (`+moveup`, `+movedown`).
+            up_keys: cfg
+                .up_actions
+                .zip(actions.as_deref())
+                .map_or(0.0, |((up, down, speed), r)| {
+                    (f32::from(u8::from(intent.action(r, up))) - f32::from(u8::from(intent.action(r, down)))) * speed
+                }),
         };
         if let Some(on_ground) = mover.me.seat.take() {
             mover.reseat(on_ground);
         }
         let start = mover.feet;
         mover.tick(intent);
+        let view_eye = mover.view_eye();
         mover.me.use_held = intent.use_key;
         // The velocity modifier recovers after the move, whichever way it
         // went (M18: the first tick after a hit moves at the value set).
@@ -564,7 +574,7 @@ pub(crate) fn step(
             on_ground: me.on_ground,
             crouching: me.ducked || (me.ducking && intent.crouch),
             sprinting: false,
-            eye_offset: Vec3::Y * (me.eye - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT,
+            eye_offset: Vec3::Y * (view_eye - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT,
             hull_min: {
                 let (a, b) = (
                     to_engine(Vec3::new(-cfg.half_width, -cfg.half_width, -ORIGIN_ABOVE_FEET)),
