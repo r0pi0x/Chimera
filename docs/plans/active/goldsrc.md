@@ -958,7 +958,7 @@ runs on its own port on `127.0.0.1`, killed by exact pid.
   with forward and jump; currents (`MapWaterVolume::current`: 50 x the
   water level, counted as the spec's code has it; no loader fills it).
 - **The view**: the drawn eye kept 4 units from the surface
-  (`Mover::view_eye`, `MovementState::eye_offset`); the fog under a liquid
+  (`Mover::view_eye`, `MovementState::view_shift`: the camera only, shots and traces start at `eye_offset`, the real eye; the golden run re-taken, its hash held the shifted eye); the fog under a liquid
   is the liquid texture's palette (entry 3 its colour, the red of entry 4
   its thickness: `water::fog_material`, fog-only water materials on the
   liquid faces); the curve is ours (open question 1), and as_oilrig's

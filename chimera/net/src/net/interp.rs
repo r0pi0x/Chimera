@@ -572,6 +572,7 @@ pub(super) fn draw_others(
         if let Some(mut view) = view {
             let now_view = EyeView {
                 eye_offset: body.eye,
+                view_shift: 0.0,
                 view_roll: 0.0,
                 yaw: body.yaw,
                 pitch: body.pitch,

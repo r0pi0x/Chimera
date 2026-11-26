@@ -1442,6 +1442,7 @@ fn apply_players(world: &mut World, p: &mut DemoPlayer, seeking: bool) {
             if let Some(mut view) = ent.get_mut::<RenderedView>() {
                 view.now = EyeView {
                     eye_offset: eye,
+                    view_shift: 0.0,
                     view_roll: 0.0,
                     yaw,
                     pitch,

@@ -804,7 +804,7 @@ fn aim_through_crosshair(
     if !state.on || state.orbit || *free != super::input::FreeLook::default() {
         return;
     }
-    let eye = at.translation + crate::map::interp::EyeView::of(intent, ms).eye_offset;
+    let eye = at.translation + crate::map::interp::EyeView::of(intent, ms).camera_offset();
     let (pivot, dist) = wanted_offsets(&state.tuned(&settings), state.side, state.zoom, rot);
     let pivot = if state.reach.is_some() { state.pivot } else { pivot };
     let camera = eye + camera_from_eye(pivot, state.reach.unwrap_or(dist).min(dist), rot, rules.max_offset);

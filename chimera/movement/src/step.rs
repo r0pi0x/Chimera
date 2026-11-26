@@ -574,7 +574,8 @@ pub(crate) fn step(
             on_ground: me.on_ground,
             crouching: me.ducked || (me.ducking && intent.crouch),
             sprinting: false,
-            eye_offset: Vec3::Y * (view_eye - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT,
+            eye_offset: Vec3::Y * (me.eye - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT,
+            view_shift: (view_eye - me.eye) * METERS_PER_UNIT,
             hull_min: {
                 let (a, b) = (
                     to_engine(Vec3::new(-cfg.half_width, -cfg.half_width, -ORIGIN_ABOVE_FEET)),

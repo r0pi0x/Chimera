@@ -40,11 +40,14 @@ const RATCHET: &[ScheduleRatchet] = &[
     // equipment, the logic bridge) now sort differently on the two sides.
     // 198 and 39 opposite from 217 and 45 (2026-11-25: fallen since
     // d73557b08, lowered here).
+    // 219 and 44 opposite from 198 and 39 (2026-11-26: 3beb8c512's
+    // `liquids` and `owe`, ordered against the movement and `apply_damage`
+    // only, as `drown` is; the rest of what they touch is unordered).
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 198,
-        client: 198,
-        opposite: 39,
+        server: 219,
+        client: 219,
+        opposite: 44,
     },
     // 190 and 192 from 187 and 189 (2026-11-25): d73557b08's three
     // transform-marking systems (`map::transform_marks`, in Avian's
